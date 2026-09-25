@@ -32,6 +32,7 @@
       <section class="workspace">
         <span class="label">CURRENT FOLDER</span
         ><code id="target">Connecting…</code>
+        <button id="reveal-workspace" class="quiet">Show folder</button>
         <p class="scope-hint">
           This window manages the folder chosen when it started.
         </p>
@@ -184,6 +185,14 @@
               <span id="selected-count" class="hint"></span>
             </div>
             <div id="assets" class="assets"></div>
+            <details id="restore-history" hidden>
+              <summary id="restore-history-summary">Restore history</summary>
+              <p class="hint">
+                Completed restores, grouped by asset. Current installations
+                appear under Installed.
+              </p>
+              <div id="restore-history-list"></div>
+            </details>
             <div class="actions" id="selection-actions">
               <button id="save">Save selection</button
               ><button id="preview" class="secondary">Preview changes</button>
@@ -309,8 +318,8 @@ captain-share serve --open</code></pre>
             library.
           </p>
           <p>
-            Restore puts the asset back if its destination is free. The Restored
-            badge records completed archive history; check Installed for the
+            Restore puts the asset back if its destination is free. Completed
+            restores are grouped under Restore history. Check Installed for the
             current link status.
           </p>
           <p>

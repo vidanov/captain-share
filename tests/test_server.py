@@ -1,6 +1,8 @@
 import http.client
 import json
+import subprocess
 import threading
+from unittest.mock import patch
 from urllib.parse import quote
 
 from captain_share import __version__
@@ -77,6 +79,35 @@ class ServerTests(SharingFixture):
             self.assertNotIn(str(self.repo), body)
         finally:
             conn.close()
+
+    def test_reveal_uses_finder_without_following_leaf_link_and_checks_scope(self):
+        link = self.repo / "shortcut"
+        link.symlink_to(self.lib / "ip/skills/hello")
+        with (
+            patch("captain_share.server.sys.platform", "darwin"),
+            patch("captain_share.server.subprocess.run") as run,
+        ):
+            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            code, _ = self.request("/api/reveal", {"path": str(link)})
+            self.assertEqual(code, 200)
+            self.assertEqual(run.call_args.args[0], ["/usr/bin/open", "-R", str(link)])
+            self.assertEqual(self.request("/api/reveal", {"path": str(self.lib)})[0], 200)
+            run.reset_mock()
+            for value in (
+                str(self.base),
+                str(self.repo / "missing"),
+                "relative",
+                str(self.repo / ".." / ".."),
+            ):
+                self.assertEqual(self.request("/api/reveal", {"path": value})[0], 400)
+            self.assertEqual(self.request("/api/reveal", {"path": str(link)}, token=False)[0], 403)
+            self.assertEqual(
+                self.request("/api/reveal", {"path": str(link)}, origin="https://outside.example")[
+                    0
+                ],
+                403,
+            )
+            run.assert_not_called()
 
     def test_api_requires_launch_token_and_same_origin(self):
         self.assertEqual(self.request("/api/state", token=False)[0], 403)

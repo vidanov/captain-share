@@ -445,12 +445,6 @@ footer {
   overflow-wrap: anywhere;
 }
 
-.restored-status {
-  align-self: flex-start;
-  color: var(--ink);
-  opacity: 1;
-}
-
 .folder-browse {
   margin: 6px 0 12px;
 }
@@ -614,4 +608,32 @@ footer {
   header {
     flex-wrap: wrap;
   }
+}
+
+.reveal-button {
+  font-size: 11px;
+  padding: 6px 9px;
+  margin: 8px 6px 0 0;
+}
+#reveal-workspace {
+  margin-top: 10px;
+}
+#restore-history {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.history-entry {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.history-entry > button {
+  margin: 8px 6px 8px 0;
+  font-size: 11px;
+}
+.history-entry details {
+  margin-top: 8px;
+  color: var(--muted);
 }

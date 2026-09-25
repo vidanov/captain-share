@@ -56,6 +56,7 @@ function invalidate() {
 async function refresh() {
   state = await api("state");
   $("target").textContent = state.target;
+  $("reveal-workspace").textContent = "Show in " + state.file_manager;
   $("layers").replaceChildren(...state.config.layers.map((p) => el("li", p)));
   if (!state.config.layers.length)
     $("layers").append(
@@ -114,8 +115,8 @@ function render() {
       "These shortcuts read directly from their shared originals.",
     ],
     archive: [
-      "Restore an earlier asset",
-      "Archived originals and shortcuts remain here until restored.",
+      "Archived assets",
+      "Only assets waiting to be restored appear here. Completed restores are in the history below.",
     ],
   };
   $("view-title").textContent = titles[view][0];
@@ -134,7 +135,7 @@ function render() {
         ? state.candidates
         : view === "installed"
           ? state.installed
-          : state.archives;
+          : state.archives.filter((row) => !row.restored);
   const query = $("search").value.toLowerCase();
   rows = rows.filter((r) =>
     [r.name, r.kind, r.path, r.relative_path]
@@ -142,7 +143,9 @@ function render() {
       .toLowerCase()
       .includes(query),
   );
-  $("count").textContent = rows.length + " assets";
+  renderHistory(query);
+  $("count").textContent =
+    rows.length + (rows.length === 1 ? " asset" : " assets");
   $("assets").replaceChildren();
   if (!rows.length) {
     const empty = el("div", undefined, "empty");
@@ -150,7 +153,7 @@ function render() {
       el(
         "strong",
         view === "archive"
-          ? "Nothing archived yet."
+          ? "No assets waiting to be restored."
           : view === "installed"
             ? "No managed assets yet."
             : $("source").value
@@ -187,6 +190,11 @@ function render() {
         el("div", row.kind + " · " + row.status, "asset-type"),
         el("div", row.path, "asset-path"),
       );
+      main.append(
+        revealButton(
+          view === "inbound" ? row.path : state.target + "/" + row.path,
+        ),
+      );
       if (row.error) main.append(el("p", row.error));
       if (view === "inbound" && !input.disabled) {
         const alias = el("input");
@@ -198,40 +206,56 @@ function render() {
         main.append(alias);
       }
     } else {
+      const installed = view === "installed";
       main.append(
-        el("div", row.name || row.relative_path, "asset-title"),
-        el("div", row.status || row.created, "asset-type"),
-        el("div", row.shared_original || row.id, "asset-path"),
+        el(
+          "div",
+          installed ? row.path.split("/").pop() : row.relative_path,
+          "asset-title",
+        ),
+        el(
+          "div",
+          installed
+            ? row.status === "linked"
+              ? "Installed"
+              : "Needs attention"
+            : "Archived " + friendlyDate(row.created),
+          "asset-type",
+        ),
+        el("div", installed ? row.path : row.relative_path, "asset-path"),
       );
-      if (view === "archive" && row.restored) {
-        wrap.append(el("span", "Restored", "badge restored-status"));
+      if (installed)
         main.append(
-          el(
-            "p",
-            "Already restored. This entry is archive history, not a disabled skill. Check Installed for its current link status.",
-            "hint",
+          el("div", "Original: " + row.shared_original, "asset-path"),
+        );
+      main.append(
+        revealButton(
+          installed
+            ? state.target + "/" + row.path
+            : state.target + "/.captain/archive/" + row.id + "/payload",
+        ),
+      );
+      if (installed)
+        main.append(
+          revealButton(
+            row.shared_original,
+            "Show original in " + state.file_manager,
           ),
         );
-      } else {
-        const button = el(
-          "button",
-          view === "installed" ? "Archive" : "Restore",
-          "quiet",
+      const button = el("button", installed ? "Archive" : "Restore", "quiet");
+      button.onclick = () =>
+        task(() =>
+          preview(
+            installed
+              ? {
+                  action: "remove",
+                  kind: row.kind,
+                  name: row.path.split("/").pop(),
+                }
+              : { action: "restore", id: row.id },
+          ),
         );
-        button.onclick = () =>
-          task(() =>
-            preview(
-              view === "installed"
-                ? {
-                    action: "remove",
-                    kind: row.kind,
-                    name: row.path.split("/").pop(),
-                  }
-                : { action: "restore", id: row.id },
-            ),
-          );
-        wrap.append(button);
-      }
+      wrap.append(button);
     }
     wrap.append(main);
     $("assets").append(wrap);
@@ -655,3 +679,96 @@ for (const id of ["about-link", "workspace-link"])
   };
 window.addEventListener("popstate", () => showPage(location.pathname));
 showPage(location.pathname, false);
+
+function friendlyDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+function revealButton(path, label) {
+  const button = el(
+    "button",
+    label || "Show in " + state.file_manager,
+    "quiet reveal-button",
+  );
+  button.type = "button";
+  button.title = path;
+  button.onclick = () =>
+    task(async () => {
+      await api("reveal", { path });
+      message("Shown in " + state.file_manager + ".");
+    });
+  return button;
+}
+$("reveal-workspace").onclick = () =>
+  task(async () => {
+    await api("reveal", { path: state.target });
+    message("Shown in " + state.file_manager + ".");
+  });
+function renderHistory(query) {
+  const details = $("restore-history"),
+    list = $("restore-history-list");
+  details.hidden = view !== "archive";
+  list.replaceChildren();
+  if (view !== "archive") return;
+  const groups = new Map();
+  const history = state.archives.filter(
+    (row) => row.restored && row.relative_path.toLowerCase().includes(query),
+  );
+  for (const row of history) {
+    if (!groups.has(row.relative_path)) groups.set(row.relative_path, []);
+    groups.get(row.relative_path).push(row);
+  }
+  $("restore-history-summary").textContent =
+    "Restore history · " +
+    history.length +
+    (history.length === 1 ? " event" : " events");
+  if (!groups.size)
+    list.append(el("p", "No completed restores match this view.", "hint"));
+  for (const [path, events] of groups) {
+    events.sort((a, b) => b.restored.localeCompare(a.restored));
+    const current = state.installed.find((row) => row.path === path);
+    const row = el("div", undefined, "history-entry");
+    row.append(
+      el("strong", path),
+      el(
+        "p",
+        "Last restored " +
+          friendlyDate(events[0].restored) +
+          " · " +
+          events.length +
+          (events.length === 1 ? " restore" : " restores"),
+        "hint",
+      ),
+    );
+    if (current) {
+      const button = el(
+        "button",
+        current.status === "linked"
+          ? "View installed asset"
+          : "Review current link",
+        "quiet",
+      );
+      button.onclick = () => {
+        view = "installed";
+        $("search").value = path;
+        invalidate();
+        render();
+      };
+      row.append(button);
+    }
+    row.append(revealButton(state.target + "/" + path));
+    const more = el("details"),
+      timeline = el("ul");
+    more.append(el("summary", "Restore dates"));
+    for (const event of events)
+      timeline.append(el("li", friendlyDate(event.restored)));
+    more.append(timeline);
+    row.append(more);
+    list.append(row);
+  }
+}

@@ -220,3 +220,8 @@ same authenticated localhost API as the rest of the interface.
 The About page in the web header includes the running version, quick start, asset
 formats, configuration scopes, repository controls, troubleshooting, and the MIT
 license. Switching between About and Workspace preserves unsaved selections.
+
+Archive lists assets still available to restore. Completed restores appear in a
+collapsed Restore history, grouped by local path with readable restore dates.
+Show in Finder reveals workspace files, shared originals, and archive payloads on
+macOS; on Linux it opens the containing folder in the desktop file manager.

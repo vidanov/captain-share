@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import subprocess
+import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -41,6 +44,41 @@ def folder_listing(target, value="", show_hidden=False):
         "folders": entries[:1000],
         "truncated": len(entries) > 1000,
     }
+
+
+def reveal_path(target, value):
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise c.ShareError("Choose an absolute asset path")
+    path = Path(os.path.abspath(path))
+    roots = [c.root(target)]
+    roots.extend(
+        Path(row["path"]).resolve()
+        for row in c.effective(target)["sources"].values()
+        if row.get("path")
+    )
+    # Resolve ancestors but preserve the leaf, so Finder selects a managed symlink itself.
+    candidate = path.parent.resolve() / path.name
+    if not any(candidate == base or base in candidate.parents for base in roots):
+        raise c.ShareError("The file must belong to this workspace or a connected library")
+    if not os.path.lexists(candidate):
+        raise c.ShareError("This file is no longer here. Refresh to check its current status.")
+    if sys.platform == "darwin":
+        command = ["/usr/bin/open", "-R", str(candidate)]
+    elif sys.platform.startswith("linux"):
+        directory = (
+            candidate if candidate.is_dir() and not candidate.is_symlink() else candidate.parent
+        )
+        command = ["xdg-open", str(directory)]
+    else:
+        raise c.ShareError("Opening a file manager is supported on macOS and Linux")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise c.ShareError("The file manager did not respond. Try again.") from exc
+    if result.returncode:
+        raise c.ShareError(result.stderr.strip() or "Could not open the file manager")
+    return {"revealed": str(candidate)}
 
 
 def make_server(target, port=0):
@@ -91,6 +129,9 @@ def make_server(target, port=0):
                     result = e.status(target)
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
+                    result["file_manager"] = (
+                        "Finder" if sys.platform == "darwin" else "file manager"
+                    )
                     self.respond(result)
                 elif parsed.path == "/api/folders":
                     query = parse_qs(parsed.query)
@@ -143,7 +184,9 @@ def make_server(target, port=0):
                 if not isinstance(data, dict):
                     raise c.ShareError("Expected a JSON object")
                 path = urlparse(self.path).path
-                if path == "/api/clone":
+                if path == "/api/reveal":
+                    result = reveal_path(target, data["path"])
+                elif path == "/api/clone":
                     result = r.clone(
                         target, data["name"], data["url"], data["path"], data.get("layout", "ip")
                     )
