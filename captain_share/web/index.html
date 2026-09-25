@@ -61,7 +61,13 @@
                   id="source-path"
                   required
                   placeholder="/path/to/library"
-                /><label for="source-layout">Assets live under</label
+                /><button
+                  type="button"
+                  id="browse-source"
+                  class="quiet folder-browse"
+                >
+                  Browse folders…</button
+                ><label for="source-layout">Assets live under</label
                 ><select id="source-layout">
                   <option value="ip">ip/skills, ip/agents, …</option>
                   <option value="flat">skills, agents, …</option></select
@@ -86,7 +92,13 @@
                   id="clone-path"
                   required
                   placeholder="/path/to/shared-tools"
-                />
+                /><button
+                  type="button"
+                  id="browse-clone"
+                  class="quiet folder-browse"
+                >
+                  Choose parent folder…
+                </button>
                 <label for="clone-layout">Repository layout</label
                 ><select id="clone-layout">
                   <option value="ip">ip/skills, ip/agents, …</option>
@@ -193,5 +205,38 @@
         <span>One library. Many independent projects.</span>
       </footer>
     </main>
+    <dialog id="folder-picker" aria-labelledby="folder-picker-title">
+      <h3 id="folder-picker-title">Choose a folder</h3>
+      <p id="folder-picker-help" class="hint"></p>
+      <form id="folder-location-form">
+        <label for="folder-location">Folder path</label>
+        <div class="folder-location-row">
+          <input id="folder-location" autocomplete="off" /><button
+            type="submit"
+            class="quiet"
+          >
+            Go
+          </button>
+        </div>
+      </form>
+      <div class="folder-shortcuts">
+        <button id="folder-up" class="quiet">Up</button
+        ><button id="folder-home" class="quiet">Home</button
+        ><button id="folder-project" class="quiet">Current folder</button>
+      </div>
+      <label class="folder-hidden"
+        ><input id="folder-hidden" type="checkbox" /> Show hidden folders</label
+      >
+      <p id="folder-error" role="alert"></p>
+      <div id="folder-list" aria-label="Folders"></div>
+      <div id="folder-new" hidden>
+        <label for="folder-new-name">New checkout folder name</label
+        ><input id="folder-new-name" placeholder="shared-tools" />
+      </div>
+      <div class="actions">
+        <button id="folder-select">Use this folder</button
+        ><button id="folder-cancel" class="quiet">Cancel</button>
+      </div>
+    </dialog>
   </body>
 </html>

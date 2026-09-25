@@ -521,3 +521,109 @@ function changeLabel(status) {
   if (status[1] !== " ") parts.push(names[status[1]] || status[1]);
   return parts.join(" / ");
 }
+
+let pickerField = null,
+  pickerListing = null,
+  pickerVersion = 0;
+async function browseFolders(path) {
+  const version = ++pickerVersion;
+  pickerListing = null;
+  $("folder-select").disabled = true;
+  $("folder-up").disabled = true;
+  $("folder-error").textContent = "";
+  $("folder-list").replaceChildren(el("p", "Loading folders…"));
+  try {
+    const result = await api(
+      "folders?path=" +
+        encodeURIComponent(path || "") +
+        "&hidden=" +
+        ($("folder-hidden").checked ? "1" : "0"),
+    );
+    if (version !== pickerVersion) return;
+    pickerListing = result;
+    $("folder-location").value = result.path;
+    $("folder-list").replaceChildren();
+    for (const folder of result.folders) {
+      const button = el("button", folder.name, "folder-entry quiet");
+      button.type = "button";
+      button.onclick = () => browseFolders(folder.path);
+      $("folder-list").append(button);
+    }
+    if (!result.folders.length)
+      $("folder-list").append(
+        el("p", "No subfolders here. You can select this folder."),
+      );
+    if (result.truncated)
+      $("folder-list").append(
+        el(
+          "p",
+          "Showing the first 1,000 folders. Enter a path to go directly to another folder.",
+        ),
+      );
+    $("folder-select").disabled = false;
+    $("folder-up").disabled = result.path === result.parent;
+  } catch (error) {
+    if (version !== pickerVersion) return;
+    $("folder-list").replaceChildren();
+    $("folder-error").textContent = error.message;
+  }
+}
+async function openFolderPicker(field) {
+  if (busy) return;
+  pickerField = field;
+  const cloning = field === "clone-path";
+  let path = $(field).value.trim();
+  $("folder-new").hidden = !cloning;
+  $("folder-picker-title").textContent = cloning
+    ? "Choose checkout parent folder"
+    : "Choose a library folder";
+  $("folder-picker-help").textContent = cloning
+    ? "Choose an existing parent and name the new checkout. The folder is created when you clone."
+    : "Browse to the repository checkout you want to connect.";
+  $("folder-select").textContent = cloning
+    ? "Use checkout location"
+    : "Use this folder";
+  if (cloning) {
+    path = path.replace(/\/$/, "");
+    const split = path.lastIndexOf("/");
+    $("folder-new-name").value =
+      split >= 0
+        ? path.slice(split + 1)
+        : $("clone-name").value.trim() || "shared-tools";
+    path = split >= 0 ? path.slice(0, split) || "/" : "";
+  }
+  $("folder-location").value = path || state?.target || "";
+  $("folder-picker").showModal();
+  await browseFolders(path);
+}
+$("browse-source").onclick = () => openFolderPicker("source-path");
+$("browse-clone").onclick = () => openFolderPicker("clone-path");
+$("folder-location-form").onsubmit = (event) => {
+  event.preventDefault();
+  browseFolders($("folder-location").value);
+};
+$("folder-up").onclick = () => {
+  if (pickerListing) browseFolders(pickerListing.parent);
+};
+$("folder-home").onclick = () => browseFolders("~");
+$("folder-project").onclick = () => browseFolders("");
+$("folder-hidden").onchange = () => browseFolders($("folder-location").value);
+$("folder-select").onclick = () => {
+  if (!pickerListing) return;
+  let path = pickerListing.path;
+  if (pickerField === "clone-path") {
+    const name = $("folder-new-name").value.trim();
+    if (!name || name === "." || name === ".." || /[\/\\\x00]/.test(name)) {
+      $("folder-error").textContent = "Enter a folder name without slashes.";
+      return;
+    }
+    path = path.replace(/\/$/, "") + "/" + name;
+  }
+  $(pickerField).value = path;
+  $("folder-picker").close();
+};
+$("folder-cancel").onclick = () => $("folder-picker").close();
+$("folder-picker").onclose = () => {
+  pickerVersion++;
+  pickerListing = null;
+};

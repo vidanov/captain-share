@@ -1,6 +1,7 @@
 import http.client
 import json
 import threading
+from urllib.parse import quote
 
 from captain_share.server import make_server
 from tests.test_sharing import SharingFixture
@@ -38,6 +39,28 @@ class ServerTests(SharingFixture):
         body = res.read()
         conn.close()
         return res.status, json.loads(body)
+
+    def test_folder_picker_lists_directories_and_preserves_filesystem(self):
+        (self.repo / "folder with spaces").mkdir()
+        (self.repo / ".hidden-folder").mkdir()
+        (self.repo / "file.txt").write_text("not a folder")
+        before = set(self.repo.rglob("*"))
+        code, listing = self.request("/api/folders")
+        self.assertEqual(code, 200)
+        self.assertEqual(listing["path"], str(self.repo))
+        names = [row["name"] for row in listing["folders"]]
+        self.assertIn("folder with spaces", names)
+        self.assertNotIn(".hidden-folder", names)
+        self.assertNotIn("file.txt", names)
+        _, hidden = self.request("/api/folders?hidden=1")
+        self.assertIn(".hidden-folder", [row["name"] for row in hidden["folders"]])
+        _, child = self.request("/api/folders?path=" + quote(str(self.repo / "folder with spaces")))
+        self.assertEqual(child["parent"], str(self.repo))
+        for invalid in (self.repo / "missing", self.repo / "file.txt"):
+            self.assertEqual(self.request("/api/folders?path=" + quote(str(invalid)))[0], 400)
+        self.assertEqual(self.request("/api/folders", token=False)[0], 403)
+        self.assertEqual(self.request("/api/folders", origin="https://outside.example")[0], 403)
+        self.assertEqual(set(self.repo.rglob("*")), before)
 
     def test_api_requires_launch_token_and_same_origin(self):
         self.assertEqual(self.request("/api/state", token=False)[0], 403)

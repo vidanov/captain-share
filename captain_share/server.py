@@ -17,6 +17,31 @@ from . import repositories as r
 WEB = Path(__file__).parent / "web"
 
 
+def folder_listing(target, value="", show_hidden=False):
+    path = Path(value).expanduser() if value else target
+    if not path.is_absolute():
+        path = target / path
+    path = c.root(path)
+    entries = []
+    for item in path.iterdir():
+        if item.name.startswith(".") and not show_hidden:
+            continue
+        try:
+            if item.is_dir():
+                entries.append({"name": item.name, "path": str(item)})
+        except OSError:
+            continue
+    entries.sort(key=lambda item: item["name"].casefold())
+    return {
+        "path": str(path),
+        "parent": str(path.parent),
+        "home": str(Path.home()),
+        "project": str(target),
+        "folders": entries[:1000],
+        "truncated": len(entries) > 1000,
+    }
+
+
 def make_server(target, port=0):
     target = c.root(target)
     token = secrets.token_urlsafe(32)
@@ -66,6 +91,13 @@ def make_server(target, port=0):
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
                     self.respond(result)
+                elif parsed.path == "/api/folders":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        folder_listing(
+                            target, query.get("path", [""])[0], query.get("hidden", [""])[0] == "1"
+                        )
+                    )
                 elif parsed.path == "/api/repository":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(r.status(target, source))

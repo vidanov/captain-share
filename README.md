@@ -210,3 +210,9 @@ updates its live linked assets immediately. Push sends the current committed HEA
 to the displayed branch without force; commit local file changes in your Git client
 first. A changed repository invalidates the pending confirmation. These actions
 use the existing Git hooks. They do not automatically resolve conflicts or commit.
+
+Folder fields include a local folder picker with Up, Home, Current folder, and
+Show hidden folders. For cloning, select a parent and enter the new checkout
+folder name. Browsing or cancelling does not create folders or change connections.
+The picker lists directories on the computer running Captain Share, using the
+same authenticated localhost API as the rest of the interface.
