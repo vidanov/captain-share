@@ -3,6 +3,7 @@ import json
 import threading
 from urllib.parse import quote
 
+from captain_share import __version__
 from captain_share.server import make_server
 from tests.test_sharing import SharingFixture
 
@@ -61,6 +62,21 @@ class ServerTests(SharingFixture):
         self.assertEqual(self.request("/api/folders", token=False)[0], 403)
         self.assertEqual(self.request("/api/folders", origin="https://outside.example")[0], 403)
         self.assertEqual(set(self.repo.rglob("*")), before)
+
+    def test_about_deep_link_serves_packaged_version_and_license(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=4)
+        try:
+            conn.request("GET", "/about")
+            response = conn.getresponse()
+            body = response.read().decode()
+            self.assertEqual(response.status, 200)
+            self.assertIn("Version " + __version__, body)
+            self.assertNotIn("__APP_VERSION__", body)
+            self.assertIn("MIT License", body)
+            self.assertIn('id="about-page"', body)
+            self.assertNotIn(str(self.repo), body)
+        finally:
+            conn.close()
 
     def test_api_requires_launch_token_and_same_origin(self):
         self.assertEqual(self.request("/api/state", token=False)[0], 403)

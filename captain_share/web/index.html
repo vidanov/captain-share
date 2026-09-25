@@ -15,8 +15,12 @@
         <h1>Captain Share</h1>
       </div>
       <span class="local">● Local workspace</span>
+      <a href="/" id="workspace-link" class="header-link" aria-current="page"
+        >Workspace</a
+      >
+      <a href="/about" id="about-link" class="header-link">About</a>
     </header>
-    <main>
+    <main id="workspace-page">
       <section class="intro">
         <div>
           <h2>A home for what your agents know.</h2>
@@ -204,6 +208,360 @@
         Skills · Agents · Prompts · Steering · Copilot instructions
         <span>One library. Many independent projects.</span>
       </footer>
+    </main>
+
+    <main id="about-page" hidden>
+      <section class="about-hero">
+        <p class="eyebrow">ABOUT CAPTAIN SHARE</p>
+        <h2 id="about-title" tabindex="-1">
+          One library. Many independent projects.
+        </h2>
+        <p>
+          A local tool for sharing skills, agents, prompts, and instructions
+          across repositories. Each library owns its originals and keeps its own
+          access rights. Each project chooses what to use and contribute.
+        </p>
+        <div class="about-facts">
+          <span class="badge">Version __APP_VERSION__</span
+          ><span class="badge">MIT license</span
+          ><span class="badge">macOS &amp; Linux</span
+          ><span class="badge">CLI + local web UI</span>
+        </div>
+      </section>
+      <div class="about-grid">
+        <section class="card">
+          <h3>Start here</h3>
+          <ol>
+            <li>
+              <strong>Connect a library.</strong> Choose an existing checkout,
+              or use Clone and connect with an HTTPS/SSH repository URL and a
+              new local folder.
+            </li>
+            <li>
+              <strong>Choose assets.</strong> Receive individual assets or use
+              Install full pack for every currently available asset in the
+              library.
+            </li>
+            <li>
+              <strong>Review and apply.</strong> Preview shows the file changes
+              and any conflicts. Apply changes performs the installation.
+            </li>
+            <li>
+              <strong>Check Installed.</strong> Inspect managed links and
+              archive assets you no longer want in this project.
+            </li>
+          </ol>
+          <p>
+            Select all and Deselect all include filtered-out assets. Full-pack
+            selection is a snapshot; select newly added library assets when you
+            want to include them.
+          </p>
+        </section>
+        <section class="card">
+          <h3>What “current folder” means</h3>
+          <p>
+            The exact directory where you start the CLI is the target. The web
+            interface stays attached to that directory for its whole session.
+          </p>
+          <pre><code>cd /path/to/project
+captain-share serve --open</code></pre>
+          <p>Choose another target explicitly:</p>
+          <pre><code>captain-share --target /path/to/project serve --open</code></pre>
+          <p>
+            The folder picker browses the computer running Captain Share. It
+            fills the path field; choosing a folder does not connect, install,
+            or clone anything.
+          </p>
+        </section>
+        <section class="card">
+          <h3>How sharing works</h3>
+          <dl>
+            <dt>Receive</dt>
+            <dd>
+              Creates live symbolic links to library originals. Editing an
+              original, or pulling updates into its checkout, updates every
+              project linked to it.
+            </dd>
+            <dt>Contribute</dt>
+            <dd>
+              Copies selected local originals into a library checkout. Review
+              and commit those changes before pushing. Deselecting outbound
+              content leaves the library copy in place.
+            </dd>
+            <dt>Aliases</dt>
+            <dd>
+              Change the local file or folder name. They do not rewrite skill
+              frontmatter or references inside agents.
+            </dd>
+            <dt>Source of truth</dt>
+            <dd>
+              The library holds the maintained original. To move ownership
+              there, contribute the original, archive the local copy, then
+              receive the library version.
+            </dd>
+          </dl>
+        </section>
+        <section class="card">
+          <h3>Archive and restore</h3>
+          <p>
+            Archiving preserves a local file, directory, or link and disables
+            its managed inbound selection. A shared original remains in its
+            library.
+          </p>
+          <p>
+            Restore puts the asset back if its destination is free. The Restored
+            badge records completed archive history; check Installed for the
+            current link status.
+          </p>
+          <p>
+            Archives live in the owning folder’s <code>.captain/archive/</code>.
+            Replaced outbound copies are archived in the library. There is no
+            permanent-delete command.
+          </p>
+        </section>
+        <section class="card about-wide">
+          <h3>Supported assets and destinations</h3>
+          <p>
+            Libraries can store these asset groups under <code>ip/</code> or
+            directly at their root. Choose the matching layout when connecting.
+          </p>
+          <div class="about-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset group</th>
+                  <th>Expected format</th>
+                  <th>Project destination</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Skills</td>
+                  <td>Folder containing <code>SKILL.md</code></td>
+                  <td><code>.kiro/skills/</code></td>
+                </tr>
+                <tr>
+                  <td>Agents</td>
+                  <td><code>.json</code> files</td>
+                  <td><code>.kiro/agents/</code></td>
+                </tr>
+                <tr>
+                  <td>Prompts</td>
+                  <td><code>.md</code> files</td>
+                  <td><code>.kiro/prompts/</code></td>
+                </tr>
+                <tr>
+                  <td>Steering</td>
+                  <td><code>.md</code> files</td>
+                  <td><code>.kiro/steering/</code></td>
+                </tr>
+                <tr>
+                  <td>Copilot repository instructions</td>
+                  <td><code>copilot-instructions.md</code></td>
+                  <td><code>.github/</code></td>
+                </tr>
+                <tr>
+                  <td>Copilot scoped instructions</td>
+                  <td><code>.instructions.md</code> files</td>
+                  <td><code>.github/instructions/</code></td>
+                </tr>
+                <tr>
+                  <td>Copilot prompts</td>
+                  <td><code>.prompt.md</code> files</td>
+                  <td><code>.github/prompts/</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Housekeeping files such as <code>.DS_Store</code> and
+            <code>.gitkeep</code> are omitted from discovery and shared copies.
+            Unrelated file types and prompt subfolders are not listed.
+          </p>
+        </section>
+        <section class="card">
+          <h3>Repository controls</h3>
+          <p>
+            Switch repository status between the selected library and the
+            current project’s Git root. It shows new, modified, staged, and
+            deleted files, the branch, and ahead/behind counts from the last
+            fetch.
+          </p>
+          <ul>
+            <li>
+              <strong>Clone:</strong> uses existing Git credentials. Choose a
+              new folder under an existing parent. Submodules are not cloned.
+            </li>
+            <li>
+              <strong>Pull:</strong> requires a clean checkout and accepts
+              fast-forward updates only.
+            </li>
+            <li>
+              <strong>Push:</strong> sends committed changes to the displayed
+              destination after confirmation. Commit edited files in your Git
+              client first.
+            </li>
+          </ul>
+          <p>
+            Git operations are explicit. They preserve existing hooks, do not
+            force-push, and do not resolve conflicts or make commits
+            automatically.
+          </p>
+        </section>
+        <section class="card">
+          <h3>Configuration and access</h3>
+          <p>
+            Settings are inherited in this order: global defaults, ancestor
+            project folders, then the target folder. A more specific selection
+            wins.
+          </p>
+          <dl>
+            <dt><code>~/.captain/sharing.json</code></dt>
+            <dd>Global defaults.</dd>
+            <dt><code>.captain/sharing.json</code></dt>
+            <dd>Portable library choices and selections for a folder.</dd>
+            <dt><code>.captain/sharing.local.json</code></dt>
+            <dd>Machine-local checkout paths, kept out of Git.</dd>
+            <dt><code>.captain/sharing-state.json</code></dt>
+            <dd>Local installation and copy records.</dd>
+          </dl>
+          <p>
+            Use the CLI for global/folder scopes, imports, and target
+            registration. Each target must be synced explicitly. Connecting a
+            library does not grant repository access or change its permissions.
+          </p>
+        </section>
+        <section class="card">
+          <h3>Local operation and limits</h3>
+          <p>
+            The interface runs on <code>127.0.0.1</code> with a per-launch
+            access token. It has no analytics, CDN assets, or automatic model
+            calls. Remote Git actions use your existing authentication.
+          </p>
+          <p>
+            Previews are checked again before changes are applied. Unowned
+            files, changed copies, occupied restore destinations, and retargeted
+            links produce conflicts.
+          </p>
+          <p>
+            Outbound checks flag recognizable credentials and personal paths;
+            review private or customer material yourself before contributing it
+            to a wider library.
+          </p>
+          <p>
+            Links are live, not pinned to commits. Agent dependencies must be
+            selected explicitly. File placement does not prove skill activation
+            in an IDE or CLI. Windows is not currently supported.
+          </p>
+        </section>
+        <section class="card">
+          <h3>CLI, setup, and assistance</h3>
+          <p>
+            Requires Python 3.9+, Git, and macOS or Linux. The installed tool
+            has no third-party runtime packages and needs no frontend build
+            step. Captain is not a runtime dependency.
+          </p>
+          <p>From the source checkout:</p>
+          <pre><code>./bin/captain-share --help
+./bin/captain-share --target /path/to/project serve --open</code></pre>
+          <p>Install in a virtual environment:</p>
+          <pre><code>python3 -m venv .venv
+.venv/bin/pip install .
+.venv/bin/captain-share --help</code></pre>
+          <p>
+            The bundled <code>manage-shared-assets</code> skill guides setup and
+            maintenance.
+            <code>captain-share assist "your request"</code> prepares a handoff;
+            adding <code>--run</code> explicitly starts Kiro CLI with its normal
+            approval behavior.
+          </p>
+        </section>
+        <section class="card">
+          <h3>When something needs attention</h3>
+          <ul>
+            <li>
+              <strong>Connection expired:</strong> open the complete URL printed
+              by the running server.
+            </li>
+            <li>
+              <strong>Missing library:</strong> check the local checkout path
+              and selected layout.
+            </li>
+            <li>
+              <strong>Pull unavailable:</strong> commit or stash local changes
+              in your Git client.
+            </li>
+            <li>
+              <strong>Authentication failed:</strong> verify repository access
+              in your Git client; the web UI does not prompt for credentials.
+            </li>
+            <li>
+              <strong>Preview became stale:</strong> preview again after the
+              files or configuration change.
+            </li>
+            <li>
+              <strong>Missing link:</strong> preview and apply to repair it. A
+              replaced or retargeted link needs review.
+            </li>
+          </ul>
+          <pre><code>captain-share status
+captain-share config
+captain-share --help</code></pre>
+          <p>
+            When reporting a problem, include the version, operating system,
+            action, and error message. Remove credentials and private paths from
+            shared reports.
+          </p>
+        </section>
+        <section class="card">
+          <h3>Development and license</h3>
+          <p>
+            Captain Share contributors maintain this standalone sharing tool.
+            Library content retains its own ownership, permissions, and
+            licensing.
+          </p>
+          <p>
+            Source documentation includes README.md, CONTRIBUTING.md, and the
+            configuration, migration, and design guides in docs/. Development
+            requires Node 22+ in addition to Python and Git.
+          </p>
+          <pre><code>make bootstrap
+make verify-fast
+make verify</code></pre>
+          <p>
+            Local and CI checks share the same verification entrypoint and use
+            disposable repositories. A passing installation check does not
+            measure agent performance.
+          </p>
+          <details>
+            <summary>Read the MIT license</summary>
+            <pre class="license-text">
+MIT License
+
+Copyright (c) 2026 captain-share contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre
+            >
+          </details>
+        </section>
+      </div>
     </main>
     <dialog id="folder-picker" aria-labelledby="folder-picker-title">
       <h3 id="folder-picker-title">Choose a folder</h3>

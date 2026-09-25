@@ -216,3 +216,7 @@ Show hidden folders. For cloning, select a parent and enter the new checkout
 folder name. Browsing or cancelling does not create folders or change connections.
 The picker lists directories on the computer running Captain Share, using the
 same authenticated localhost API as the rest of the interface.
+
+The About page in the web header includes the running version, quick start, asset
+formats, configuration scopes, repository controls, troubleshooting, and the MIT
+license. Switching between About and Workspace preserves unsaved selections.

@@ -627,3 +627,31 @@ $("folder-picker").onclose = () => {
   pickerVersion++;
   pickerListing = null;
 };
+
+function showPage(path, focus = true) {
+  const about = path === "/about";
+  $("workspace-page").hidden = about;
+  $("about-page").hidden = !about;
+  $("about-link").setAttribute("aria-current", about ? "page" : "false");
+  $("workspace-link").setAttribute("aria-current", about ? "false" : "page");
+  document.title = about ? "About · Captain Share" : "Captain Share";
+  if (focus && about) $("about-title").focus();
+  if (focus) window.scrollTo(0, 0);
+}
+for (const id of ["about-link", "workspace-link"])
+  $(id).onclick = (event) => {
+    if (
+      event.button ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    event.preventDefault();
+    const path = $(id).getAttribute("href");
+    if (location.pathname !== path) history.pushState(null, "", path);
+    showPage(path);
+  };
+window.addEventListener("popstate", () => showPage(location.pathname));
+showPage(location.pathname, false);

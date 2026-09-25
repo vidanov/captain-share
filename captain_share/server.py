@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__
 from . import config as c
 from . import engine as e
 from . import repositories as r
@@ -104,16 +105,23 @@ def make_server(target, port=0):
                 elif parsed.path == "/api/catalog":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(e.catalog(target, source))
-                elif parsed.path in ("/", "/app.js", "/style.css"):
-                    filename = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css"}[
-                        parsed.path
-                    ]
+                elif parsed.path in ("/", "/about", "/app.js", "/style.css"):
+                    filename = {
+                        "/": "index.html",
+                        "/about": "index.html",
+                        "/app.js": "app.js",
+                        "/style.css": "style.css",
+                    }[parsed.path]
                     mime = {
                         "/": "text/html; charset=utf-8",
+                        "/about": "text/html; charset=utf-8",
                         "/app.js": "text/javascript",
                         "/style.css": "text/css",
                     }[parsed.path]
-                    self.respond((WEB / filename).read_bytes(), content_type=mime)
+                    content = (WEB / filename).read_bytes()
+                    if filename == "index.html":
+                        content = content.replace(b"__APP_VERSION__", __version__.encode())
+                    self.respond(content, content_type=mime)
                 else:
                     self.respond({"error": "Not found"}, 404)
             except (c.ShareError, OSError, ValueError) as exc:
