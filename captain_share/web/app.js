@@ -203,29 +203,35 @@ function render() {
         el("div", row.status || row.created, "asset-type"),
         el("div", row.shared_original || row.id, "asset-path"),
       );
-      const button = el(
-        "button",
-        view === "installed"
-          ? "Archive"
-          : row.restored
-            ? "Restored"
-            : "Restore",
-        "quiet",
-      );
-      button.disabled = !!row.restored;
-      button.onclick = () =>
-        task(() =>
-          preview(
-            view === "installed"
-              ? {
-                  action: "remove",
-                  kind: row.kind,
-                  name: row.path.split("/").pop(),
-                }
-              : { action: "restore", id: row.id },
+      if (view === "archive" && row.restored) {
+        wrap.append(el("span", "Restored", "badge restored-status"));
+        main.append(
+          el(
+            "p",
+            "Already restored. This entry is archive history, not a disabled skill. Check Installed for its current link status.",
+            "hint",
           ),
         );
-      wrap.append(button);
+      } else {
+        const button = el(
+          "button",
+          view === "installed" ? "Archive" : "Restore",
+          "quiet",
+        );
+        button.onclick = () =>
+          task(() =>
+            preview(
+              view === "installed"
+                ? {
+                    action: "remove",
+                    kind: row.kind,
+                    name: row.path.split("/").pop(),
+                  }
+                : { action: "restore", id: row.id },
+            ),
+          );
+        wrap.append(button);
+      }
     }
     wrap.append(main);
     $("assets").append(wrap);

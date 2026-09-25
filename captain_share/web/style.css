@@ -444,3 +444,9 @@ footer {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.restored-status {
+  align-self: flex-start;
+  color: var(--ink);
+  opacity: 1;
+}
