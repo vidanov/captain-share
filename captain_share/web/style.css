@@ -468,8 +468,14 @@ footer {
   background: rgb(0 0 0 / 40%);
 }
 .folder-location-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
   gap: 8px;
+}
+.folder-location-row button {
+  width: auto;
+  margin: 0;
 }
 .folder-location-row input {
   min-width: 0;
@@ -487,8 +493,10 @@ footer {
   gap: 8px;
 }
 .folder-hidden input {
-  width: auto;
+  width: 17px;
+  height: 17px;
   margin: 0;
+  accent-color: var(--ink);
 }
 #folder-list {
   max-height: 260px;
