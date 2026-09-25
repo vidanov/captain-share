@@ -13,6 +13,7 @@ ALLOWED_INTERNAL = {
     "config": set(),
     "engine": {"config"},
     "integrations": {"config", "engine"},
+    "repositories": {"config", "engine"},
 }
 
 

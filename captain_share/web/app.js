@@ -12,6 +12,8 @@ let state,
   pending = null,
   busy = false,
   drafts = {};
+let repository = null,
+  gitPending = null;
 function el(tag, text, cls) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -72,6 +74,7 @@ async function refresh() {
     : Object.keys(state.config.sources)[0] || "";
   $("installed-count").textContent = state.installed.length;
   await loadCatalog();
+  await loadRepository();
   drafts = {};
   invalidate();
   render();
@@ -94,6 +97,7 @@ function remember(row, input, alias) {
     alias: alias?.value || "",
   };
   invalidate();
+  selectionCount();
 }
 function render() {
   const titles = {
@@ -120,6 +124,9 @@ function render() {
     .querySelectorAll("nav button")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === view));
   $("selection-actions").hidden = !["inbound", "outbound"].includes(view);
+  $("bulk-actions").hidden = !["inbound", "outbound"].includes(view);
+  $("full-pack").hidden = view !== "inbound";
+  selectionCount();
   let rows =
     view === "inbound"
       ? catalog
@@ -285,6 +292,7 @@ $("source").onchange = () =>
   task(async () => {
     invalidate();
     await loadCatalog();
+    await loadRepository();
     render();
   });
 $("refresh").onclick = () => task(refresh);
@@ -312,4 +320,198 @@ document.querySelectorAll("nav button").forEach(
       render();
     }),
 );
+function selectable() {
+  return (view === "inbound" ? catalog : state.candidates).filter((r) =>
+    ["available", "local"].includes(r.status),
+  );
+}
+function selectionCount() {
+  if (!state || !["inbound", "outbound"].includes(view)) return;
+  const rows = selectable();
+  const selected = rows.filter((r) => {
+    const draft = drafts[draftKey(r)],
+      saved = state.config[view][key(r)];
+    return draft
+      ? draft.enabled
+      : !!saved && (view !== "outbound" || saved.path === r.path);
+  }).length;
+  $("selected-count").textContent =
+    selected +
+    " / " +
+    rows.length +
+    " selected · all assets, including filtered results";
+}
+function selectAll(enabled) {
+  if (!$("source").value) throw new Error("Choose a library first.");
+  const rows = selectable();
+  if (
+    enabled &&
+    view === "outbound" &&
+    new Set(rows.map(key)).size !== rows.length
+  )
+    throw new Error(
+      "Multiple originals share a name. Select the intended originals individually.",
+    );
+  for (const row of rows) {
+    const saved = state.config[view][key(row)],
+      prior = drafts[draftKey(row)];
+    drafts[draftKey(row)] = {
+      row,
+      enabled,
+      alias: prior?.alias ?? saved?.alias ?? "",
+    };
+  }
+  invalidate();
+  render();
+}
+$("select-all").onclick = () => task(async () => selectAll(true));
+$("deselect-all").onclick = () => task(async () => selectAll(false));
+$("full-pack").onclick = () =>
+  task(async () => {
+    selectAll(true);
+    await saveSelection();
+    await preview({ direction: "inbound" });
+  });
+function repoSource() {
+  return $("repo-scope").value === "project" ? "" : $("source").value;
+}
+async function loadRepository() {
+  gitPending = null;
+  $("git-review").hidden = true;
+  const area = $("repo-status");
+  area.replaceChildren();
+  repository = null;
+  $("git-pull").disabled = true;
+  $("git-push").disabled = true;
+  if ($("repo-scope").value === "library" && !$("source").value) {
+    area.append(el("p", "Connect a library to see its repository."));
+    return;
+  }
+  try {
+    repository = await api(
+      "repository?source=" + encodeURIComponent(repoSource()),
+    );
+  } catch (error) {
+    area.append(el("p", error.message));
+    return;
+  }
+  area.append(el("p", repository.path, "asset-path"));
+  if (!repository.is_repo) {
+    area.append(el("p", "This folder is not a Git repository."));
+    return;
+  }
+  area.append(
+    el("strong", repository.branch || "Detached HEAD"),
+    el(
+      "p",
+      repository.clean
+        ? "Working tree clean"
+        : repository.changes.length +
+            (repository.changes.length === 1
+              ? " changed file"
+              : " changed files"),
+    ),
+    el(
+      "p",
+      repository.ahead === null
+        ? "No upstream tracking branch"
+        : repository.ahead + " ahead · " + repository.behind + " behind",
+    ),
+  );
+  if (repository.remote_url)
+    area.append(el("p", repository.remote_url, "asset-path"));
+  const list = el("ul", undefined, "git-files");
+  for (const row of repository.changes)
+    list.append(el("li", changeLabel(row.status) + " · " + row.path));
+  area.append(list);
+  const ready = !!(
+    repository.branch &&
+    repository.head &&
+    repository.remote_url
+  );
+  $("git-pull").disabled = !ready || !repository.clean;
+  $("git-push").disabled = !ready;
+}
+$("repo-scope").onchange = () => task(loadRepository);
+for (const action of ["pull", "push"])
+  $("git-" + action).onclick = () =>
+    task(async () => {
+      await loadRepository();
+      if (!repository?.is_repo) return;
+      gitPending = {
+        action,
+        source: repoSource(),
+        fingerprint: repository.fingerprint,
+      };
+      $("git-summary").textContent =
+        action === "push"
+          ? "Push committed HEAD to " +
+            repository.push_url +
+            " → " +
+            repository.remote_ref +
+            "? Uncommitted files are excluded."
+          : "Pull from " +
+            repository.remote_url +
+            " → " +
+            repository.remote_ref +
+            " into " +
+            repository.path +
+            "? Linked assets update immediately.";
+      $("git-confirm").textContent = "Confirm " + action;
+      $("git-review").hidden = false;
+    });
+$("git-cancel").onclick = () => {
+  gitPending = null;
+  $("git-review").hidden = true;
+};
+$("git-confirm").onclick = () =>
+  task(async () => {
+    if (!gitPending) return;
+    const request = gitPending;
+    gitPending = null;
+    $("git-review").hidden = true;
+    message("Running " + request.action + "…");
+    const result = await api("git", request);
+    await refresh();
+    message(result.output);
+  });
+$("clone-source").onsubmit = (event) => {
+  event.preventDefault();
+  task(async () => {
+    message("Cloning repository…");
+    const name = $("clone-name").value;
+    await api("clone", {
+      name,
+      url: $("clone-url").value,
+      path: $("clone-path").value,
+      layout: $("clone-layout").value,
+    });
+    await refresh();
+    $("source").value = name;
+    await loadCatalog();
+    await loadRepository();
+    render();
+    message(
+      "Repository cloned and connected. Choose Install full pack to preview all assets.",
+    );
+  });
+};
 task(refresh);
+
+function changeLabel(status) {
+  if (status === "??") return "New file";
+  if (status.includes("U") || ["AA", "DD"].includes(status)) return "Conflict";
+  const names = {
+    A: "Added",
+    M: "Modified",
+    D: "Deleted",
+    R: "Renamed",
+    C: "Copied",
+    T: "Type changed",
+  };
+  const parts = [];
+  if (status[0] !== " ")
+    parts.push((names[status[0]] || status[0]) + " (staged)");
+  if (status[1] !== " ") parts.push(names[status[1]] || status[1]);
+  return parts.join(" / ");
+}

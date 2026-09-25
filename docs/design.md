@@ -10,7 +10,8 @@ The manager separates content ownership from installation:
 Configuration is layered global → ancestor folders → target, with local bindings
 separate from portable selections. Inbound links are live. Outbound transfers copy
 whole selected asset units; skills retain their support files. There is no background
-publication, Git push, remote credential store, or model required for mechanical work.
+publication, remote credential store, or model required for mechanical work.
+Explicit UI actions can clone, pull or push using existing Git credentials.
 
 The implementation was informed by an existing Captain tooling interface and local
 profile/link/preset workflows. It is a fresh standalone implementation; private engine
@@ -27,9 +28,9 @@ and no remote model calls. It binds to loopback, checks Host/Origin, uses a per-
 access token for all API operations, and never exposes an arbitrary command runner.
 The token is in the URL fragment, then held in session storage. Stop the process to
 revoke it. The UI can change only its startup target plus explicitly connected local
-library destinations.
+library destinations, plus an explicitly chosen new clone destination.
 
-Current scope: POSIX/macOS/Linux, existing local checkouts, Kiro paths and Copilot
+Current scope: POSIX/macOS/Linux, local or explicitly cloned checkouts, Kiro paths and Copilot
 files. Per-agent discovery rules still apply. Future work can add pinned copies,
-agent dependency closure, Windows link handling, explicit Git fetch/clone workflows,
+agent dependency closure, Windows link handling,
 and a Captain adapter without making those claims for this release.

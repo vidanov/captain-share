@@ -13,7 +13,8 @@ previews and recovery. Model-driven assistance must not become another installer
 `config.py` owns settings and low-level path/lock helpers. `engine.py` owns plans,
 conflicts and filesystem transactions, and may import only `config` from this
 package. `integrations.py` may use those two modules for a Kiro handoff or Captain
-connection import. CLI and web are callers of this engine.
+connection import. CLI and web are callers of this engine. `repositories.py` uses config and engine
+for explicit Git operations and status; it does not depend on either interface.
 
 `scripts/check_repository.py` enforces these static Python import directions and
 runs in full and fast verification. Its tests permit the real graph, plant a

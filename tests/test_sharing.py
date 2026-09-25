@@ -42,6 +42,40 @@ class SharingFixture(unittest.TestCase):
 
 
 class SharingTests(SharingFixture):
+    def test_housekeeping_and_unrelated_entries_are_not_assets(self):
+        for base in (self.lib / "ip", self.repo / "ip"):
+            for kind in ("skills", "agents", "prompts", "steering"):
+                folder = base / kind
+                folder.mkdir(parents=True, exist_ok=True)
+                for name in (".DS_Store", ".gitkeep"):
+                    (folder / name).write_text("metadata")
+            (base / "prompts/box").mkdir()
+            (base / "prompts/notes.txt").write_text("not a prompt")
+        self.assertEqual([r["name"] for r in e.catalog(self.repo, "team")], ["hello"])
+        self.assertEqual(e.scan(self.repo), [])
+
+    def test_nested_housekeeping_is_ignored_and_not_exported(self):
+        local = self.skill(self.repo / "skills/new")
+        (local / ".DS_Store").write_text("metadata")
+        (local / "references").mkdir()
+        (local / "references/.gitkeep").write_text("")
+        (local / "references/guide.md").write_text("Useful content")
+        self.assertEqual(e.scan(self.repo)[0]["status"], "local")
+        c.select(self.repo, "outbound", "team", "skills", "new", path="skills/new")
+        planned = e.plan(self.repo, "outbound")
+        (local / ".DS_Store").write_text("changed metadata")
+        e.apply(planned)
+        dest = self.lib / "ip/skills/new"
+        self.assertFalse((dest / ".DS_Store").exists())
+        self.assertFalse((dest / "references/.gitkeep").exists())
+        self.assertTrue((dest / "references/guide.md").exists())
+        self.assertTrue((local / ".DS_Store").exists())
+        self.assertEqual(e.snapshot(local), e.snapshot(dest))
+        (dest / ".DS_Store").write_text("metadata")
+        self.assertEqual(e.catalog(self.repo, "team")[-1]["status"], "available")
+        (dest / ".env").write_text("private")
+        self.assertEqual(e.catalog(self.repo, "team")[-1]["status"], "invalid")
+
     def test_live_link_alias_and_inbound_removal_preserve_original(self):
         self.select("greet")
         e.apply(e.plan(self.repo))

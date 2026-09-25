@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import config as c
 from . import engine as e
+from . import repositories as r
 
 WEB = Path(__file__).parent / "web"
 
@@ -65,6 +66,9 @@ def make_server(target, port=0):
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
                     self.respond(result)
+                elif parsed.path == "/api/repository":
+                    source = parse_qs(parsed.query).get("source", [""])[0]
+                    self.respond(r.status(target, source))
                 elif parsed.path == "/api/catalog":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(e.catalog(target, source))
@@ -99,7 +103,17 @@ def make_server(target, port=0):
                 if not isinstance(data, dict):
                     raise c.ShareError("Expected a JSON object")
                 path = urlparse(self.path).path
-                if path == "/api/source":
+                if path == "/api/clone":
+                    result = r.clone(
+                        target, data["name"], data["url"], data["path"], data.get("layout", "ip")
+                    )
+                    plans.clear()
+                elif path == "/api/git":
+                    result = r.operate(
+                        target, data.get("source", ""), data["action"], data["fingerprint"]
+                    )
+                    plans.clear()
+                elif path == "/api/source":
                     result = c.add_source(
                         target, data["name"], data["path"], data.get("layout", "ip")
                     )

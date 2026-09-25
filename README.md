@@ -83,8 +83,8 @@ captain-share --target /path/to/project sync --direction outbound --apply
 ```
 
 Outbound copies go into the local library checkout. Review that diff, run the
-library's checks, and commit/push normally. The tool never pushes Git repositories
-or copies whole projects. It refuses nested symlinks, local/generated folders,
+library's checks, and commit normally. Push is available as an explicit, confirmed
+UI action. Sharing never copies whole projects. It refuses nested symlinks, local/generated folders,
 recognizable credentials, and personal absolute paths in selected content. These
 checks are heuristics, not a confidentiality or licensing certification. Review
 what you select before sharing it with a broader audience.
@@ -183,3 +183,30 @@ See [contributing](CONTRIBUTING.md) for formatting and targeted tests, and
 [ai-ready-repo](https://github.com/vidanov/ai-ready-repo). Tests use disposable
 repositories and loopback servers. See [design and boundaries](docs/design.md).
 MIT licensed.
+
+Housekeeping files (`.DS_Store`, `.gitkeep`) are hidden from discovery and
+excluded from shared copies and content comparisons, including inside skills.
+Unrelated file types and prompt subfolders are omitted from the asset list.
+Original files remain untouched; unsafe content such as `.env` still blocks sharing.
+
+### Bulk install and Git in the web interface
+
+Select all / Deselect all affect every eligible asset in the chosen library and
+view, including search results currently hidden. Existing aliases are preserved.
+Install full pack selects every available asset in the library and opens the
+normal preview; Apply changes installs it. Invalid assets are skipped. Selection
+is a snapshot: new assets added to a library later require selection again.
+
+Clone and connect accepts an HTTPS/SSH URL (or absolute local Git repository path)
+and a new absolute checkout path with an existing parent. Authentication uses your
+existing Git setup, with interactive credential prompts disabled. It does not
+clone submodules. A successful clone remains on disk if registration fails.
+
+Repository status switches between the selected library and current project's
+Git root. It lists changed/untracked files, branch, and ahead/behind counts from
+the last fetch. Pull and Push show their destination for confirmation. Pull uses
+fast-forward only and requires a clean working tree. Pulling a shared library
+updates its live linked assets immediately. Push sends the current committed HEAD
+to the displayed branch without force; commit local file changes in your Git client
+first. A changed repository invalidates the pending confirmation. These actions
+use the existing Git hooks. They do not automatically resolve conflicts or commit.

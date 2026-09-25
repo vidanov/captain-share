@@ -424,3 +424,23 @@ footer {
 [hidden] {
   display: none !important;
 }
+
+.bulk {
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.bulk .hint {
+  flex-basis: 100%;
+}
+.git-files {
+  max-height: 220px;
+  overflow: auto;
+  padding-left: 18px;
+  font: 11px monospace;
+  overflow-wrap: anywhere;
+}
+#repo-status p,
+#git-summary {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

@@ -17,6 +17,24 @@ from pathlib import Path
 from . import config as c
 
 MAX_ASSET_BYTES = 64 * 1024 * 1024
+HOUSEKEEPING = {".DS_Store", ".gitkeep"}
+
+
+def ignored(path, base):
+    return any(part in HOUSEKEEPING for part in path.relative_to(base).parts)
+
+
+def candidate(path, kind):
+    if path.name.startswith("."):
+        return False
+    if kind == "skills":
+        return path.is_dir() or path.is_symlink()
+    matches = (
+        path.name == "copilot-instructions.md"
+        if kind == "copilot"
+        else path.name.endswith(c.SUFFIXES[kind])
+    )
+    return matches and (path.is_file() or path.is_symlink())
 
 
 def digest(value):
@@ -33,6 +51,8 @@ def snapshot(path):
     files = [path] if path.is_file() else sorted(path.rglob("*"))
     rows, size = [], 0
     for p in files:
+        if p != path and ignored(p, path):
+            continue
         rel = "." if p == path else p.relative_to(path).as_posix()
         if p.is_symlink():
             rows.append([rel, "link", os.readlink(p)])
@@ -65,9 +85,11 @@ def validate_asset(path, kind, outbound=False):
         raise c.ShareError(f"Asset is not a file: {path}")
     files = sorted(path.rglob("*")) if path.is_dir() else [path]
     for p in files:
+        if p != path and ignored(p, path):
+            continue
         if p.is_symlink():
             raise c.ShareError(f"Asset contains a symlink: {p}")
-        if p.name in {".git", ".env", "node_modules", "__pycache__", ".DS_Store"}:
+        if p.name in {".git", ".env", "node_modules", "__pycache__"}:
             raise c.ShareError(f"Remove local/generated material before sharing: {p.name}")
         if outbound and p.is_file():
             if p.stat().st_size > MAX_ASSET_BYTES:
@@ -133,6 +155,8 @@ def catalog(target, source):
         if not directory.is_dir():
             continue
         for item in sorted(directory.iterdir()):
+            if not candidate(item, kind):
+                continue
             row = {"source": source, "kind": kind, "name": item.name, "path": str(item)}
             try:
                 c.asset_name(kind, item.name)
@@ -156,7 +180,7 @@ def scan(target):
             if not folder.is_dir():
                 continue
             for p in sorted(folder.iterdir()):
-                if p in seen:
+                if p in seen or not candidate(p, kind):
                     continue
                 try:
                     c.asset_name(kind, p.name)
@@ -497,7 +521,7 @@ class Transaction:
         payload = temp / "payload"
         try:
             if src.is_dir():
-                shutil.copytree(src, payload)
+                shutil.copytree(src, payload, ignore=shutil.ignore_patterns(*HOUSEKEEPING))
             else:
                 shutil.copy2(src, payload)
             os.rename(payload, dst)

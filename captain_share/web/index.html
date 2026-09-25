@@ -69,6 +69,60 @@
               </form>
             </details>
           </section>
+          <section class="card">
+            <details>
+              <summary>Clone a repository</summary>
+              <form id="clone-source">
+                <label for="clone-name">Library name</label
+                ><input id="clone-name" required placeholder="shared-tools" />
+                <label for="clone-url">Repository URL</label
+                ><input
+                  id="clone-url"
+                  required
+                  placeholder="https://github.com/team/shared-tools.git"
+                />
+                <label for="clone-path">New checkout folder</label
+                ><input
+                  id="clone-path"
+                  required
+                  placeholder="/path/to/shared-tools"
+                />
+                <label for="clone-layout">Repository layout</label
+                ><select id="clone-layout">
+                  <option value="ip">ip/skills, ip/agents, …</option>
+                  <option value="flat">skills, agents, …</option>
+                </select>
+                <button type="submit">Clone and connect</button>
+                <p class="hint">
+                  Uses your existing Git credentials. Choose a folder that does
+                  not exist yet.
+                </p>
+              </form>
+            </details>
+          </section>
+          <section class="card" aria-label="Repository status">
+            <h3>Repository status</h3>
+            <label for="repo-scope">Show repository</label
+            ><select id="repo-scope">
+              <option value="library">Selected library</option>
+              <option value="project">Current project</option>
+            </select>
+            <div id="repo-status" aria-live="polite"></div>
+            <div class="actions">
+              <button id="git-pull" class="quiet">Pull</button
+              ><button id="git-push" class="quiet">Push</button>
+            </div>
+            <p class="hint">
+              Ahead/behind reflects the last fetch. Pull updates live linked
+              assets. Push sends commits; commit new file changes in your Git
+              client first.
+            </p>
+            <div id="git-review" hidden>
+              <p id="git-summary"></p>
+              <button id="git-confirm">Confirm</button
+              ><button id="git-cancel" class="quiet">Cancel</button>
+            </div>
+          </section>
           <section class="card compact">
             <h3>How sharing works</h3>
             <p>
@@ -107,6 +161,12 @@
               type="search"
               placeholder="Search by name or type"
             />
+            <div id="bulk-actions" class="actions bulk">
+              <button id="select-all" class="quiet">Select all</button
+              ><button id="deselect-all" class="quiet">Deselect all</button
+              ><button id="full-pack">Install full pack</button>
+              <span id="selected-count" class="hint"></span>
+            </div>
             <div id="assets" class="assets"></div>
             <div class="actions" id="selection-actions">
               <button id="save">Save selection</button
