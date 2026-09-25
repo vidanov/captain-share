@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Captain Share</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div class="mark">C↗</div>
+      <div>
+        <p class="eyebrow">YOUR SHARED TOOLBOX</p>
+        <h1>Captain Share</h1>
+      </div>
+      <span class="local">● Local workspace</span>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <h2>A home for what your agents know.</h2>
+          <p>Choose what this project receives and what it contributes.</p>
+        </div>
+        <button id="refresh" class="quiet">Refresh</button>
+      </section>
+      <div id="message" role="status" aria-live="polite"></div>
+      <section class="workspace">
+        <span class="label">CURRENT FOLDER</span
+        ><code id="target">Connecting…</code>
+        <p class="scope-hint">
+          This window manages the folder chosen when it started.
+        </p>
+        <details>
+          <summary>Configuration layers</summary>
+          <ul id="layers"></ul>
+        </details>
+      </section>
+      <div class="layout">
+        <aside>
+          <section class="card">
+            <h3>Connected libraries</h3>
+            <label for="source">Library</label
+            ><select id="source">
+              <option value="">Choose a library</option>
+            </select>
+            <p class="hint">
+              Each library keeps its own originals and repository access.
+            </p>
+            <details>
+              <summary>Connect a checkout</summary>
+              <form id="add-source">
+                <label for="source-name">Short name</label
+                ><input
+                  id="source-name"
+                  required
+                  placeholder="team-tools"
+                  pattern="[a-zA-Z0-9_-][a-zA-Z0-9_.-]*"
+                /><label for="source-path">Local checkout folder</label
+                ><input
+                  id="source-path"
+                  required
+                  placeholder="/path/to/library"
+                /><label for="source-layout">Assets live under</label
+                ><select id="source-layout">
+                  <option value="ip">ip/skills, ip/agents, …</option>
+                  <option value="flat">skills, agents, …</option></select
+                ><button type="submit">Connect library</button>
+              </form>
+            </details>
+          </section>
+          <section class="card compact">
+            <h3>How sharing works</h3>
+            <p>
+              <strong>Receive</strong> creates live shortcuts. Editing an
+              original updates every connected project.
+            </p>
+            <p>
+              <strong>Contribute</strong> copies selected originals into a
+              library checkout. Commit and push from that repository when ready.
+            </p>
+            <p>
+              <strong>Archive</strong> preserves removed local assets so you can
+              restore them.
+            </p>
+          </section>
+        </aside>
+        <section class="content">
+          <nav aria-label="Asset views">
+            <button data-tab="inbound" class="active">Receive</button
+            ><button data-tab="outbound">Contribute</button
+            ><button data-tab="installed">
+              Installed <span id="installed-count">0</span></button
+            ><button data-tab="archive">Archive</button>
+          </nav>
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h3 id="view-title">Receive from a library</h3>
+                <p id="view-help">Choose the tools this project can use.</p>
+              </div>
+              <span id="count" class="badge">0 assets</span>
+            </div>
+            <label class="search-label" for="search">Filter assets</label
+            ><input
+              id="search"
+              type="search"
+              placeholder="Search by name or type"
+            />
+            <div id="assets" class="assets"></div>
+            <div class="actions" id="selection-actions">
+              <button id="save">Save selection</button
+              ><button id="preview" class="secondary">Preview changes</button>
+            </div>
+          </div>
+          <section id="review" class="card review" hidden>
+            <div class="panel-heading">
+              <h3>Review changes</h3>
+              <span id="review-count" class="badge"></span>
+            </div>
+            <p>These changes apply to the folders shown below.</p>
+            <div id="changes"></div>
+            <div id="errors" role="alert"></div>
+            <div class="actions">
+              <button id="apply" disabled>Apply changes</button
+              ><button id="dismiss" class="quiet">Dismiss</button>
+            </div>
+          </section>
+        </section>
+      </div>
+      <footer>
+        Skills · Agents · Prompts · Steering · Copilot instructions
+        <span>One library. Many independent projects.</span>
+      </footer>
+    </main>
+  </body>
+</html>

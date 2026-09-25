@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.DS_Store
+.captain/sharing.local.json
+.captain/sharing-state.json
+.captain/repositories.local.json
+.captain/archive/
+node_modules/
+.mypy_cache/
+.ruff_cache/

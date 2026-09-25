@@ -1,0 +1,10 @@
+{
+  "name": "captain-share-dev",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write captain_share/web",
+    "format:check": "prettier --check captain_share/web"
+  },
+  "devDependencies": {"prettier": "3.5.3"},
+  "engines": {"node": ">=22"}
+}
