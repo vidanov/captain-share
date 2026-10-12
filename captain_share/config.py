@@ -241,6 +241,11 @@ def layers(target):
 
 
 def effective(target) -> dict[str, Any]:
+    home = global_dir()
+    # Selections saved in the global (home) folder are user-wide installs into
+    # ~/.kiro or ~/.claude, which every project already reads. Other targets
+    # inherit that layer's sources and tools, not its selections.
+    user_wide_only = root(target) != home.parent
     result = blank()
     result["layers"] = []
     result["tools"] = list(DEFAULT_TOOLS)
@@ -256,7 +261,7 @@ def effective(target) -> dict[str, Any]:
                 if not binding.is_absolute():
                     binding = p.parent.parent / binding
                 result["sources"][sid]["path"] = str(binding.resolve())
-        if not local:
+        if not local and not (user_wide_only and p.parent == home):
             for direction in ("inbound", "outbound"):
                 result[direction].update(data.get(direction, {}))
     for direction in ("inbound", "outbound", "sources"):

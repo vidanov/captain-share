@@ -107,6 +107,19 @@ class SharingTests(SharingFixture):
         self.assertIn("global-tools", merged["sources"])
         self.assertNotIn(str(self.lib), (self.repo / ".captain/sharing.json").read_text())
 
+    def test_home_selections_stay_user_wide_and_are_not_project_defaults(self):
+        # Make self.base the "home" folder: its .captain is the global layer.
+        with patch.dict(os.environ, {"CAPTAIN_SHARE_HOME": str(self.base / ".captain")}):
+            c.add_source(self.base, "personal", self.lib)
+            c.select(self.base, "inbound", "personal", "skills", "hello")
+            self.assertIn("personal/skills/hello", c.effective(self.base)["inbound"])
+            merged = c.effective(self.repo)
+            self.assertNotIn("personal/skills/hello", merged["inbound"])
+            self.assertIn("personal", merged["sources"])
+            c.set_tools(self.base, ["kiro", "claude"])
+            self.assertEqual(c.effective(self.repo)["tools"], ["kiro", "claude"])
+            self.assertEqual(e.plan(self.repo)["changes"], [])
+
     def test_preview_is_read_only_and_saved_preview_goes_stale(self):
         self.select()
         before = {str(p): p.read_bytes() for p in self.repo.rglob("*") if p.is_file()}
