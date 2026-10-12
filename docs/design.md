@@ -30,7 +30,8 @@ The token is in the URL fragment, then held in session storage. Stop the process
 revoke it. The UI can change only its startup target plus explicitly connected local
 library destinations, plus an explicitly chosen new clone destination.
 
-Current scope: POSIX/macOS/Linux, local or explicitly cloned checkouts, Kiro paths and Copilot
-files. Per-agent discovery rules still apply. Future work can add pinned copies,
+Current scope: POSIX/macOS/Linux, local or explicitly cloned checkouts, Kiro paths, Claude
+Code skill paths, and Copilot files ([ADR 002](adr/002-agent-tool-destinations.md)). Kiro powers
+are installed through `kiro-cli`, never written directly ([ADR 003](adr/003-kiro-powers.md)). Per-agent discovery rules still apply. Future work can add pinned copies,
 agent dependency closure, Windows link handling,
 and a Captain adapter without making those claims for this release.

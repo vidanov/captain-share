@@ -1,9 +1,10 @@
 # Captain Share
 
-A standalone, local tool for sharing skills, agents, prompts, and steering between
-independent repositories. Use a CLI, a small web interface, or the bundled
-management skill. Keep originals in libraries with their own access rights; each
-project chooses what it receives and contributes.
+A standalone, local tool for sharing skills, agents, prompts, steering, and Kiro
+powers between independent repositories, for Kiro, Claude Code, and GitHub
+Copilot. Use a CLI, a small web interface, or the bundled management skill. Keep
+originals in libraries with their own access rights; each project chooses what it
+receives and contributes.
 
 The public tool contains the sharing mechanics. Your libraries and their private
 content stay in separate repositories. Captain is not a runtime dependency.
@@ -40,10 +41,12 @@ chosen at startup; navigating the UI or changing another terminal's directory do
 not change it. Global and ancestor settings are inherited into that target.
 
 The server binds only to `127.0.0.1`, chooses a free port, and prints a URL with a
-per-launch access token. The UI supports connecting a checkout, choosing inbound
-and outbound assets, setting aliases, previewing/applying changes, and archiving
-and restoring local assets. Each server is tied to the target folder it was started
-for; start another instance for another project.
+per-launch access token. The UI supports connecting a checkout, choosing which
+tools receive links, choosing inbound and outbound assets, setting aliases,
+previewing/applying changes, resolving conflicts, installing Kiro powers, and
+archiving and restoring local assets. Each server is tied to the target folder it
+was started for; start another instance for another project. See
+[Web interface](#web-interface) for details.
 
 ## Receive assets
 
@@ -72,6 +75,60 @@ Supported kinds: `skills`, `agents`, `prompts`, `steering`, `copilot`,
 Copilot destinations are under `.github/`. Skill folders require `SKILL.md`, agents
 use `.json`, and prompts/steering use `.md`. Installed files still need validation
 in the consuming CLI/IDE; placement does not prove activation or discovery.
+
+Housekeeping files (`.DS_Store`, `.gitkeep`, `__pycache__/`) are hidden from discovery and
+excluded from shared copies and content comparisons, including inside skills.
+Unrelated file types and prompt subfolders are omitted from the asset list.
+Original files remain untouched; unsafe content such as `.env` still blocks sharing.
+
+### Kiro, Claude Code, and Copilot
+
+One library original can be linked into several agent tools. Choose the tools per
+target (or globally); the deepest configuration that names tools wins:
+
+```bash
+captain-share --target /path/to/project tools            # show: kiro copilot (default)
+captain-share --target /path/to/project tools kiro claude copilot
+captain-share --target /path/to/project sync --apply
+```
+
+| Kind | Kiro | Claude Code | Copilot |
+| --- | --- | --- | --- |
+| `skills` | `.kiro/skills/` | `.claude/skills/` | |
+| `agents`, `prompts`, `steering` | `.kiro/…` | | |
+| `copilot*` | | | `.github/…` |
+
+Each enabled tool gets its own live link to the same original; nothing is copied
+between tool folders. Turning a tool off archives its links at the next apply.
+`scan` also finds skills in `.claude/skills/`, so a Claude-only skill can be
+contributed to a library and then received for every tool. Steering, agents, and
+prompts use different formats in Claude Code and are not converted.
+See [ADR 002](docs/adr/002-agent-tool-destinations.md).
+
+### Kiro powers
+
+Keep powers in the library under `ip/powers/NAME/`: an Agent Plugins 1.0.0
+`plugin.json` (with `name`, `version`, `description`, `author.name`, `keywords`)
+or a legacy `POWER.md`, plus optional `skills/` and `mcp.json`. The manifest name
+must equal the folder name, because Kiro installs by manifest name and would
+otherwise replace a different power.
+
+Kiro installs powers user-wide by copying them, so powers are not linked into
+projects. Captain Share previews and then runs Kiro's own installer:
+
+```bash
+captain-share --target /path/to/project powers list --source team
+captain-share --target /path/to/project powers install team review-power          # preview
+captain-share --target /path/to/project powers install team review-power --apply  # install or update
+captain-share --target /path/to/project powers uninstall team review-power --apply
+```
+
+`list` compares Kiro's copy in `~/.kiro/powers/installed/` with the library:
+`not-installed`, `current`, or `differs` (update available, or installed from
+elsewhere). Library edits reach Kiro only after another install. Contributing a
+power requires MCP `env` values to be `${VAR}` references. The web UI offers the
+same Install, Update, and Uninstall actions on power rows. Requires `kiro-cli` on
+`PATH`. See [ADR 003](docs/adr/003-kiro-powers.md).
 
 ## Contribute assets
 
@@ -136,7 +193,10 @@ captain-share --target /path/to/project restore ARCHIVE_ID --apply
 ```
 
 Removal archives the local file, directory, or symlink. For a managed link it also
-disables the inbound selection, including inherited selections. The shared original
+disables the inbound selection, including inherited selections, and archives that
+selection's links for every tool. `remove KIND NAME --path .claude/skills/NAME`
+archives only that unmanaged local copy and keeps the selection, so the library
+version can be received in its place. The shared original
 is unaffected. Restore refuses occupied or Git-tracked destinations. Archives live
 under the owning folder's `.captain/archive/`; replaced outbound copies are archived
 in the **library**, so private originals are not moved into a consuming project.
@@ -167,35 +227,37 @@ The first form shows the handoff; it does not call a model. The tool does not ad
 blanket trust flags. Kiro can help interpret intent and content, while the CLI
 performs the mechanical work.
 
-## Development
+## Web interface
 
-Development needs Python 3.9+, Git and Node 22+; installed CLI/web use still requires
-only Python and Git.
+Start it with `captain-share --target FOLDER serve --open`.
 
-```bash
-make bootstrap
-make verify-fast
-make verify
-```
-
-See [contributing](CONTRIBUTING.md) for formatting and targeted tests, and
-[readiness evidence](docs/readiness.md) for the checks adapted from
-[ai-ready-repo](https://github.com/vidanov/ai-ready-repo). Tests use disposable
-repositories and loopback servers. See [design and boundaries](docs/design.md).
-MIT licensed.
-
-Housekeeping files (`.DS_Store`, `.gitkeep`) are hidden from discovery and
-excluded from shared copies and content comparisons, including inside skills.
-Unrelated file types and prompt subfolders are omitted from the asset list.
-Original files remain untouched; unsafe content such as `.env` still blocks sharing.
-
-### Bulk install and Git in the web interface
+### Selection and full pack
 
 Select all / Deselect all affect every eligible asset in the chosen library and
 view, including search results currently hidden. Existing aliases are preserved.
-Install full pack selects every available asset in the library and opens the
-normal preview; Apply changes installs it. Invalid assets are skipped. Selection
-is a snapshot: new assets added to a library later require selection again.
+Install full pack selects every asset that can be installed as is and opens the
+normal preview; Apply changes installs it. Invalid assets, assets blocked by a
+local file, assets no enabled tool reads, and Kiro powers are skipped, and the
+message says how many. Selection is a snapshot: new assets added to a library
+later require selection again.
+
+### Tools, conflicts, and powers
+
+The workspace card sets which tools receive links (Kiro, Claude Code, Copilot) for
+this target. Each Receive row shows its state per tool: installed, not installed,
+local file in the way, this folder's original, or link needs review. Save and
+preview stays pinned at the bottom of long lists, with the number of unsaved
+changes; status messages appear at the top of the window.
+
+A preview with conflicts applies nothing. Each conflict offers a fix: Archive local
+copy previews archiving the unmanaged file and, once applied, previews the original
+changes again; Stop receiving deselects the asset. Installed also lists local files
+in tool folders that Captain Share does not manage, each with Archive.
+
+Kiro power rows show Kiro's install state and offer Install, Update, or Uninstall.
+The review names the exact `kiro-cli` command before Apply runs it.
+
+### Git, cloning, and folders
 
 Clone and connect accepts an HTTPS/SSH URL (or absolute local Git repository path)
 and a new absolute checkout path with an existing parent. Authentication uses your
@@ -217,6 +279,8 @@ folder name. Browsing or cancelling does not create folders or change connection
 The picker lists directories on the computer running Captain Share, using the
 same authenticated localhost API as the rest of the interface.
 
+### Archive and About
+
 The About page in the web header includes the running version, quick start, asset
 formats, configuration scopes, repository controls, troubleshooting, and the MIT
 license. Switching between About and Workspace preserves unsaved selections.
@@ -225,3 +289,20 @@ Archive lists assets still available to restore. Completed restores appear in a
 collapsed Restore history, grouped by local path with readable restore dates.
 Show in Finder reveals workspace files, shared originals, and archive payloads on
 macOS; on Linux it opens the containing folder in the desktop file manager.
+
+## Development
+
+Development needs Python 3.9+, Git and Node 22+; installed CLI/web use still requires
+only Python and Git.
+
+```bash
+make bootstrap
+make verify-fast
+make verify
+```
+
+See [contributing](CONTRIBUTING.md) for formatting and targeted tests, and
+[readiness evidence](docs/readiness.md) for the checks adapted from
+[ai-ready-repo](https://github.com/vidanov/ai-ready-repo). Tests use disposable
+repositories and loopback servers. See [design and boundaries](docs/design.md).
+MIT licensed.

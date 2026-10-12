@@ -14,14 +14,15 @@ def output(value, as_json=False):
     if as_json:
         print(json.dumps(value, indent=2, sort_keys=True))
     elif isinstance(value, dict) and "fingerprint" in value:
-        print(
-            f"Preview: {value['spec']['action']} / {value['spec']['direction']} in {value['spec']['target']}"
-        )
+        scope = value["spec"].get("direction", "Kiro powers")
+        print(f"Preview: {value['spec']['action']} / {scope} in {value['spec']['target']}")
         for row in value["changes"]:
             print(
                 f"  {row['op']:8} {row['path']}"
                 + (f" ← {row['source']}" if "source" in row else "")
             )
+            if "command" in row:
+                print(f"           runs: {' '.join(row['command'])}")
         for error in value["errors"]:
             print(f"  Blocked: {error}")
         print(
@@ -60,6 +61,11 @@ def parser():
     remove.add_argument("--scope", choices=["repo", "folder", "global"], default="repo")
     ss.add_parser("list")
     sub.add_parser("config", help="Show merged configuration and contributing layers")
+    tools = sub.add_parser(
+        "tools", help="Show or set the agent tools that receive links (kiro, claude, copilot)"
+    )
+    tools.add_argument("tools", nargs="*", metavar="TOOL", help="Omit to show the current list")
+    tools.add_argument("--scope", choices=["repo", "global"], default="repo")
     ls = sub.add_parser("list", help="List inbound assets")
     ls.add_argument("--source", required=True)
     sub.add_parser("scan", help="Find local outbound candidates")
@@ -93,6 +99,9 @@ def parser():
     rem = sub.add_parser("remove", help="Archive one local asset or alias")
     rem.add_argument("kind", choices=list(c.KINDS))
     rem.add_argument("name")
+    rem.add_argument(
+        "--path", help="Archive only this unmanaged destination, e.g. .claude/skills/x"
+    )
     rem.add_argument("--apply", action="store_true")
     sub.add_parser("archive", help="List archived assets")
     restore = sub.add_parser("restore", help="Restore an archived asset without overwriting")
@@ -109,6 +118,20 @@ def parser():
     )
     cap.add_argument("directory")
     cap.add_argument("--apply", action="store_true")
+    pw = sub.add_parser("powers", help="List or install library powers with Kiro's installer")
+    pa = pw.add_subparsers(dest="power_action", required=True)
+    pl = pa.add_parser("list", help="Library powers and their Kiro install state")
+    pl.add_argument("--source", required=True)
+    for action in ("install", "uninstall"):
+        cmd = pa.add_parser(
+            action,
+            help="Preview, then with --apply run kiro-cli powers "
+            + action
+            + (" (also updates)" if action == "install" else ""),
+        )
+        cmd.add_argument("source")
+        cmd.add_argument("name")
+        cmd.add_argument("--apply", action="store_true")
     repo = sub.add_parser("repo", help="Keep a local directory of connected repos")
     rr = repo.add_subparsers(dest="repo_action", required=True)
     ra = rr.add_parser("add")
@@ -143,6 +166,12 @@ def main(argv=None):
                 result = c.effective(target)["sources"]
         elif command == "config":
             result = c.effective(target)
+        elif command == "tools":
+            result = (
+                c.set_tools(target, args.tools, args.scope)
+                if args.tools
+                else {"tools": c.effective(target)["tools"]}
+            )
         elif command == "list":
             result = e.catalog(target, args.source)
         elif command == "scan":
@@ -212,6 +241,7 @@ def main(argv=None):
                 kind=getattr(args, "kind", None),
                 asset=getattr(args, "name", None),
                 archive_id=getattr(args, "id", None),
+                path=getattr(args, "path", None),
             )
             if args.apply:
                 result = e.apply(result)
@@ -221,6 +251,13 @@ def main(argv=None):
             result = i.import_profile(target, args.source, args.profile, args.apply)
         elif command == "import-captain":
             result = i.import_captain(args.directory, target, args.apply)
+        elif command == "powers":
+            if args.power_action == "list":
+                result = i.powers(target, args.source)
+            else:
+                result = i.power_plan(target, args.power_action, args.source, args.name)
+                if args.apply:
+                    result = i.power_apply(result)
         elif command == "repo":
             result = (
                 i.register(args.name, args.path) if args.repo_action == "add" else i.repositories()

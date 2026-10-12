@@ -139,6 +139,37 @@ class ServerTests(SharingFixture):
             self.request("/api/apply", {"fingerprint": restore["fingerprint"]})[0], 200
         )
 
+    def test_api_tools_and_conflict_resolution_by_path(self):
+        self.assertEqual(self.request("/api/tools", {"tools": ["cursor"]})[0], 400)
+        code, saved = self.request("/api/tools", {"tools": ["claude", "kiro"]})
+        self.assertEqual((code, saved["tools"]), (200, ["kiro", "claude"]))
+        _, state = self.request("/api/state")
+        self.assertEqual(state["config"]["tools"], ["kiro", "claude"])
+        self.assertIn("claude", state["destinations"]["skills"])
+        self.skill(self.repo / ".claude/skills/hello", "local")
+        self.request(
+            "/api/selections",
+            {
+                "direction": "inbound",
+                "source": "team",
+                "selections": [{"kind": "skills", "name": "hello"}],
+            },
+        )
+        _, catalog = self.request("/api/catalog?source=team")
+        self.assertEqual([d["state"] for d in catalog[0]["destinations"]], ["absent", "blocked"])
+        _, blocked = self.request("/api/plan", {"direction": "inbound"})
+        self.assertEqual(blocked["conflicts"][0]["path"], ".claude/skills/hello")
+        _, archive = self.request(
+            "/api/plan",
+            {"action": "remove", "kind": "skills", "name": "hello", "path": ".claude/skills/hello"},
+        )
+        self.assertEqual(len(archive["changes"]), 1)
+        self.request("/api/apply", {"fingerprint": archive["fingerprint"]})
+        _, plan = self.request("/api/plan", {"direction": "inbound"})
+        self.assertEqual(self.request("/api/apply", {"fingerprint": plan["fingerprint"]})[0], 200)
+        self.assertTrue((self.repo / ".claude/skills/hello").is_symlink())
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+
     def test_invalid_batch_does_not_save_partial_selection(self):
         code, _ = self.request(
             "/api/selections",

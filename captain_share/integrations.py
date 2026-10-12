@@ -101,7 +101,8 @@ def import_profile(target, source, profile, apply=False):
         kind, sep, names = line.partition(":")
         if not sep or kind not in c.KINDS:
             raise c.ShareError(f"Invalid profile line: {line}")
-        for asset in names.split():
+        # Legacy toolkit manifests separate names with commas; accept both forms.
+        for asset in names.replace(",", " ").split():
             c.asset_name(kind, asset)
             original = engine.source_path(cfg, source, kind, asset)
             engine.validate_asset(original, kind)
@@ -110,6 +111,101 @@ def import_profile(target, source, profile, apply=False):
         for row in rows:
             c.select(target, "inbound", row["source"], row["kind"], row["name"])
     return {"selections": rows, "applied": apply}
+
+
+def kiro_powers_dir():
+    # Owned by Kiro (ADR 003): read to compare, written only through kiro-cli.
+    return Path.home() / ".kiro/powers/installed"
+
+
+def power_state(original):
+    installed = kiro_powers_dir() / original.name
+    if not os.path.lexists(installed):
+        return "not-installed"
+    if installed.is_symlink():
+        return "differs"
+    same = engine.snapshot(installed, modes=False) == engine.snapshot(original, modes=False)
+    return "current" if same else "differs"
+
+
+def powers(target, source):
+    rows = [row for row in engine.catalog(target, source) if row["kind"] == "powers"]
+    for row in rows:
+        if row["status"] == "available":
+            row["kiro"] = power_state(Path(row["path"]))
+    return rows
+
+
+def power_plan(target, action, source, name):
+    """Preview one explicit kiro-cli power operation for a library power."""
+    if action not in ("install", "uninstall"):
+        raise c.ShareError("Power action must be install or uninstall")
+    target = c.root(target)
+    c.asset_name("powers", name)
+    original = engine.source_path(c.effective(target), c.name(source), "powers", name)
+    engine.validate_asset(original, "powers")
+    current = power_state(original)
+    installed = kiro_powers_dir() / name
+    executable = shutil.which("kiro-cli")
+    changes, conflicts = [], []
+    if not executable:
+        conflicts.append("kiro-cli is not installed or not on PATH")
+    elif action == "install" and current != "current":
+        op = "kiro update" if current == "differs" else "kiro install"
+        command = [executable, "powers", "install", str(original)]
+        changes.append(
+            {"op": op, "path": str(installed), "source": str(original), "command": command}
+        )
+    elif action == "uninstall":
+        if current == "not-installed":
+            conflicts.append(f"Kiro has no installed power named {name}")
+        else:
+            command = [executable, "powers", "uninstall", name]
+            changes.append({"op": "kiro uninstall", "path": str(installed), "command": command})
+    result = {
+        "version": 1,
+        "spec": {
+            "type": "power",
+            "target": str(target),
+            "action": action,
+            "source": source,
+            "name": name,
+        },
+        "state": current,
+        "changes": changes,
+        "errors": conflicts,
+        "conflicts": [
+            {"message": m, "path": None, "key": None, "reason": "error"} for m in conflicts
+        ],
+        "can_apply": not conflicts,
+        "observations": [
+            engine.snapshot(original, modes=False),
+            engine.snapshot(installed, modes=False) if os.path.lexists(installed) else None,
+        ],
+    }
+    result["fingerprint"] = engine.digest(result)
+    return result
+
+
+def power_apply(saved):
+    spec = saved.get("spec") if isinstance(saved, dict) else None
+    if not isinstance(spec, dict) or spec.get("type") != "power":
+        raise c.ShareError("Invalid power plan")
+    with c.locks([kiro_powers_dir()]):
+        current = power_plan(spec["target"], spec["action"], spec["source"], spec["name"])
+        if current["fingerprint"] != saved.get("fingerprint"):
+            raise c.ShareError("Plan is stale: the power or Kiro's copy changed. Preview again.")
+        if not current["can_apply"]:
+            raise c.ShareError("; ".join(current["errors"]))
+        outputs = []
+        for change in current["changes"]:
+            # Fixed argv to Kiro's own installer; no shell and no user-supplied flags.
+            proc = subprocess.run(change["command"], capture_output=True, text=True, timeout=120)
+            output = (proc.stdout + proc.stderr).strip()
+            if proc.returncode:
+                raise c.ShareError(f"kiro-cli failed ({proc.returncode}): {output}")
+            outputs.append(output)
+    return {"ok": True, "changes": len(current["changes"]), "output": "\n".join(outputs)}
 
 
 def kiro_handoff(target, request, run=False, agent=None):

@@ -30,11 +30,23 @@ when they are explicitly synced, not automatically to every child repository.
   Generated outputs, private project context, fonts and licensed material need
   their own distribution decision. The built-in credential/path scan is only a
   heuristic, never a confidentiality or licensing verdict.
+- **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude copilot`
+  sets it for the target (`--scope global` for defaults). Skills then link into
+  both `.kiro/skills/` and `.claude/skills/` from one original. Steering, agents,
+  and prompts stay Kiro-only; do not hand-copy them into `.claude/`.
+- **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
+  `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
+  install state; `powers install SOURCE POWER` previews and `--apply` runs
+  `kiro-cli powers install` (also updates). Powers are user-wide copies, never
+  inbound selections. Do not edit `~/.kiro/powers` directly.
 - **Change an alias:** select the same inbound source/kind/name with a new
   `--alias`. The old shortcut is archived when synced. A filesystem alias does
   not rename the skill's frontmatter or an agent's internal resource references.
 - **Remove:** `remove skills LOCAL_NAME` previews archiving. `--apply` performs
-  it and disables the corresponding inherited/local inbound selection.
+  it, archives that selection's links for every tool, and disables the
+  corresponding inherited/local inbound selection. When a preview reports an
+  existing unmanaged asset, `remove KIND NAME --path DESTINATION` archives only
+  that local copy and keeps the selection.
   Removing a shortcut does not delete its shared original.
 - **Restore:** `archive`, then `restore ID` to preview, and `restore ID --apply`
   to restore. Existing destinations are never overwritten.

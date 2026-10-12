@@ -5,6 +5,7 @@
 ```json
 {
   "version": 1,
+  "tools": ["kiro", "claude", "copilot"],
   "sources": {"team": {"description": "Shared team tooling"}},
   "inbound": {
     "team/skills/review-code": {
@@ -27,6 +28,14 @@ Machine-local `.captain/sharing.local.json` binds names to checkouts:
   "sources": {"team": {"path": "/path/to/team-library", "layout": "ip"}}
 }
 ```
+
+Library-only kinds such as `powers` cannot be inbound selections; Kiro installs
+them user-wide (see the README).
+
+`tools` is optional and lists the agent tools that receive inbound links: `kiro`,
+`claude`, `copilot`. The deepest layer that sets it replaces inherited lists; without
+it the default is `["kiro", "copilot"]`. It belongs only in portable `sharing.json`.
+Installation state records the tool of every managed link.
 
 Relative checkout paths resolve against the folder containing `.captain`.
 Outbound paths always resolve against the target being synced; inherited selections

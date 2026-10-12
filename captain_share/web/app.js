@@ -1,19 +1,45 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-const token =
-  new URLSearchParams(location.hash.slice(1)).get("token") ||
-  sessionStorage.getItem("captain-share-token") ||
-  "";
-if (token) sessionStorage.setItem("captain-share-token", token);
-history.replaceState(null, "", location.pathname);
+function readToken() {
+  const fresh = new URLSearchParams(location.hash.slice(1)).get("token");
+  if (fresh) sessionStorage.setItem("captain-share-token", fresh);
+  if (location.hash) history.replaceState(null, "", location.pathname);
+  return fresh || sessionStorage.getItem("captain-share-token") || "";
+}
+let token = readToken();
+// Pasting the printed URL into an open tab changes only the fragment.
+window.addEventListener("hashchange", () => {
+  const before = token;
+  token = readToken();
+  if (token !== before)
+    task(async () => {
+      await refresh();
+      message("Connected.");
+    });
+});
 let state,
   catalog = [],
   view = "inbound",
   pending = null,
+  lastSpec = null,
+  resumeSpec = null,
   busy = false,
   drafts = {};
 let repository = null,
-  gitPending = null;
+  gitPending = null,
+  messageTimer = null;
+const TOOL_NAMES = {
+  kiro: "Kiro",
+  claude: "Claude Code",
+  copilot: "Copilot",
+};
+const DESTINATION_LABELS = {
+  installed: "installed",
+  absent: "not installed",
+  blocked: "local file in the way",
+  contributed: "this folder's original",
+  changed: "link needs review",
+};
 function el(tag, text, cls) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -21,9 +47,13 @@ function el(tag, text, cls) {
   return node;
 }
 function message(text, error = false) {
-  $("message").textContent = error ? "Error: " + text : text;
+  clearTimeout(messageTimer);
+  $("message").textContent = !text ? "" : error ? "Error: " + text : text;
   $("message").className = error ? "error" : "";
+  if (text && !error) messageTimer = setTimeout(() => message(""), 6000);
 }
+$("message").title = "Dismiss";
+$("message").onclick = () => message("");
 async function api(path, data) {
   const res = await fetch("/api/" + path, {
     method: data === undefined ? "GET" : "POST",
@@ -50,11 +80,14 @@ async function task(fn) {
 }
 function invalidate() {
   pending = null;
+  resumeSpec = null;
   $("review").hidden = true;
   $("apply").disabled = true;
 }
-async function refresh() {
+async function refresh(keepDrafts = false) {
   state = await api("state");
+  for (const input of $("tools").querySelectorAll("input"))
+    input.checked = state.config.tools.includes(input.value);
   $("target").textContent = state.target;
   $("reveal-workspace").textContent = "Show in " + state.file_manager;
   $("layers").replaceChildren(...state.config.layers.map((p) => el("li", p)));
@@ -76,9 +109,16 @@ async function refresh() {
   $("installed-count").textContent = state.installed.length;
   await loadCatalog();
   await loadRepository();
-  drafts = {};
+  if (!keepDrafts) drafts = {};
   invalidate();
   render();
+}
+function installable(row) {
+  return (
+    row.status === "available" &&
+    row.destinations?.length > 0 &&
+    row.destinations.every((d) => ["absent", "installed"].includes(d.state))
+  );
 }
 async function loadCatalog() {
   catalog = $("source").value
@@ -128,13 +168,20 @@ function render() {
   $("bulk-actions").hidden = !["inbound", "outbound"].includes(view);
   $("full-pack").hidden = view !== "inbound";
   selectionCount();
+  const managed = new Set(state.installed.map((row) => row.path));
   let rows =
     view === "inbound"
       ? catalog
       : view === "outbound"
         ? state.candidates
         : view === "installed"
-          ? state.installed
+          ? [
+              ...state.installed,
+              // Unmanaged files in tool folders can block receiving; offer to archive them.
+              ...state.candidates
+                .filter((row) => row.tool && !managed.has(row.path))
+                .map((row) => ({ ...row, local: true })),
+            ]
           : state.archives.filter((row) => !row.restored);
   const query = $("search").value.toLowerCase();
   rows = rows.filter((r) =>
@@ -177,7 +224,9 @@ function render() {
       input.checked = draft
         ? draft.enabled
         : !!checked && (view !== "outbound" || checked.path === row.path);
-      input.disabled = !["available", "local"].includes(row.status);
+      input.disabled =
+        !["available", "local"].includes(row.status) ||
+        (view === "inbound" && row.kind === "powers");
       input.dataset.row = JSON.stringify(row);
       input.addEventListener("change", () =>
         remember(row, input, main.querySelector(".alias")),
@@ -196,6 +245,24 @@ function render() {
         ),
       );
       if (row.error) main.append(el("p", row.error));
+      if (view === "inbound" && row.kind === "powers" && row.kiro)
+        main.append(powerControls(row));
+      else if (view === "inbound" && row.status === "available") {
+        const list = el("div", undefined, "destinations");
+        for (const d of row.destinations)
+          list.append(
+            el(
+              "span",
+              TOOL_NAMES[d.tool] + " · " + DESTINATION_LABELS[d.state],
+              "badge " + d.state,
+            ),
+          );
+        if (!row.destinations.length)
+          list.append(
+            el("span", "No enabled tool reads " + row.kind, "badge blocked"),
+          );
+        main.append(list);
+      }
       if (view === "inbound" && !input.disabled) {
         const alias = el("input");
         alias.className = "alias";
@@ -207,6 +274,11 @@ function render() {
       }
     } else {
       const installed = view === "installed";
+      if (row.local && !rows[index - 1]?.local)
+        $("assets").append(
+          el("p", "Local files not managed by Captain Share", "group-title"),
+        );
+      const tool = row.tool ? " · " + TOOL_NAMES[row.tool] : "";
       main.append(
         el(
           "div",
@@ -216,18 +288,24 @@ function render() {
         el(
           "div",
           installed
-            ? row.status === "linked"
-              ? "Installed"
-              : "Needs attention"
-            : "Archived " + friendlyDate(row.created),
+            ? row.local
+              ? "Local " + row.kind + tool
+              : (row.status === "linked" ? "Installed" : "Needs attention") +
+                tool
+            : "Archived " +
+                friendlyDate(row.created) +
+                (row.snapshot?.type === "link"
+                  ? " · managed link"
+                  : " · local copy"),
           "asset-type",
         ),
         el("div", installed ? row.path : row.relative_path, "asset-path"),
       );
-      if (installed)
+      if (installed && !row.local)
         main.append(
           el("div", "Original: " + row.shared_original, "asset-path"),
         );
+      if (row.error) main.append(el("p", row.error));
       main.append(
         revealButton(
           installed
@@ -235,7 +313,7 @@ function render() {
             : state.target + "/.captain/archive/" + row.id + "/payload",
         ),
       );
-      if (installed)
+      if (installed && !row.local)
         main.append(
           revealButton(
             row.shared_original,
@@ -251,6 +329,7 @@ function render() {
                   action: "remove",
                   kind: row.kind,
                   name: row.path.split("/").pop(),
+                  path: row.path,
                 }
               : { action: "restore", id: row.id },
           ),
@@ -261,50 +340,161 @@ function render() {
     $("assets").append(wrap);
   });
 }
-async function saveSelection() {
+function changedDrafts() {
+  const prefix = view + "/" + $("source").value + "/";
+  return Object.entries(drafts)
+    .filter(([k, draft]) => {
+      if (!k.startsWith(prefix)) return false;
+      const saved = state.config[view][key(draft.row)];
+      return (
+        draft.enabled !== isSaved(draft.row) ||
+        (view === "inbound" &&
+          draft.enabled &&
+          (draft.alias || "") !== (saved?.alias || ""))
+      );
+    })
+    .map(([, draft]) => draft);
+}
+async function saveSelection(quiet = false) {
   if (!$("source").value)
     throw new Error("Connect and choose a library first.");
-  for (const input of $("assets").querySelectorAll(
-    "input[type=checkbox]:not(:disabled)",
-  )) {
-    const row = JSON.parse(input.dataset.row);
-    remember(row, input, input.closest(".asset").querySelector(".alias"));
-  }
-  const prefix = view + "/" + $("source").value + "/";
-  const selections = Object.entries(drafts)
-    .filter(([k]) => k.startsWith(prefix))
-    .map(([, draft]) => ({
-      kind: draft.row.kind,
-      name: draft.row.name,
-      path: draft.row.path,
-      enabled: draft.enabled,
-      alias: draft.alias || undefined,
-    }));
-  await api("selections", {
-    direction: view,
-    source: $("source").value,
-    selections,
-  });
+  // Send only real changes, so inherited selections are not copied into this folder.
+  const selections = changedDrafts().map((draft) => ({
+    kind: draft.row.kind,
+    name: draft.row.name,
+    path: draft.row.path,
+    enabled: draft.enabled,
+    alias: draft.alias || undefined,
+  }));
+  if (selections.length)
+    await api("selections", {
+      direction: view,
+      source: $("source").value,
+      selections,
+    });
   await refresh();
-  message("Selection saved. Preview to see the file changes.");
+  if (!quiet)
+    message(
+      selections.length
+        ? "Selection saved. Preview to see the file changes."
+        : "Nothing changed since the last save.",
+    );
 }
 async function preview(spec = { direction: view }) {
   pending = await api("plan", spec);
+  lastSpec = spec;
   $("review").hidden = false;
   $("changes").replaceChildren();
   $("errors").replaceChildren();
-  $("review-count").textContent = pending.changes.length + " changes";
+  $("review-count").textContent =
+    pending.changes.length +
+    (pending.changes.length === 1 ? " change" : " changes") +
+    (pending.conflicts.length
+      ? " · " +
+        pending.conflicts.length +
+        (pending.conflicts.length === 1 ? " conflict" : " conflicts")
+      : "");
   pending.changes.forEach((change) => {
     const div = el("div", undefined, "change");
     div.append(el("strong", change.op), el("div", change.path));
     if (change.source) div.append(el("div", "From " + change.source));
+    if (change.command)
+      div.append(el("code", "Runs " + change.command.join(" "), "command"));
     $("changes").append(div);
   });
   if (!pending.changes.length)
-    $("changes").append(el("p", "The selected assets are already in place."));
-  pending.errors.forEach((error) => $("errors").append(el("p", error)));
+    $("changes").append(
+      el(
+        "p",
+        pending.conflicts.length
+          ? "No changes can be applied until the conflicts below are resolved."
+          : "The selected assets are already in place.",
+      ),
+    );
+  pending.conflicts.forEach((conflict) =>
+    $("errors").append(conflictRow(conflict, spec)),
+  );
+  $("conflict-help").hidden = !pending.conflicts.length;
   $("apply").disabled = !pending.can_apply;
-  $("review").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  $("review").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+const POWER_LABELS = {
+  "not-installed": "not installed",
+  current: "installed, same as library",
+  differs: "installed, differs from library",
+};
+function powerControls(row) {
+  const box = el("div", undefined, "destinations");
+  box.append(
+    el(
+      "span",
+      "Kiro powers (user-wide) · " + POWER_LABELS[row.kiro],
+      "badge " +
+        (row.kiro === "current"
+          ? "installed"
+          : row.kiro === "differs"
+            ? "changed"
+            : "absent"),
+    ),
+  );
+  const actions =
+    row.kiro === "not-installed"
+      ? [["install", "Install in Kiro"]]
+      : row.kiro === "differs"
+        ? [
+            ["install", "Update in Kiro"],
+            ["uninstall", "Uninstall from Kiro"],
+          ]
+        : [["uninstall", "Uninstall from Kiro"]];
+  for (const [action, label] of actions) {
+    const button = el("button", label, "quiet");
+    button.type = "button";
+    button.onclick = () =>
+      task(() =>
+        preview({ power: true, action, source: row.source, name: row.name }),
+      );
+    box.append(button);
+  }
+  return box;
+}
+function conflictRow(conflict, spec) {
+  const div = el("div", undefined, "conflict");
+  div.append(el("p", conflict.message));
+  const [source, kind, name] = (conflict.key || "").split("/");
+  if (conflict.reason === "unmanaged" && conflict.path) {
+    const archive = el("button", "Archive local copy", "quiet");
+    archive.onclick = () =>
+      task(async () => {
+        resumeSpec = spec;
+        await preview({
+          action: "remove",
+          kind,
+          name: conflict.path.split("/").pop(),
+          path: conflict.path,
+        });
+        message(
+          "Review the archive, apply it, then the original preview runs again.",
+        );
+      });
+    div.append(archive);
+  }
+  if (name && state.config.inbound[conflict.key]) {
+    const deselect = el("button", "Stop receiving " + name, "quiet");
+    deselect.onclick = () =>
+      task(async () => {
+        delete drafts["inbound/" + conflict.key];
+        await api("selections", {
+          direction: "inbound",
+          source,
+          selections: [{ kind, name, enabled: false }],
+        });
+        await refresh(true);
+        await preview(spec);
+        message(name + " deselected. Preview updated.");
+      });
+    div.append(deselect);
+  }
+  return div;
 }
 $("add-source").onsubmit = (event) => {
   event.preventDefault();
@@ -330,15 +520,40 @@ $("search").oninput = render;
 $("save").onclick = () => task(saveSelection);
 $("preview").onclick = () =>
   task(async () => {
-    await saveSelection();
+    await saveSelection(true);
     await preview({ direction: view });
   });
 $("apply").onclick = () =>
   task(async () => {
     if (!pending) return;
     const result = await api("apply", { fingerprint: pending.fingerprint });
+    const resume = resumeSpec;
+    resumeSpec = null;
     await refresh();
-    message("Applied " + result.changes + " asset changes.");
+    message(
+      result.output
+        ? "Kiro: " + result.output
+        : "Applied " +
+            result.changes +
+            (result.changes === 1 ? " asset change." : " asset changes.") +
+            (resume ? " Previewing the original changes again." : ""),
+    );
+    if (resume) await preview(resume);
+  });
+$("tools").onchange = (event) =>
+  task(async () => {
+    const tools = [...$("tools").querySelectorAll("input:checked")].map(
+      (input) => input.value,
+    );
+    if (!tools.length) {
+      event.target.checked = true;
+      throw new Error("Keep at least one tool enabled.");
+    }
+    await api("tools", { tools });
+    await refresh(true);
+    message(
+      "Tools saved. Preview to add or archive links for the changed tools.",
+    );
   });
 $("dismiss").onclick = invalidate;
 document.querySelectorAll("nav button").forEach(
@@ -351,29 +566,43 @@ document.querySelectorAll("nav button").forEach(
     }),
 );
 function selectable() {
-  return (view === "inbound" ? catalog : state.candidates).filter((r) =>
-    ["available", "local"].includes(r.status),
+  // Powers are installed by Kiro, not linked, so they are never inbound selections.
+  return (view === "inbound" ? catalog : state.candidates).filter(
+    (r) =>
+      ["available", "local"].includes(r.status) &&
+      !(view === "inbound" && r.kind === "powers"),
   );
+}
+function isSaved(row) {
+  const saved = state.config[view][key(row)];
+  return !!saved && (view !== "outbound" || saved.path === row.path);
+}
+function unsaved() {
+  return changedDrafts().length;
 }
 function selectionCount() {
   if (!state || !["inbound", "outbound"].includes(view)) return;
   const rows = selectable();
   const selected = rows.filter((r) => {
-    const draft = drafts[draftKey(r)],
-      saved = state.config[view][key(r)];
-    return draft
-      ? draft.enabled
-      : !!saved && (view !== "outbound" || saved.path === r.path);
+    const draft = drafts[draftKey(r)];
+    return draft ? draft.enabled : isSaved(r);
   }).length;
   $("selected-count").textContent =
     selected +
     " / " +
     rows.length +
     " selected · all assets, including filtered results";
+  const changes = unsaved();
+  $("selection-actions").classList.toggle("dirty", changes > 0);
+  $("pending-count").textContent =
+    selected +
+    " selected · " +
+    (changes
+      ? changes + (changes === 1 ? " unsaved change" : " unsaved changes")
+      : "no unsaved changes");
 }
-function selectAll(enabled) {
+function selectAll(enabled, rows = selectable()) {
   if (!$("source").value) throw new Error("Choose a library first.");
-  const rows = selectable();
   if (
     enabled &&
     view === "outbound" &&
@@ -398,9 +627,22 @@ $("select-all").onclick = () => task(async () => selectAll(true));
 $("deselect-all").onclick = () => task(async () => selectAll(false));
 $("full-pack").onclick = () =>
   task(async () => {
-    selectAll(true);
-    await saveSelection();
+    // Assets blocked by local files stay unselected so the rest can install.
+    const rows = selectable().filter(installable);
+    const skipped = selectable().length - rows.length;
+    if (!rows.length)
+      throw new Error("No asset in this library can be installed as is.");
+    selectAll(true, rows);
+    await saveSelection(true);
     await preview({ direction: "inbound" });
+    if (skipped)
+      message(
+        "Full pack: " +
+          rows.length +
+          " selected, " +
+          skipped +
+          " skipped because a local file is in the way or no enabled tool reads them.",
+      );
   });
 function repoSource() {
   return $("repo-scope").value === "project" ? "" : $("source").value;

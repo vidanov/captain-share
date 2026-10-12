@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from . import config as c
 from . import engine as e
+from . import integrations as i
 from . import repositories as r
 
 WEB = Path(__file__).parent / "web"
@@ -129,6 +130,7 @@ def make_server(target, port=0):
                     result = e.status(target)
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
+                    result["destinations"] = c.DESTINATIONS
                     result["file_manager"] = (
                         "Finder" if sys.platform == "darwin" else "file manager"
                     )
@@ -145,7 +147,11 @@ def make_server(target, port=0):
                     self.respond(r.status(target, source))
                 elif parsed.path == "/api/catalog":
                     source = parse_qs(parsed.query).get("source", [""])[0]
-                    self.respond(e.catalog(target, source))
+                    rows = e.catalog(target, source)
+                    for row in rows:
+                        if row["kind"] == "powers" and row["status"] == "available":
+                            row["kiro"] = i.power_state(Path(row["path"]))
+                    self.respond(rows)
                 elif parsed.path in ("/", "/about", "/app.js", "/style.css"):
                     filename = {
                         "/": "index.html",
@@ -196,6 +202,9 @@ def make_server(target, port=0):
                         target, data.get("source", ""), data["action"], data["fingerprint"]
                     )
                     plans.clear()
+                elif path == "/api/tools":
+                    result = c.set_tools(target, data["tools"])
+                    plans.clear()
                 elif path == "/api/source":
                     result = c.add_source(
                         target, data["name"], data["path"], data.get("layout", "ip")
@@ -245,6 +254,10 @@ def make_server(target, port=0):
                         c.atomic_json(directory / "sharing.json", local)
                     plans.clear()
                     result = {"saved": len(rows)}
+                elif path == "/api/plan" and data.get("power"):
+                    result = i.power_plan(target, data["action"], data["source"], data["name"])
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
                 elif path == "/api/plan":
                     result = e.plan(
                         target,
@@ -253,6 +266,7 @@ def make_server(target, port=0):
                         kind=data.get("kind"),
                         asset=data.get("name"),
                         archive_id=data.get("id"),
+                        path=data.get("path"),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -263,7 +277,8 @@ def make_server(target, port=0):
                     saved = plans.pop(fingerprint, None)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
-                    result = e.apply(saved)
+                    is_power = saved["spec"].get("type") == "power"
+                    result = i.power_apply(saved) if is_power else e.apply(saved)
                 else:
                     self.respond({"error": "Not found"}, 404)
                     return

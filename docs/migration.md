@@ -37,3 +37,38 @@ For previously unmanaged local skills under `.kiro/skills`, copy a reviewed skil
 outbound, archive its local folder with `remove skills NAME --apply`, select the
 shared version inbound, and preview/apply. The original stays in the archive for
 recovery. No bulk migration of the user's existing projects happens at setup time.
+
+## Retire a legacy toolkit installation
+
+Some libraries ship their own installer (for example `ip-link`/`ip-unlink`
+wrappers with a `.kiro-ip` selector and a pre-commit guard). Installed hooks call
+that toolkit by absolute path, so retiring it is ordered:
+
+1. Commit or tag the toolkit's current state. A fresh clone or `git clean` must not
+   remove an installer that live hooks still call.
+2. List its installations with the toolkit's own status or registry command, and
+   look for `.kiro-ip` selectors and hooks that call its guard.
+3. For each installation, unlink it with the toolkit's own command (for example
+   `ip-unlink REPO --forget`), which restores the original hook, and delete the
+   selector file. Then connect it with Captain Share:
+
+   ```bash
+   captain-share --target REPO source add team /path/to/library
+   captain-share --target REPO import-profile team pilot --apply
+   captain-share --target REPO sync --apply
+   captain-share --target REPO status
+   captain-share --target REPO guard
+   ```
+
+4. Archive the toolkit's installer only after every installation is unlinked.
+   Keep its guard and unlink commands at their original paths until then.
+
+`import-profile` accepts names separated by spaces or commas. Captain Share's
+`guard` reports Git-tracked managed paths; it does not scan staged content for
+ownership markers, so keep a marker check in the library's own CI if you rely on
+one.
+
+Global tool folders can hold links into a library's old location. Inspect them with
+`captain-share --target "$HOME" scan`, archive a dangling link with
+`remove skills NAME --path .kiro/skills/NAME --apply`, and receive the library
+version with `--target "$HOME"`.
