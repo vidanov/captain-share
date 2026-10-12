@@ -17,7 +17,10 @@ from pathlib import Path
 from . import config as c
 
 MAX_ASSET_BYTES = 64 * 1024 * 1024
-HOUSEKEEPING = {".DS_Store", ".gitkeep"}
+# Regenerable local files: never listed, compared, or copied, and never blocking.
+HOUSEKEEPING = {".DS_Store", ".gitkeep", "__pycache__"}
+FOLDER_KINDS = {"skills", "powers"}
+POWER_FIELDS = ("name", "version", "description", "keywords")
 
 
 def ignored(path, base):
@@ -27,7 +30,7 @@ def ignored(path, base):
 def candidate(path, kind):
     if path.name.startswith("."):
         return False
-    if kind == "skills":
+    if kind in FOLDER_KINDS:
         return path.is_dir() or path.is_symlink()
     matches = (
         path.name == "copilot-instructions.md"
@@ -43,7 +46,7 @@ def digest(value):
     ).hexdigest()
 
 
-def snapshot(path):
+def snapshot(path, modes=True):
     if path.is_symlink():
         return {"type": "link", "target": os.readlink(path)}
     if not path.exists():
@@ -64,7 +67,7 @@ def snapshot(path):
                 [
                     rel,
                     "file",
-                    stat.S_IMODE(p.stat().st_mode),
+                    stat.S_IMODE(p.stat().st_mode) if modes else None,
                     hashlib.sha256(p.read_bytes()).hexdigest(),
                 ]
             )
@@ -81,6 +84,8 @@ def validate_asset(path, kind, outbound=False):
     if kind == "skills":
         if not path.is_dir() or not (path / "SKILL.md").is_file():
             raise c.ShareError(f"Skill lacks SKILL.md: {path}")
+    elif kind == "powers":
+        validate_power(path, outbound)
     elif not path.is_file():
         raise c.ShareError(f"Asset is not a file: {path}")
     files = sorted(path.rglob("*")) if path.is_dir() else [path]
@@ -89,7 +94,7 @@ def validate_asset(path, kind, outbound=False):
             continue
         if p.is_symlink():
             raise c.ShareError(f"Asset contains a symlink: {p}")
-        if p.name in {".git", ".env", "node_modules", "__pycache__"}:
+        if p.name in {".git", ".env", "node_modules"}:
             raise c.ShareError(f"Remove local/generated material before sharing: {p.name}")
         if outbound and p.is_file():
             if p.stat().st_size > MAX_ASSET_BYTES:
@@ -106,6 +111,67 @@ def validate_asset(path, kind, outbound=False):
                     f"Outbound review found a credential or personal path in {p.name}; edit the asset before sharing"
                 )
     snapshot(path)
+
+
+def frontmatter(text):
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---" or "---" not in [x.strip() for x in lines[1:]]:
+        return None
+    fields = {}
+    for line in lines[1 : 1 + [x.strip() for x in lines[1:]].index("---")]:
+        key, sep, value = line.partition(":")
+        if sep and key.strip() and not key.startswith((" ", "\t")):
+            fields[key.strip()] = value.strip().strip("\"'")
+    return fields
+
+
+def validate_power(path, outbound=False):
+    """Agent Plugins 1.0.0 plugin.json, or a legacy POWER.md, named like its folder."""
+    if not path.is_dir():
+        raise c.ShareError(f"A power is a folder: {path}")
+    manifest, legacy = path / "plugin.json", path / "POWER.md"
+    if manifest.is_file():
+        try:
+            data = json.loads(manifest.read_text())
+        except ValueError as exc:
+            raise c.ShareError(f"Invalid plugin.json in {path.name}: {exc}") from exc
+        missing = [f for f in POWER_FIELDS if not data.get(f)] if isinstance(data, dict) else []
+        if not isinstance(data, dict) or missing:
+            raise c.ShareError(
+                f"plugin.json in {path.name} lacks {', '.join(missing) or 'an object'}"
+            )
+        if not isinstance(data.get("author"), dict) or not data["author"].get("name"):
+            raise c.ShareError(f"plugin.json in {path.name} needs author.name")
+        if not isinstance(data["keywords"], list):
+            raise c.ShareError(f"plugin.json keywords must be a list in {path.name}")
+        named = data["name"]
+    elif legacy.is_file():
+        fields = frontmatter(legacy.read_text())
+        if fields is None:
+            raise c.ShareError(f"POWER.md in {path.name} needs YAML frontmatter")
+        named = fields.get("name", path.name)
+    else:
+        raise c.ShareError(f"Power lacks plugin.json or POWER.md: {path}")
+    if named != path.name:
+        # Kiro installs by manifest name; a mismatch silently replaces another power.
+        raise c.ShareError(f"Power name {named!r} must match its folder {path.name!r}")
+    servers = path / "mcp.json"
+    if servers.is_file():
+        try:
+            mcp = json.loads(servers.read_text())
+        except ValueError as exc:
+            raise c.ShareError(f"Invalid mcp.json in {path.name}: {exc}") from exc
+        if not isinstance(mcp, dict) or not isinstance(mcp.get("mcpServers"), dict):
+            raise c.ShareError(f"mcp.json in {path.name} needs an mcpServers object")
+        if outbound:
+            for server, spec in mcp["mcpServers"].items():
+                env = spec.get("env", {}) if isinstance(spec, dict) else {}
+                literal = [k for k, v in env.items() if not re.fullmatch(r"\$\{\w+\}", str(v))]
+                if literal:
+                    raise c.ShareError(
+                        f"mcp.json server {server} sets {', '.join(literal)} literally; "
+                        "use ${VAR} references before sharing"
+                    )
 
 
 def git(target, *args, check=True):
@@ -146,9 +212,24 @@ def source_path(cfg, sid, kind=None, asset=None):
     return c.safe_path(base, f"{kind}/{asset}") if kind else base
 
 
+def destination_state(target, rel, src, managed):
+    """Read-only answer to: what would receiving src at rel find there now?"""
+    p = c.safe_path(target, rel, leaf_link=True)
+    if not os.path.lexists(p):
+        return "absent"
+    if managed is None:
+        return "blocked"
+    if p.is_symlink() and os.readlink(p) == str(src) == managed.get("source_path"):
+        return "installed"
+    return "changed"
+
+
 def catalog(target, source):
+    target = c.root(target)
     cfg = c.effective(target)
     base = source_path(cfg, source)
+    installed = state(target)["inbound"]
+    contributed = {row["path"] for row in cfg["outbound"].values()}
     rows = []
     for kind in c.KINDS:
         directory = c.safe_path(base, kind)
@@ -164,6 +245,18 @@ def catalog(target, source):
                 row["status"] = "available"
             except c.ShareError as exc:
                 row.update(status="invalid", error=str(exc))
+            selected = cfg["inbound"].get(f"{source}/{kind}/{item.name}", {})
+            alias = selected.get("alias", item.name)
+            row["destinations"] = []
+            for tool, folder in c.destinations(kind, cfg["tools"]):
+                rel = f"{folder}/{alias}"
+                try:
+                    found = destination_state(target, rel, item, installed.get(rel))
+                except c.ShareError as exc:
+                    found, row["error"] = "blocked", str(exc)
+                if found == "blocked" and rel in contributed:
+                    found = "contributed"
+                row["destinations"].append({"tool": tool, "path": rel, "state": found})
             rows.append(row)
     return rows
 
@@ -171,9 +264,10 @@ def catalog(target, source):
 def scan(target):
     target = c.root(target)
     rows, seen = [], set()
-    for kind, dest in c.KINDS.items():
-        directories = [dest, f"ip/{kind}"]
-        if kind in ("skills", "agents", "prompts", "steering"):
+    for kind in c.KINDS:
+        tool_folders = {folder: tool for tool, folder in c.DESTINATIONS[kind].items()}
+        directories = [*tool_folders, f"ip/{kind}"]
+        if kind in ("skills", "agents", "prompts", "steering", "powers"):
             directories.append(kind)
         for directory in directories:
             folder = c.safe_path(target, directory)
@@ -188,6 +282,8 @@ def scan(target):
                     continue
                 seen.add(p)
                 row = {"kind": kind, "name": p.name, "path": p.relative_to(target).as_posix()}
+                if directory in tool_folders:
+                    row["tool"] = tool_folders[directory]
                 if p.is_symlink():
                     row.update(status="linked", target=os.readlink(p))
                 else:
@@ -211,11 +307,12 @@ def state(target):
         if not isinstance(data.get(direction), dict):
             raise c.ShareError("Invalid installation state")
     for rel, row in data["inbound"].items():
+        c.asset_name(row["kind"], row["name"])
         if not any(
-            rel == f"{dest}/{row.get('alias', row.get('name', ''))}" for dest in c.KINDS.values()
+            rel == f"{dest}/{row.get('alias', row.get('name', ''))}"
+            for dest in c.folders(row["kind"])
         ):
             raise c.ShareError(f"Invalid managed destination: {rel}")
-        c.asset_name(row["kind"], row["name"])
         if not isinstance(row.get("source_path"), str):
             raise c.ShareError("Invalid managed source path")
     return data
@@ -251,7 +348,9 @@ def exclude_change(target, destinations):
     }
 
 
-def plan(target, direction="inbound", action="sync", kind=None, asset=None, archive_id=None):
+def plan(
+    target, direction="inbound", action="sync", kind=None, asset=None, archive_id=None, path=None
+):
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
@@ -261,8 +360,14 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
     c.safe_path(target, ".captain/.gitignore")
     cfg, old = c.effective(target), state(target)
     next_state = json.loads(json.dumps(old))
-    changes, observations, errors = [], [], []
+    changes, observations, errors, conflicts = [], [], [], []
     config_update = None
+
+    def conflict(message, path=None, key=None, reason="error"):
+        # Strings stay the stable CLI contract; structured rows let interfaces offer fixes.
+        errors.append(message)
+        conflicts.append({"message": message, "path": path, "key": key, "reason": reason})
+
     cfg_path = c.safe_path(target, ".captain/sharing.json")
     local_cfg = c.read_json(cfg_path, c.blank())
     c.validate(local_cfg, cfg_path)
@@ -287,39 +392,64 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
     if action == "sync":
         if direction in ("inbound", "both"):
             desired = {}
+            contributed = {r["path"]: k for k, r in cfg["outbound"].items()}
             for key, row in cfg["inbound"].items():
                 try:
                     alias = row.get("alias", row["name"])
-                    rel = f"{c.KINDS[row['kind']]}/{alias}"
-                    if rel in desired:
-                        raise c.ShareError(f"Two selections target {rel}")
+                    targets = c.destinations(row["kind"], cfg["tools"])
+                    if not targets:
+                        readers = ", ".join(c.DESTINATIONS[row["kind"]])
+                        raise c.ShareError(
+                            f"No enabled tool reads {row['kind']} ({key}); enable {readers} or deselect it"
+                        )
                     src = source_path(cfg, row["source"], row["kind"], row["name"])
                     validate_asset(src, row["kind"])
                     observe(src)
-                    dest = c.safe_path(target, rel, leaf_link=True)
-                    if tracked(target, dest):
-                        raise c.ShareError(f"Destination is Git-tracked: {rel}")
-                    existing = observe(dest)
-                    previous = old["inbound"].get(rel)
-                    if existing and not previous:
-                        raise c.ShareError(
-                            f"Existing unmanaged asset at {rel}; archive it explicitly before connecting"
-                        )
-                    if (
-                        previous
-                        and existing is not None
-                        and existing != {"type": "link", "target": previous["source_path"]}
-                    ):
-                        raise c.ShareError(
-                            f"Managed link changed or disappeared: {rel}; restore it before syncing"
-                        )
-                    if existing != {"type": "link", "target": str(src)}:
-                        if existing:
-                            archive(dest, previous)
-                        changes.append({"op": "link", "path": str(dest), "source": str(src)})
-                    desired[rel] = {**row, "source_path": str(src), "key": key}
                 except (c.ShareError, OSError) as exc:
-                    errors.append(str(exc))
+                    conflict(str(exc), key=key)
+                    continue
+                for tool, folder in targets:
+                    rel = f"{folder}/{alias}"
+                    try:
+                        if rel in desired:
+                            raise c.ShareError(f"Two selections target {rel}")
+                        dest = c.safe_path(target, rel, leaf_link=True)
+                        if tracked(target, dest):
+                            raise c.ShareError(f"Destination is Git-tracked: {rel}")
+                        existing = observe(dest)
+                        previous = old["inbound"].get(rel)
+                        if existing and not previous:
+                            if rel in contributed:
+                                conflict(
+                                    f"{rel} is this folder's original, contributed as {contributed[rel]}; "
+                                    "keep contributing it or archive it before receiving the library copy",
+                                    rel,
+                                    key,
+                                    "contributed",
+                                )
+                            else:
+                                conflict(
+                                    f"Existing unmanaged asset at {rel}; archive it explicitly before connecting",
+                                    rel,
+                                    key,
+                                    "unmanaged",
+                                )
+                            continue
+                        if (
+                            previous
+                            and existing is not None
+                            and existing != {"type": "link", "target": previous["source_path"]}
+                        ):
+                            raise c.ShareError(
+                                f"Managed link changed or disappeared: {rel}; restore it before syncing"
+                            )
+                        if existing != {"type": "link", "target": str(src)}:
+                            if existing:
+                                archive(dest, previous)
+                            changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                        desired[rel] = {**row, "source_path": str(src), "key": key, "tool": tool}
+                    except (c.ShareError, OSError) as exc:
+                        conflict(str(exc), rel, key)
             for rel, previous in old["inbound"].items():
                 if rel in desired:
                     continue
@@ -334,7 +464,7 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
                         raise c.ShareError(f"Managed link changed: {rel}")
                     archive(dest, previous)
                 except (c.ShareError, OSError) as exc:
-                    errors.append(str(exc))
+                    conflict(str(exc), rel, previous.get("key"))
             next_state["inbound"] = desired
         if direction in ("outbound", "both"):
             destinations = set()
@@ -384,24 +514,39 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
                     ):
                         next_state["outbound"][key] = {"path": str(dest), "snapshot": src_snap}
                 except (c.ShareError, OSError) as exc:
-                    errors.append(str(exc))
+                    conflict(str(exc), row.get("path"), key)
     elif action == "remove":
         c.asset_name(kind, asset)
-        rel = f"{c.KINDS[kind]}/{asset}"
-        dest = c.safe_path(target, rel, leaf_link=True)
-        existing = observe(dest)
-        if existing is None:
-            errors.append(f"Asset is absent: {rel}")
-        elif tracked(target, dest):
-            errors.append(f"Asset is Git-tracked; remove it through its owning repository: {rel}")
-        else:
-            previous = old["inbound"].get(rel)
-            archive(dest, previous)
+        candidates = [f"{folder}/{asset}" for folder in c.folders(kind)]
+        if path is not None:
+            if path not in candidates:
+                raise c.ShareError(f"Not a {kind} destination for {asset}: {path}")
+            candidates = [path]
+        # A managed selection is removed from every tool it reaches; disabling it
+        # would otherwise leave its other links to be archived on the next sync.
+        keys = {old["inbound"][rel]["key"] for rel in candidates if rel in old["inbound"]}
+        rels = list(candidates)
+        rels += [rel for rel, row in old["inbound"].items() if row.get("key") in keys]
+        found = False
+        for rel in dict.fromkeys(rels):
+            dest = c.safe_path(target, rel, leaf_link=True)
+            if observe(dest) is None:
+                next_state["inbound"].pop(rel, None)
+                continue
+            found = True
+            if tracked(target, dest):
+                conflict(
+                    f"Asset is Git-tracked; remove it through its owning repository: {rel}", rel
+                )
+                continue
+            archive(dest, old["inbound"].get(rel))
             next_state["inbound"].pop(rel, None)
+        if not found:
+            conflict(f"Asset is absent: {' or '.join(candidates)}", candidates[0])
+        if keys:
             config_update = local_cfg
-            for key, row in cfg["inbound"].items():
-                if f"{c.KINDS[row['kind']]}/{row.get('alias', row['name'])}" == rel:
-                    config_update["inbound"][key] = {"enabled": False}
+            for key in keys:
+                config_update["inbound"][key] = {"enabled": False}
     else:
         c.name(archive_id)
         folder = c.safe_path(target, f".captain/archive/{archive_id}")
@@ -411,7 +556,7 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
         dest = c.safe_path(target, metadata["relative_path"], leaf_link=True)
         # Archives cannot be edited to restore arbitrary paths outside asset directories.
         allowed = (
-            [f"{directory}/" for directory in c.KINDS.values()]
+            [f"{directory}/" for directory in c.folders()]
             + [f"ip/{k}/" for k in c.KINDS]
             + [f"{k}/" for k in c.KINDS]
         )
@@ -425,11 +570,11 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
         observe(folder / "record.json")
         archived = observe(payload)
         if archived is None or archived != metadata.get("snapshot"):
-            errors.append("Archive payload changed or is missing")
+            conflict("Archive payload changed or is missing", metadata["relative_path"])
         if observe(dest) is not None:
-            errors.append("Restore destination already exists")
+            conflict("Restore destination already exists", metadata["relative_path"])
         if tracked(target, dest):
-            errors.append("Restore destination is Git-tracked")
+            conflict("Restore destination is Git-tracked", metadata["relative_path"])
         changes.append(
             {
                 "op": "restore",
@@ -443,13 +588,13 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
             next_state["inbound"][metadata["relative_path"]] = previous
             config_update = local_cfg
             config_update["inbound"][previous["key"]] = {
-                k: v for k, v in previous.items() if k not in ("source_path", "key")
+                k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
             }
     exclusion = exclude_change(target, next_state["inbound"])
     # Local records, archives and bindings must never be quietly written over tracked state.
     for rel in (".captain/sharing.local.json", ".captain/sharing-state.json", ".captain/archive"):
         if tracked(target, target / rel):
-            errors.append(f"Local installation state is Git-tracked: {rel}")
+            conflict(f"Local installation state is Git-tracked: {rel}", rel)
     spec = {
         "target": str(target),
         "direction": direction,
@@ -457,12 +602,15 @@ def plan(target, direction="inbound", action="sync", kind=None, asset=None, arch
         "kind": kind,
         "asset": asset,
         "archive_id": archive_id,
+        "path": path,
     }
     result = {
         "version": 1,
         "spec": spec,
         "changes": changes,
         "errors": errors,
+        "conflicts": conflicts,
+        "tools": cfg["tools"],
         "can_apply": not errors,
         "observations": observations,
         "next_state": next_state,
@@ -663,6 +811,7 @@ def status(target):
                 "kind": row["kind"],
                 "status": "linked" if ok else "drift",
                 "shared_original": row["source_path"],
+                "tool": row.get("tool"),
             }
         )
     return {

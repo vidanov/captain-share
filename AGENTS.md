@@ -22,7 +22,9 @@ Python/web files; `make lint-fix` fixes imports and supported lint issues. Use
 
 ## Changes and evidence
 
-Read [ADR 001](docs/adr/001-sharing-engine.md) before changing module boundaries.
+Read [ADR 001](docs/adr/001-sharing-engine.md) before changing module boundaries and
+[ADR 002](docs/adr/002-agent-tool-destinations.md) before changing tool destinations, and
+[ADR 003](docs/adr/003-kiro-powers.md) before changing Kiro power handling.
 Preserve preview freshness, ownership checks, path containment, rollback on handled
 failure, and recoverable archives. Existing hooks and other installers' ledgers
 remain owned by their original tools.

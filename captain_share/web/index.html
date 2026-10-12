@@ -36,6 +36,23 @@
         <p class="scope-hint">
           This window manages the folder chosen when it started.
         </p>
+        <fieldset id="tools" class="tools">
+          <legend>Install received assets for</legend>
+          <label
+            ><input type="checkbox" value="kiro" /> Kiro
+            <span class="hint">skills, agents, prompts, steering</span></label
+          ><label
+            ><input type="checkbox" value="claude" /> Claude Code
+            <span class="hint">skills</span></label
+          ><label
+            ><input type="checkbox" value="copilot" /> GitHub Copilot
+            <span class="hint">Copilot instructions and prompts</span></label
+          >
+        </fieldset>
+        <p class="hint tools-hint">
+          One library original, one live link per tool. Turning a tool off
+          archives its links at the next apply.
+        </p>
         <details>
           <summary>Configuration layers</summary>
           <ul id="layers"></ul>
@@ -193,9 +210,10 @@
               </p>
               <div id="restore-history-list"></div>
             </details>
-            <div class="actions" id="selection-actions">
-              <button id="save">Save selection</button
-              ><button id="preview" class="secondary">Preview changes</button>
+            <div class="actions sticky-actions" id="selection-actions">
+              <span id="pending-count" class="hint" aria-live="polite"></span>
+              <button id="save" class="secondary">Save selection</button
+              ><button id="preview">Save and preview</button>
             </div>
           </div>
           <section id="review" class="card review" hidden>
@@ -206,6 +224,10 @@
             <p>These changes apply to the folders shown below.</p>
             <div id="changes"></div>
             <div id="errors" role="alert"></div>
+            <p id="conflict-help" class="hint" hidden>
+              Nothing is applied while a conflict remains. Resolve each one, or
+              deselect it, then preview again.
+            </p>
             <div class="actions">
               <button id="apply" disabled>Apply changes</button
               ><button id="dismiss" class="quiet">Dismiss</button>
@@ -214,7 +236,7 @@
         </section>
       </div>
       <footer>
-        Skills · Agents · Prompts · Steering · Copilot instructions
+        Kiro · Claude Code · GitHub Copilot
         <span>One library. Many independent projects.</span>
       </footer>
     </main>
@@ -297,6 +319,14 @@ captain-share serve --open</code></pre>
               and commit those changes before pushing. Deselecting outbound
               content leaves the library copy in place.
             </dd>
+            <dt>Tools</dt>
+            <dd>
+              Each received asset gets one live link per enabled tool that reads
+              its kind, all pointing at the same original. Kiro and Copilot are
+              on by default; enable Claude Code to also link skills into
+              <code>.claude/skills/</code>. There is no copying back and forth
+              between tool folders.
+            </dd>
             <dt>Aliases</dt>
             <dd>
               Change the local file or folder name. They do not rewrite skill
@@ -347,7 +377,10 @@ captain-share serve --open</code></pre>
                 <tr>
                   <td>Skills</td>
                   <td>Folder containing <code>SKILL.md</code></td>
-                  <td><code>.kiro/skills/</code></td>
+                  <td>
+                    <code>.kiro/skills/</code> (Kiro),
+                    <code>.claude/skills/</code> (Claude Code)
+                  </td>
                 </tr>
                 <tr>
                   <td>Agents</td>
@@ -363,6 +396,17 @@ captain-share serve --open</code></pre>
                   <td>Steering</td>
                   <td><code>.md</code> files</td>
                   <td><code>.kiro/steering/</code></td>
+                </tr>
+                <tr>
+                  <td>Kiro powers</td>
+                  <td>
+                    Folder with <code>plugin.json</code> or
+                    <code>POWER.md</code>
+                  </td>
+                  <td>
+                    Installed user-wide by <code>kiro-cli</code> into
+                    <code>~/.kiro/powers/installed/</code>
+                  </td>
                 </tr>
                 <tr>
                   <td>Copilot repository instructions</td>
@@ -383,9 +427,10 @@ captain-share serve --open</code></pre>
             </table>
           </div>
           <p>
-            Housekeeping files such as <code>.DS_Store</code> and
-            <code>.gitkeep</code> are omitted from discovery and shared copies.
-            Unrelated file types and prompt subfolders are not listed.
+            Housekeeping files such as <code>.DS_Store</code>,
+            <code>.gitkeep</code>, and <code>__pycache__</code> are omitted from
+            discovery and shared copies. Unrelated file types and prompt
+            subfolders are not listed.
           </p>
         </section>
         <section class="card">

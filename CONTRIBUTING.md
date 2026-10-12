@@ -22,7 +22,9 @@ application has no third-party runtime dependency.
 Use temporary repositories in tests. For conflict and guard changes, include a
 legal case and a violation rejected for the intended reason. Read
 [the engine boundary decision](docs/adr/001-sharing-engine.md) before moving file
-operations between modules. Keep UI messages understandable without knowing the
+operations between modules, [tool destinations](docs/adr/002-agent-tool-destinations.md)
+before adding a consumer tool, and [Kiro powers](docs/adr/003-kiro-powers.md) before
+changing how powers install. Keep UI messages understandable without knowing the
 Python implementation.
 
 A contribution should explain the observable behavior, what was tested, and any

@@ -60,6 +60,8 @@ class SharingTests(SharingFixture):
         (local / "references").mkdir()
         (local / "references/.gitkeep").write_text("")
         (local / "references/guide.md").write_text("Useful content")
+        (local / "__pycache__").mkdir()
+        (local / "__pycache__/helper.cpython-312.pyc").write_bytes(b"bytecode")
         self.assertEqual(e.scan(self.repo)[0]["status"], "local")
         c.select(self.repo, "outbound", "team", "skills", "new", path="skills/new")
         planned = e.plan(self.repo, "outbound")
@@ -68,6 +70,7 @@ class SharingTests(SharingFixture):
         dest = self.lib / "ip/skills/new"
         self.assertFalse((dest / ".DS_Store").exists())
         self.assertFalse((dest / "references/.gitkeep").exists())
+        self.assertFalse((dest / "__pycache__").exists())
         self.assertTrue((dest / "references/guide.md").exists())
         self.assertTrue((local / ".DS_Store").exists())
         self.assertEqual(e.snapshot(local), e.snapshot(dest))
@@ -257,10 +260,14 @@ class SharingTests(SharingFixture):
 
     def test_profile_import_preview_then_selection(self):
         (self.lib / "profiles").mkdir()
-        (self.lib / "profiles/pilot.manifest").write_text("skills: hello\n")
+        self.skill(self.lib / "ip/skills/other")
+        # Legacy toolkit manifests use commas; whitespace-only lists also work.
+        (self.lib / "profiles/pilot.manifest").write_text("# pilot\nskills: hello, other\n")
         self.assertFalse(i.import_profile(self.repo, "team", "pilot")["applied"])
         i.import_profile(self.repo, "team", "pilot", True)
-        self.assertIn("team/skills/hello", c.effective(self.repo)["inbound"])
+        inbound = c.effective(self.repo)["inbound"]
+        self.assertIn("team/skills/hello", inbound)
+        self.assertIn("team/skills/other", inbound)
 
     def test_kiro_handoff_is_explicit_and_does_not_grant_trust(self):
         result = i.kiro_handoff(self.repo, "Help choose skills")
@@ -354,7 +361,8 @@ class SharingTests(SharingFixture):
             c.select(self.repo, "inbound", "team", kind, name)
         e.apply(e.plan(self.repo))
         for kind, name in names.items():
-            self.assertTrue((self.repo / c.KINDS[kind] / name).is_symlink())
+            for _, folder in c.destinations(kind, c.DEFAULT_TOOLS):
+                self.assertTrue((self.repo / folder / name).is_symlink())
 
     def test_kiro_run_uses_explicit_working_folder_and_keeps_approval_flags(self):
         import stat
@@ -374,6 +382,288 @@ class SharingTests(SharingFixture):
         self.assertEqual(call["argv"][0], "chat")
         self.assertNotIn("--trust-all-tools", call["argv"])
 
+    def test_default_tools_keep_existing_kiro_only_skill_installation(self):
+        self.select()
+        e.apply(e.plan(self.repo))
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+        self.assertFalse((self.repo / ".claude").exists())
+
+    def test_one_original_links_into_each_enabled_tool(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.select("greet")
+        e.apply(e.plan(self.repo))
+        original = self.lib / "ip/skills/hello"
+        for folder in (".kiro/skills", ".claude/skills"):
+            link = self.repo / folder / "greet"
+            self.assertEqual(os.readlink(link), str(original))
+        self.assertEqual({r["tool"] for r in e.status(self.repo)["installed"]}, {"kiro", "claude"})
+        (original / "SKILL.md").write_text("one edit")
+        self.assertEqual((self.repo / ".claude/skills/greet/SKILL.md").read_text(), "one edit")
+        self.assertEqual(e.plan(self.repo)["changes"], [])
+
+    def test_disabling_a_tool_archives_only_its_links(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.select()
+        e.apply(e.plan(self.repo))
+        c.set_tools(self.repo, ["kiro"])
+        result = e.apply(e.plan(self.repo))
+        self.assertEqual(len(result["archives"]), 1)
+        self.assertFalse(os.path.lexists(self.repo / ".claude/skills/hello"))
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+        self.assertIn("team/skills/hello", c.effective(self.repo)["inbound"])
+
+    def test_removing_a_managed_asset_archives_every_tool_link(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.select()
+        e.apply(e.plan(self.repo))
+        planned = e.plan(self.repo, action="remove", kind="skills", asset="hello")
+        self.assertEqual([x["op"] for x in planned["changes"]], ["archive", "archive"])
+        e.apply(planned)
+        self.assertNotIn("team/skills/hello", c.effective(self.repo)["inbound"])
+        self.assertEqual(e.state(self.repo)["inbound"], {})
+        self.assertEqual(e.plan(self.repo)["changes"], [])
+
+    def test_unmanaged_path_removal_keeps_selection_for_library_copy(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        local = self.skill(self.repo / ".claude/skills/hello", "mine")
+        self.select()
+        planned = e.plan(self.repo)
+        self.assertFalse(planned["can_apply"])
+        self.assertEqual(
+            [(x["path"], x["reason"]) for x in planned["conflicts"]],
+            [(".claude/skills/hello", "unmanaged")],
+        )
+        e.apply(
+            e.plan(
+                self.repo,
+                action="remove",
+                kind="skills",
+                asset="hello",
+                path=".claude/skills/hello",
+            )
+        )
+        self.assertFalse(local.exists())
+        self.assertIn("team/skills/hello", c.effective(self.repo)["inbound"])
+        e.apply(e.plan(self.repo))
+        self.assertTrue((self.repo / ".claude/skills/hello").is_symlink())
+        with self.assertRaisesRegex(c.ShareError, "Not a skills destination"):
+            e.plan(self.repo, action="remove", kind="skills", asset="hello", path="README.md")
+
+    def test_dangling_link_from_old_library_location_is_archived_then_received(self):
+        stale = self.repo / ".kiro/skills/hello"
+        stale.parent.mkdir(parents=True)
+        stale.symlink_to(self.base / "moved-away/ip/skills/hello")
+        self.select()
+        self.assertEqual(e.plan(self.repo)["conflicts"][0]["reason"], "unmanaged")
+        result = e.apply(
+            e.plan(
+                self.repo, action="remove", kind="skills", asset="hello", path=".kiro/skills/hello"
+            )
+        )
+        self.assertFalse(os.path.lexists(stale))
+        self.assertEqual(len(result["archives"]), 1)
+        e.apply(e.plan(self.repo))
+        self.assertEqual(os.readlink(stale), str(self.lib / "ip/skills/hello"))
+
+    def test_claude_skill_can_be_contributed_then_received_for_both_tools(self):
+        self.skill(self.repo / ".claude/skills/drafts", "claude original")
+        row = [r for r in e.scan(self.repo) if r["name"] == "drafts"][0]
+        self.assertEqual((row["tool"], row["status"]), ("claude", "local"))
+        c.select(self.repo, "outbound", "team", "skills", "drafts", path=row["path"])
+        e.apply(e.plan(self.repo, "outbound"))
+        self.assertTrue((self.lib / "ip/skills/drafts/SKILL.md").is_file())
+        c.set_tools(self.repo, ["kiro", "claude"])
+        c.select(self.repo, "inbound", "team", "skills", "drafts")
+        planned = e.plan(self.repo)
+        self.assertEqual(
+            [(x["path"], x["reason"]) for x in planned["conflicts"]],
+            [(".claude/skills/drafts", "contributed")],
+        )
+        listed = {r["name"]: r for r in e.catalog(self.repo, "team")}["drafts"]
+        self.assertEqual(
+            [(d["tool"], d["state"]) for d in listed["destinations"]],
+            [("kiro", "absent"), ("claude", "contributed")],
+        )
+
+    def test_kind_without_enabled_tool_is_a_conflict(self):
+        (self.lib / "ip/steering/guide.md").write_text("Guidance")
+        c.set_tools(self.repo, ["claude"])
+        c.select(self.repo, "inbound", "team", "steering", "guide.md")
+        planned = e.plan(self.repo)
+        self.assertFalse(planned["can_apply"])
+        self.assertIn("No enabled tool reads steering", planned["errors"][0])
+
+    def test_tools_are_validated_and_deepest_layer_wins(self):
+        c.set_tools(self.repo, ["kiro", "claude"], scope="global")
+        self.assertEqual(c.effective(self.repo)["tools"], ["kiro", "claude"])
+        c.set_tools(self.repo, ["claude", "kiro"])
+        self.assertEqual(c.effective(self.repo)["tools"], ["kiro", "claude"])
+        for bad in ([], ["cursor"], ["kiro", "kiro"]):
+            with self.assertRaises(c.ShareError):
+                c.set_tools(self.repo, bad)
+        local = self.repo / ".captain/sharing.local.json"
+        data = json.loads(local.read_text())
+        data["tools"] = ["kiro"]
+        local.write_text(json.dumps(data))
+        with self.assertRaisesRegex(c.ShareError, "portable"):
+            c.effective(self.repo)
+
+    def test_catalog_reports_install_state_per_tool(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.skill(self.repo / ".kiro/skills/hello", "local")
+        row = e.catalog(self.repo, "team")[0]
+        self.assertEqual(
+            [(d["tool"], d["state"]) for d in row["destinations"]],
+            [("kiro", "blocked"), ("claude", "absent")],
+        )
+        e.apply(e.plan(self.repo, action="remove", kind="skills", asset="hello"))
+        self.select()
+        e.apply(e.plan(self.repo))
+        row = e.catalog(self.repo, "team")[0]
+        self.assertEqual({d["state"] for d in row["destinations"]}, {"installed"})
+
+    def power(self, name="demo-power", manifest_name=None, env=None):
+        folder = self.lib / "ip/powers" / name
+        (folder / "skills/greet").mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": manifest_name or name,
+            "version": "1.0.0",
+            "description": "Fictional power",
+            "author": {"name": "Tests"},
+            "keywords": ["demo"],
+        }
+        (folder / "plugin.json").write_text(json.dumps(manifest))
+        (folder / "skills/greet/SKILL.md").write_text("---\nname: greet\ndescription: Hi\n---\n")
+        if env is not None:
+            servers = {"mcpServers": {"demo": {"command": "demo", "env": env}}}
+            (folder / "mcp.json").write_text(json.dumps(servers))
+        return folder
+
+    def fake_kiro(self):
+        """Mimics kiro-cli 2.29.1: copies by manifest name into ~/.kiro/powers/installed."""
+        import stat
+
+        bindir = self.base / "fake-kiro"
+        bindir.mkdir(exist_ok=True)
+        script = bindir / "kiro-cli"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, shutil, sys\nfrom pathlib import Path\n"
+            "home = Path(os.environ['HOME']) / '.kiro/powers/installed'\n"
+            "home.mkdir(parents=True, exist_ok=True)\n"
+            "_, action, arg = sys.argv[1:4]\n"
+            "if action == 'install':\n"
+            "    src = Path(arg); m = src / 'plugin.json'\n"
+            "    name = json.loads(m.read_text())['name'] if m.exists() else src.name\n"
+            "    shutil.rmtree(home / name, ignore_errors=True)\n"
+            "    shutil.copytree(src, home / name)\n"
+            "    print('Installed power', name)\n"
+            "else:\n"
+            "    shutil.rmtree(home / arg); print('Uninstalled power', arg)\n"
+        )
+        script.chmod(stat.S_IRWXU)
+        env = patch.dict(
+            os.environ,
+            {
+                "PATH": str(bindir) + os.pathsep + os.environ["PATH"],
+                "HOME": str(self.base / "home"),
+            },
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        return self.base / "home/.kiro/powers/installed"
+
+    def test_powers_are_validated_as_library_assets(self):
+        self.power()
+        self.power("renamed", manifest_name="demo-power")
+        legacy = self.lib / "ip/powers/legacy"
+        legacy.mkdir()
+        (legacy / "POWER.md").write_text('---\nname: "legacy"\nkeywords: ["x"]\n---\n# Legacy\n')
+        bare = self.lib / "ip/powers/bare"
+        bare.mkdir()
+        (bare / "README.md").write_text("no manifest")
+        rows = {r["name"]: r for r in e.catalog(self.repo, "team") if r["kind"] == "powers"}
+        self.assertEqual(rows["demo-power"]["status"], "available")
+        self.assertEqual(rows["legacy"]["status"], "available")
+        self.assertIn("must match its folder", rows["renamed"]["error"])
+        self.assertIn("lacks plugin.json or POWER.md", rows["bare"]["error"])
+        self.assertEqual(rows["demo-power"]["destinations"], [])
+        with self.assertRaisesRegex(c.ShareError, "powers install"):
+            c.select(self.repo, "inbound", "team", "powers", "demo-power")
+
+    def test_power_contribution_requires_mcp_env_references(self):
+        import shutil
+
+        local = self.repo / "powers/team-power"
+        shutil.move(str(self.power("team-power", env={"API_KEY": "literal-value"})), str(local))
+        c.select(self.repo, "outbound", "team", "powers", "team-power", path="powers/team-power")
+        planned = e.plan(self.repo, "outbound")
+        self.assertIn("use ${VAR} references", planned["errors"][0])
+        (local / "mcp.json").write_text(
+            json.dumps(
+                {"mcpServers": {"demo": {"command": "demo", "env": {"API_KEY": "${API_KEY}"}}}}
+            )
+        )
+        e.apply(e.plan(self.repo, "outbound"))
+        self.assertTrue((self.lib / "ip/powers/team-power/plugin.json").is_file())
+
+    def test_power_install_update_uninstall_through_kiro(self):
+        installed = self.fake_kiro()
+        original = self.power()
+        self.assertEqual(i.powers(self.repo, "team")[0]["kiro"], "not-installed")
+        planned = i.power_plan(self.repo, "install", "team", "demo-power")
+        self.assertEqual(planned["changes"][0]["op"], "kiro install")
+        self.assertEqual(planned["changes"][0]["command"][1:3], ["powers", "install"])
+        self.assertFalse(installed.exists())
+        i.power_apply(planned)
+        self.assertEqual(i.powers(self.repo, "team")[0]["kiro"], "current")
+        self.assertEqual(i.power_plan(self.repo, "install", "team", "demo-power")["changes"], [])
+        (original / "skills/greet/SKILL.md").write_text("changed")
+        self.assertEqual(i.powers(self.repo, "team")[0]["kiro"], "differs")
+        update = i.power_plan(self.repo, "install", "team", "demo-power")
+        self.assertEqual(update["changes"][0]["op"], "kiro update")
+        (original / "skills/greet/SKILL.md").write_text("changed again")
+        with self.assertRaisesRegex(c.ShareError, "stale"):
+            i.power_apply(update)
+        i.power_apply(i.power_plan(self.repo, "install", "team", "demo-power"))
+        self.assertEqual(
+            (installed / "demo-power/skills/greet/SKILL.md").read_text(), "changed again"
+        )
+        i.power_apply(i.power_plan(self.repo, "uninstall", "team", "demo-power"))
+        self.assertFalse((installed / "demo-power").exists())
+        self.assertFalse(i.power_plan(self.repo, "uninstall", "team", "demo-power")["can_apply"])
+        self.assertTrue(original.exists())
+
+    def test_cli_powers_preview_then_apply(self):
+        installed = self.fake_kiro()
+        self.power()
+        exe = Path(__file__).resolve().parents[1] / "bin/captain-share"
+
+        def run(*args):
+            p = subprocess.run(
+                [str(exe), "--target", str(self.repo), "--json", *args],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
+            return json.loads(p.stdout)
+
+        self.assertEqual(run("powers", "list", "--source", "team")[0]["kiro"], "not-installed")
+        self.assertEqual(run("powers", "install", "team", "demo-power")["state"], "not-installed")
+        self.assertFalse(installed.exists())
+        self.assertTrue(run("powers", "install", "team", "demo-power", "--apply")["ok"])
+        self.assertEqual(run("powers", "list", "--source", "team")[0]["kiro"], "current")
+        run("powers", "uninstall", "team", "demo-power", "--apply")
+        self.assertFalse((installed / "demo-power").exists())
+
+    def test_power_plan_without_kiro_cli_is_blocked(self):
+        self.power()
+        with patch("captain_share.integrations.shutil.which", return_value=None):
+            planned = i.power_plan(self.repo, "install", "team", "demo-power")
+        self.assertFalse(planned["can_apply"])
+        self.assertIn("kiro-cli", planned["errors"][0])
+
     def test_minimal_config_can_be_extended(self):
         (self.repo / ".captain/sharing.json").write_text('{"version":1}')
         self.select()
@@ -391,10 +681,16 @@ class SharingTests(SharingFixture):
             self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
             return json.loads(p.stdout)
 
+        self.assertEqual(run("tools")["tools"], ["kiro", "copilot"])
+        self.assertEqual(run("tools", "claude", "kiro")["tools"], ["kiro", "claude"])
         run("select", "inbound", "team", "skills", "hello", "--alias", "greet")
         run("plan", "--save", str(self.base / "plan.json"))
         run("apply", str(self.base / "plan.json"))
-        self.assertEqual(run("status")["installed"][0]["status"], "linked")
+        installed = run("status")["installed"]
+        self.assertEqual(
+            {(r["tool"], r["status"]) for r in installed},
+            {("kiro", "linked"), ("claude", "linked")},
+        )
 
 
 if __name__ == "__main__":

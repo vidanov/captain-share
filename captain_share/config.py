@@ -10,21 +10,28 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 class ShareError(Exception):
     pass
 
 
-KINDS = {
-    "skills": ".kiro/skills",
-    "agents": ".kiro/agents",
-    "prompts": ".kiro/prompts",
-    "steering": ".kiro/steering",
-    "copilot": ".github",
-    "copilot-instructions": ".github/instructions",
-    "copilot-prompts": ".github/prompts",
+# A kind names a library folder and format; each tool that reads it gets its own link.
+DESTINATIONS = {
+    "skills": {"kiro": ".kiro/skills", "claude": ".claude/skills"},
+    "agents": {"kiro": ".kiro/agents"},
+    "prompts": {"kiro": ".kiro/prompts"},
+    "steering": {"kiro": ".kiro/steering"},
+    "copilot": {"copilot": ".github"},
+    "copilot-instructions": {"copilot": ".github/instructions"},
+    "copilot-prompts": {"copilot": ".github/prompts"},
+    # Kiro installs powers user-wide by copying them (ADR 003); no project link exists.
+    "powers": {},
 }
+KINDS = tuple(DESTINATIONS)
+TOOLS = ("kiro", "claude", "copilot")
+DEFAULT_TOOLS = ["kiro", "copilot"]
 SUFFIXES = {
     "agents": ".json",
     "prompts": ".md",
@@ -50,6 +57,27 @@ def asset_name(kind, value):
         raise ShareError("Copilot repository instructions must be named copilot-instructions.md")
     if kind in SUFFIXES and not value.endswith(SUFFIXES[kind]):
         raise ShareError(f"{kind} names must end with {SUFFIXES[kind]}")
+    return value
+
+
+def destinations(kind, tools=TOOLS):
+    """Project folders for one kind, limited to the enabled tools."""
+    return [(tool, folder) for tool, folder in DESTINATIONS[kind].items() if tool in tools]
+
+
+def folders(kind=None):
+    kinds = [kind] if kind else KINDS
+    return [folder for k in kinds for folder in DESTINATIONS[k].values()]
+
+
+def tools_list(value, path="tools"):
+    if (
+        not isinstance(value, list)
+        or not value
+        or len(set(value)) != len(value)
+        or any(tool not in TOOLS for tool in value)
+    ):
+        raise ShareError(f"tools must be a non-empty list of {', '.join(TOOLS)} at {path}")
     return value
 
 
@@ -137,14 +165,18 @@ def locks(paths):
         yield
 
 
-def blank():
+def blank() -> dict[str, Any]:
     return {"version": 1, "sources": {}, "inbound": {}, "outbound": {}}
 
 
 def validate(data, path, local=False):
     allowed = {"version", "sources"} if local else set(blank())
-    if not isinstance(data, dict) or data.get("version") != 1 or set(data) - allowed:
+    if not isinstance(data, dict) or data.get("version") != 1 or set(data) - allowed - {"tools"}:
         raise ShareError(f"Unsupported sharing configuration at {path}")
+    if "tools" in data:
+        if local:
+            raise ShareError(f"tools belong in the portable sharing.json, not {path}")
+        tools_list(data["tools"], path)
     for field in allowed - {"version"}:
         data.setdefault(field, {})
         if not isinstance(data[field], dict):
@@ -176,6 +208,11 @@ def validate(data, path, local=False):
                     raise ShareError(f"Selection {key} lacks {required}")
             name(row["source"])
             asset_name(row["kind"], row["name"])
+            if direction == "inbound" and not DESTINATIONS[row["kind"]]:
+                raise ShareError(
+                    f"{row['kind']} are installed by their tool, not linked: {key}. "
+                    "Use `captain-share powers install` for Kiro powers."
+                )
             if key != selection_key(row):
                 raise ShareError(f"Selection key does not match asset: {key}")
             if "alias" in row:
@@ -203,11 +240,15 @@ def layers(target):
                 yield p, data, local
 
 
-def effective(target):
+def effective(target) -> dict[str, Any]:
     result = blank()
     result["layers"] = []
+    result["tools"] = list(DEFAULT_TOOLS)
     for p, data, local in layers(target):
         result["layers"].append(str(p))
+        if "tools" in data:
+            # The deepest layer that names tools replaces the inherited list.
+            result["tools"] = list(data["tools"])
         for sid, spec in data.get("sources", {}).items():
             result["sources"].setdefault(sid, {}).update(spec)
             if local and spec.get("path"):
@@ -284,6 +325,18 @@ def remove_source(target, sid, scope="repo"):
     return {"source": sid, "disabled": True}
 
 
+def set_tools(target, tools, scope="repo"):
+    tools_list(tools)
+    init(target, scope)
+    d = config_dir(target, scope)
+    with locks([d]):
+        cfg = read_json(d / "sharing.json")
+        validate(cfg, d / "sharing.json")
+        cfg["tools"] = [tool for tool in TOOLS if tool in tools]
+        atomic_json(d / "sharing.json", cfg)
+    return {"tools": cfg["tools"], "scope": scope, "config": str(d / "sharing.json")}
+
+
 def selection_key(row):
     return "/".join(row[k] for k in ("source", "kind", "name"))
 
@@ -309,5 +362,6 @@ def select(target, direction, source, kind, asset, alias=None, path=None, enable
         cfg = read_json(d / "sharing.json")
         validate(cfg, d / "sharing.json")
         cfg[direction][key] = row
+        validate(cfg, d / "sharing.json")
         atomic_json(d / "sharing.json", cfg)
     return {"direction": direction, "key": key, "selection": row}
