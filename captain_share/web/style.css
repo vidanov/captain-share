@@ -770,3 +770,26 @@ footer {
   margin-top: 8px;
   color: var(--muted);
 }
+.hint.warn {
+  color: var(--ink);
+  font-weight: 600;
+}
+#add-source .hint {
+  margin: 8px 0 4px;
+}
+#add-source .folder-browse {
+  width: 100%;
+  margin-top: 6px;
+}
+#add-source details.advanced {
+  margin-top: 12px;
+}
+.folder-entry .badge {
+  margin-left: 8px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+}
+#folder-detected:empty {
+  display: none;
+}

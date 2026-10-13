@@ -53,7 +53,9 @@ def parser():
     add = ss.add_parser("add")
     add.add_argument("name")
     add.add_argument("path")
-    add.add_argument("--layout", choices=["ip", "flat"], default="ip")
+    add.add_argument(
+        "--layout", choices=["ip", "flat"], help="Default: detected (ip/ folder, else flat)"
+    )
     add.add_argument("--scope", choices=["repo", "folder", "global"], default="repo")
     add.add_argument("--url")
     remove = ss.add_parser("remove")

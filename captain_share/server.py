@@ -27,23 +27,56 @@ def folder_listing(target, value="", show_hidden=False):
     if not path.is_absolute():
         path = target / path
     path = c.root(path)
+    layout = c.detect_layout(path)
     entries = []
     for item in path.iterdir():
         if item.name.startswith(".") and not show_hidden:
             continue
         try:
             if item.is_dir():
-                entries.append({"name": item.name, "path": str(item)})
+                # Inside a library, subfolders are its asset folders, not libraries.
+                found = None if layout else c.detect_layout(item)
+                entries.append({"name": item.name, "path": str(item), "library": found})
         except OSError:
             continue
     entries.sort(key=lambda item: item["name"].casefold())
     return {
         "path": str(path),
+        "library": layout,
         "parent": str(path.parent),
         "home": str(Path.home()),
         "project": str(target),
         "folders": entries[:1000],
         "truncated": len(entries) > 1000,
+    }
+
+
+def library_info(target, value):
+    """What connecting this folder would do: layout, asset counts, name, duplicates."""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise c.ShareError("Choose an absolute folder path")
+    path = c.root(path)
+    if path.name == "ip" and c.detect_layout(path.parent) == "ip":
+        path = path.parent  # The checkout root, not its ip/ folder, is the library.
+    layout = c.detect_layout(path)
+    counts = {}
+    if layout:
+        base = path / "ip" if layout == "ip" else path
+        for kind in c.KINDS:
+            folder = base / kind
+            if folder.is_dir():
+                found = sum(1 for item in folder.iterdir() if e.candidate(item, kind))
+                if found:
+                    counts[kind] = found
+    sources = c.effective(target)["sources"]
+    connected = next((sid for sid, spec in sources.items() if spec.get("path") == str(path)), None)
+    return {
+        "path": str(path),
+        "layout": layout,
+        "assets": counts,
+        "name": connected or c.suggest_name(path, taken=set(sources)),
+        "connected_as": connected,
     }
 
 
@@ -142,6 +175,8 @@ def make_server(target, port=0):
                             target, query.get("path", [""])[0], query.get("hidden", [""])[0] == "1"
                         )
                     )
+                elif parsed.path == "/api/library":
+                    self.respond(library_info(target, parse_qs(parsed.query).get("path", [""])[0]))
                 elif parsed.path == "/api/repository":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(r.status(target, source))
@@ -194,7 +229,7 @@ def make_server(target, port=0):
                     result = reveal_path(target, data["path"])
                 elif path == "/api/clone":
                     result = r.clone(
-                        target, data["name"], data["url"], data["path"], data.get("layout", "ip")
+                        target, data["name"], data["url"], data["path"], data.get("layout") or None
                     )
                     plans.clear()
                 elif path == "/api/git":
@@ -207,7 +242,7 @@ def make_server(target, port=0):
                     plans.clear()
                 elif path == "/api/source":
                     result = c.add_source(
-                        target, data["name"], data["path"], data.get("layout", "ip")
+                        target, data["name"], data["path"], data.get("layout") or None
                     )
                     plans.clear()
                 elif path == "/api/selections":

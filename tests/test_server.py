@@ -170,6 +170,30 @@ class ServerTests(SharingFixture):
         self.assertTrue((self.repo / ".claude/skills/hello").is_symlink())
         self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
 
+    def test_library_lookup_and_picker_mark_library_folders(self):
+        _, info = self.request("/api/library?path=" + quote(str(self.lib / "ip")))
+        self.assertEqual(info["path"], str(self.lib))
+        self.assertEqual((info["layout"], info["assets"]), ("ip", {"skills": 1}))
+        self.assertEqual(info["connected_as"], "team")
+        other = self.base / "Other Tools"
+        (other / "agents").mkdir(parents=True)
+        (other / "agents/helper.json").write_text("{}")
+        _, info = self.request("/api/library?path=" + quote(str(other)))
+        self.assertEqual(
+            (info["name"], info["layout"], info["connected_as"]), ("other-tools", "flat", None)
+        )
+        _, listing = self.request("/api/folders?path=" + quote(str(self.base)))
+        marks = {row["name"]: row["library"] for row in listing["folders"]}
+        self.assertEqual(
+            (marks["library"], marks["Other Tools"], marks["project"]), ("ip", "flat", None)
+        )
+        _, inside = self.request("/api/folders?path=" + quote(str(self.lib)))
+        self.assertEqual(inside["library"], "ip")
+        self.assertTrue(all(row["library"] is None for row in inside["folders"]))
+        self.assertEqual(self.request("/api/library?path=relative")[0], 400)
+        self.assertEqual(self.request("/api/source", {"name": "other", "path": str(other)})[0], 200)
+        self.assertEqual(self.request("/api/catalog?source=other")[1][0]["name"], "helper.json")
+
     def test_invalid_batch_does_not_save_partial_selection(self):
         code, _ = self.request(
             "/api/selections",

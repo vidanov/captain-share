@@ -291,9 +291,32 @@ def init(target=None, scope="repo", library=False):
     return {"config": str(path), "library": library}
 
 
-def add_source(target, sid, path, layout="ip", scope="repo", url=None):
+def detect_layout(path):
+    """ip when assets live under ip/, flat when kind folders sit at the root."""
+    p = Path(path)
+    try:
+        if (p / "ip").is_dir():
+            return "ip"
+        if any((p / kind).is_dir() for kind in KINDS):
+            return "flat"
+    except OSError:
+        pass
+    return None
+
+
+def suggest_name(path, taken=()):
+    """A valid source name from a folder name, e.g. "My Library.v2" -> "my-library.v2"."""
+    base = re.sub(r"[^a-z0-9_.-]+", "-", Path(path).name.lower()).strip("-.") or "library"
+    candidate, n = base, 2
+    while candidate in taken:
+        candidate, n = f"{base}-{n}", n + 1
+    return candidate
+
+
+def add_source(target, sid, path, layout=None, scope="repo", url=None):
     name(sid)
     location = root(path)
+    layout = layout or detect_layout(location) or "ip"
     if layout not in ("ip", "flat"):
         raise ShareError("Layout must be ip or flat")
     base = safe_path(location, "ip") if layout == "ip" else location

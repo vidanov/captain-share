@@ -112,9 +112,9 @@ def operate(target, source, action, fingerprint):
         }
 
 
-def clone(target, name, url, destination, layout="ip"):
-    c.name(name)
-    if layout not in ("ip", "flat"):
+def clone(target, name, url, destination, layout=None):
+    # Without a layout, the cloned checkout decides (see config.detect_layout).
+    if layout not in (None, "ip", "flat"):
         raise c.ShareError("Unknown layout")
     if name in c.effective(target)["sources"]:
         raise c.ShareError("A library with that name is already connected")

@@ -50,8 +50,9 @@ was started for; start another instance for another project. See
 
 ## Receive assets
 
-A library can use `ip/skills/`, `ip/agents/`, etc. (`--layout ip`, default), or
-`skills/`, `agents/`, etc. at its root (`--layout flat`). Clone it normally with
+A library can use `ip/skills/`, `ip/agents/`, etc. (`--layout ip`), or
+`skills/`, `agents/`, etc. at its root (`--layout flat`); without `--layout` the
+layout is detected from the folder. Clone it normally with
 your own Git credentials, then register the local checkout:
 
 ```bash
@@ -262,6 +263,17 @@ in tool folders that Captain Share does not manage, each with Archive.
 
 Kiro power rows show Kiro's install state and offer Install, Update, or Uninstall.
 The review names the exact `kiro-cli` command before Apply runs it.
+
+### Adding a library
+
+Add a library folder starts with Choose library folder…. The picker opens one
+level above the project and marks folders that contain `ip/` or asset folders as
+library. After a folder is chosen (or a path typed), the card shows what it found,
+for example "Found 39 skills, 3 prompts under ip/", fills the name from the folder
+name (editable), and detects the layout. Choosing a library's `ip/` folder selects
+the library itself. Connect is refused for folders without asset folders and for
+folders already connected, with the reason shown. Clone and connect fills the
+library name from the repository URL.
 
 ### Git, cloning, and folders
 

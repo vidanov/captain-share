@@ -107,6 +107,19 @@ class SharingTests(SharingFixture):
         self.assertIn("global-tools", merged["sources"])
         self.assertNotIn(str(self.lib), (self.repo / ".captain/sharing.json").read_text())
 
+    def test_layout_is_detected_and_names_come_from_folders(self):
+        flat = self.base / "Flat Library.v2"
+        (flat / "skills").mkdir(parents=True)
+        self.assertEqual(c.detect_layout(self.lib), "ip")
+        self.assertEqual(c.detect_layout(flat), "flat")
+        self.assertIsNone(c.detect_layout(self.repo))
+        self.assertEqual(c.suggest_name(flat), "flat-library.v2")
+        self.assertEqual(c.suggest_name(self.lib, taken={"library"}), "library-2")
+        self.assertEqual(c.suggest_name(self.base / "..."), "library")
+        c.add_source(self.repo, "flat", flat)
+        local = json.loads((self.repo / ".captain/sharing.local.json").read_text())
+        self.assertEqual(local["sources"]["flat"]["layout"], "flat")
+
     def test_home_selections_stay_user_wide_and_are_not_project_defaults(self):
         # Make self.base the "home" folder: its .captain is the global layer.
         with patch.dict(os.environ, {"CAPTAIN_SHARE_HOME": str(self.base / ".captain")}):
