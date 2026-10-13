@@ -38,11 +38,14 @@
         <fieldset id="tools" class="tools">
           <legend>Agents that receive links</legend>
           <label
-            ><input type="checkbox" value="kiro" /> Kiro
+            ><input type="checkbox" value="kiro" /> Kiro (IDE and CLI)
             <span class="hint" id="tool-hint-kiro"></span></label
           ><label
             ><input type="checkbox" value="claude" /> Claude Code
             <span class="hint" id="tool-hint-claude"></span></label
+          ><label
+            ><input type="checkbox" value="codex" /> Codex
+            <span class="hint" id="tool-hint-codex"></span></label
           ><label
             ><input type="checkbox" value="copilot" /> GitHub Copilot
             <span class="hint" id="tool-hint-copilot"></span
@@ -350,9 +353,10 @@ captain-share serve --open</code></pre>
             <dd>
               Each received asset gets one live link per enabled tool that reads
               its kind, all pointing at the same original. Kiro and Copilot are
-              on by default; enable Claude Code to also link skills into
-              <code>.claude/skills/</code>. There is no copying back and forth
-              between tool folders.
+              on by default; enable Claude Code or Codex to also link skills
+              into
+              <code>.claude/skills/</code> or <code>.agents/skills/</code>.
+              There is no copying back and forth between tool folders.
             </dd>
             <dt>Aliases</dt>
             <dd>
@@ -406,7 +410,8 @@ captain-share serve --open</code></pre>
                   <td>Folder containing <code>SKILL.md</code></td>
                   <td>
                     <code>.kiro/skills/</code> (Kiro),
-                    <code>.claude/skills/</code> (Claude Code)
+                    <code>.claude/skills/</code> (Claude Code),
+                    <code>.agents/skills/</code> (Codex)
                   </td>
                 </tr>
                 <tr>

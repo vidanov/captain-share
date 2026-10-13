@@ -19,7 +19,8 @@ class ShareError(Exception):
 
 # A kind names a library folder and format; each tool that reads it gets its own link.
 DESTINATIONS = {
-    "skills": {"kiro": ".kiro/skills", "claude": ".claude/skills"},
+    # Codex reads the shared Agent Skills folder (.agents/skills) and follows symlinks.
+    "skills": {"kiro": ".kiro/skills", "claude": ".claude/skills", "codex": ".agents/skills"},
     "agents": {"kiro": ".kiro/agents"},
     "prompts": {"kiro": ".kiro/prompts"},
     "steering": {"kiro": ".kiro/steering"},
@@ -30,7 +31,7 @@ DESTINATIONS = {
     "powers": {},
 }
 KINDS = tuple(DESTINATIONS)
-TOOLS = ("kiro", "claude", "copilot")
+TOOLS = ("kiro", "claude", "codex", "copilot")
 DEFAULT_TOOLS = ["kiro", "copilot"]
 SUFFIXES = {
     "agents": ".json",

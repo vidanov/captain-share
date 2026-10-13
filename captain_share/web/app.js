@@ -31,6 +31,7 @@ let repository = null,
 const TOOL_NAMES = {
   kiro: "Kiro",
   claude: "Claude Code",
+  codex: "Codex",
   copilot: "Copilot",
 };
 const DESTINATION_LABELS = {
@@ -127,7 +128,7 @@ function renderPlaces() {
   const kind = here().kind;
   $("place-help").textContent =
     kind === "user"
-      ? "Installs into ~/.kiro and ~/.claude, which agents read in every project. Projects do not link these again."
+      ? "Installs into ~/.kiro, ~/.claude, and ~/.agents, which agents read in every project. Projects do not link these again."
       : kind === "folder"
         ? "Selections saved here are inherited by every project inside this folder. Saving previews the registered projects inside it."
         : "Selections here apply to this project only.";
@@ -136,6 +137,8 @@ function renderPlaces() {
     (user ? "~/.kiro/" : ".kiro/") + " skills, agents, prompts, steering";
   $("tool-hint-claude").textContent =
     (user ? "~/.claude/skills/" : ".claude/skills/") + " (skills only)";
+  $("tool-hint-codex").textContent =
+    (user ? "~/.agents/skills/" : ".agents/skills/") + " (skills only)";
   $("tool-hint-copilot").textContent = user
     ? "no user-wide folder; set it per project"
     : ".github/ instructions and prompts";

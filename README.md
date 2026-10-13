@@ -92,15 +92,15 @@ target (or globally); the deepest configuration that names tools wins:
 
 ```bash
 captain-share --target /path/to/project tools            # show: kiro copilot (default)
-captain-share --target /path/to/project tools kiro claude copilot
+captain-share --target /path/to/project tools kiro claude codex copilot
 captain-share --target /path/to/project sync --apply
 ```
 
-| Kind | Kiro | Claude Code | Copilot |
-| --- | --- | --- | --- |
-| `skills` | `.kiro/skills/` | `.claude/skills/` | |
-| `agents`, `prompts`, `steering` | `.kiro/…` | | |
-| `copilot*` | | | `.github/…` |
+| Kind | Kiro | Claude Code | Codex | Copilot |
+| --- | --- | --- | --- | --- |
+| `skills` | `.kiro/skills/` | `.claude/skills/` | `.agents/skills/` | |
+| `agents`, `prompts`, `steering` | `.kiro/…` | | | |
+| `copilot*` | | | | `.github/…` |
 
 Each enabled tool gets its own live link to the same original; nothing is copied
 between tool folders. Turning a tool off archives its links at the next apply.
@@ -179,8 +179,8 @@ captain-share --target "$HOME" select inbound personal skills review-code
 captain-share --target "$HOME" sync --apply
 ```
 
-Selections saved for your home folder are user-wide installs into `~/.kiro` or
-`~/.claude`, which agent tools already read in every project. Projects inherit the
+Selections saved for your home folder are user-wide installs into `~/.kiro`,
+`~/.claude`, or `~/.agents`, which agent tools already read in every project. Projects inherit the
 home layer's sources and tools, but not its selections, so a user-wide skill is
 not linked again into each project. Use an ancestor folder's `.captain` (for
 example `~/Documents/PROJECTS`) for selections that projects should inherit.
