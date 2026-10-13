@@ -12,3 +12,5 @@ dist/
 node_modules/
 .mypy_cache/
 .ruff_cache/
+.impeccable/questions/
+.impeccable/review/

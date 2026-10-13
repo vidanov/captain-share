@@ -18,8 +18,13 @@ window.addEventListener("hashchange", () => {
     });
 });
 let state,
-  catalog = [],
-  view = "inbound",
+  bay = { columns: [], rows: [] },
+  patches = new Map(),
+  kindFilter = "",
+  showAllFolders = false,
+  // Saved choices a cancelled review puts back: { steps, patches, touched }.
+  undo = null,
+  view = "patch",
   pending = null,
   lastSpec = null,
   resumeSpec = null,
@@ -108,55 +113,39 @@ function homePath() {
   return (state.places.find((row) => row.kind === "user") || {}).path;
 }
 function renderPlaces() {
+  const choices = state.places.filter((row) => row.kind !== "folder");
   $("place").replaceChildren(
-    ...state.places.map((row) => {
+    ...choices.map((row) => {
       const option = el(
         "option",
         row.kind === "user"
-          ? "Your user (every project)"
-          : row.kind === "folder"
-            ? "Folder " + row.label + " (projects inside inherit)"
-            : "Project " +
-              row.label +
-              (row.path === state.startup ? " (this window)" : ""),
+          ? "Your user only"
+          : row.label + (row.path === state.startup ? " (this window)" : ""),
       );
       option.value = row.path;
       return option;
     }),
   );
   $("place").value = state.target;
-  const kind = here().kind;
-  $("place-help").textContent =
-    kind === "user"
-      ? "Installs into ~/.kiro, ~/.claude, and ~/.agents, which agents read in every project. Projects do not link these again."
-      : kind === "folder"
-        ? "Selections saved here are inherited by every project inside this folder. Saving previews the registered projects inside it."
-        : "Selections here apply to this project only.";
-  const user = kind === "user";
-  $("tool-hint-kiro").textContent =
-    (user ? "~/.kiro/" : ".kiro/") + " skills, agents, prompts, steering";
-  $("tool-hint-claude").textContent =
-    (user ? "~/.claude/skills/" : ".claude/skills/") + " (skills only)";
-  $("tool-hint-codex").textContent =
-    (user ? "~/.agents/skills/" : ".agents/skills/") + " (skills only)";
-  $("tool-hint-copilot").textContent = user
-    ? "no user-wide folder; set it per project"
-    : ".github/ instructions and prompts";
+}
+function relativeTo(path, base) {
+  return path.startsWith(base + "/")
+    ? path.slice(base.length + 1)
+    : shortPath(path);
+}
+function shortPath(path) {
+  const home = homePath();
+  return home && path.startsWith(home) ? "~" + path.slice(home.length) : path;
 }
 async function refresh(keepDrafts = false) {
   state = await api("state");
   currentTarget = state.target;
   renderPlaces();
   projects = await api("projects").catch(() => []);
-  for (const input of $("tools").querySelectorAll("input"))
-    input.checked = state.config.tools.includes(input.value);
-  $("target").textContent = state.target;
-  $("reveal-workspace").textContent = "Show in " + state.file_manager;
+  $("target").textContent = shortPath(state.target);
+  $("target").title = state.target;
+  $("reveal-workspace").textContent = "Show project in " + state.file_manager;
   $("layers").replaceChildren(...state.config.layers.map((p) => el("li", p)));
-  if (!state.config.layers.length)
-    $("layers").append(
-      el("li", "No saved configuration yet. Connect a library to begin."),
-    );
   const saved = $("source").value;
   $("source").replaceChildren(el("option", "Choose a library"));
   $("source").firstChild.value = "";
@@ -169,26 +158,12 @@ async function refresh(keepDrafts = false) {
     ? saved
     : Object.keys(state.config.sources)[0] || "";
   $("installed-count").textContent = state.installed.length;
-  if (!Object.keys(state.config.sources).length) $("add-library").open = true;
-  await loadCatalog();
+  $("installed-count").hidden = !state.installed.length;
+  bay = await api("matrix");
   await loadRepository();
   if (!keepDrafts) drafts = {};
   invalidate();
   render();
-}
-function installable(row) {
-  return (
-    row.status === "available" &&
-    // Installed for the user already: a project copy would be a duplicate.
-    !state.user_installed?.includes(key(row)) &&
-    row.destinations?.length > 0 &&
-    row.destinations.every((d) => ["absent", "installed"].includes(d.state))
-  );
-}
-async function loadCatalog() {
-  catalog = $("source").value
-    ? await api("catalog?source=" + encodeURIComponent($("source").value))
-    : [];
 }
 function key(row) {
   return [$("source").value, row.kind, row.name].join("/");
@@ -207,43 +182,51 @@ function remember(row, input, alias) {
 }
 function render() {
   const titles = {
-    inbound: [
-      "Receive from a library",
-      "Choose the tools this project can use.",
-    ],
-    outbound: [
-      "Contribute to a library",
-      "Choose local originals to copy into the selected library.",
-    ],
-    installed: [
-      "Installed in this folder",
-      "These shortcuts read directly from their shared originals.",
-    ],
-    archive: [
-      "Archived assets",
-      "Only assets waiting to be restored appear here. Completed restores are in the history below.",
+    patch: [
+      "Assets",
+      "Click a circle to install an asset there. A folder shares its assets with every project inside it.",
     ],
     projects: [
       "Projects",
-      "Sync each project after changing shared selections or pulling a library.",
+      "This project and the ones you registered. Sync after changing assets or pulling a library.",
+    ],
+    libraries: [
+      "Libraries",
+      "Folders with shared assets. Add one once and every project can use it.",
+    ],
+    outbound: [
+      "Share back",
+      "Copy local originals from this project into a library checkout, then commit there.",
+    ],
+    installed: [
+      "Local files",
+      "What sits in this project's agent folders: managed links and files Captain Share does not manage.",
+    ],
+    archive: [
+      "Archive",
+      "Removed assets waiting to be restored. Nothing is deleted.",
     ],
   };
-  if (view === "inbound" && here().kind === "folder")
-    titles.inbound[1] =
-      "Choose what every project inside this folder receives.";
-  if (view === "inbound" && here().kind === "user")
-    titles.inbound[1] = "Choose the tools available in all your projects.";
   $("view-title").textContent = titles[view][0];
   $("view-help").textContent = titles[view][1];
   document
-    .querySelectorAll("nav button")
+    .querySelectorAll(".faceplate-nav button")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === view));
-  $("selection-actions").hidden = !["inbound", "outbound"].includes(view);
-  $("bulk-actions").hidden = !["inbound", "outbound"].includes(view);
-  $("full-pack").hidden = view !== "inbound";
+  const sources = Object.keys(state.config.sources).length;
+  $("first-run").hidden = !!sources || view !== "patch";
+  $("bay").hidden = !sources && view === "patch";
+  const isPatch = view === "patch";
+  $("matrix").hidden = !isPatch;
+  $("kind-filter").hidden = !isPatch;
+  $("routing").hidden = !isPatch || !patchCount();
+  $("libraries-view").hidden = view !== "libraries";
+  $("list-view").hidden = isPatch || view === "libraries";
+  $("search").hidden = ["projects", "libraries"].includes(view);
+  $("source-bar").hidden = view !== "outbound";
+  $("selection-actions").hidden = view !== "outbound";
   $("project-actions").hidden = view !== "projects";
-  $("search").hidden = view === "projects";
-  document.querySelector(".search-label").hidden = view === "projects";
+  if (isPatch) return renderMatrix();
+  if (view === "libraries") return renderLibraries();
   if (view === "projects") {
     renderHistory("");
     renderProjects();
@@ -252,19 +235,17 @@ function render() {
   selectionCount();
   const managed = new Set(state.installed.map((row) => row.path));
   let rows =
-    view === "inbound"
-      ? catalog
-      : view === "outbound"
-        ? state.candidates
-        : view === "installed"
-          ? [
-              ...state.installed,
-              // Unmanaged files in tool folders can block receiving; offer to archive them.
-              ...state.candidates
-                .filter((row) => row.tool && !managed.has(row.path))
-                .map((row) => ({ ...row, local: true })),
-            ]
-          : state.archives.filter((row) => !row.restored);
+    view === "outbound"
+      ? state.candidates
+      : view === "installed"
+        ? [
+            ...state.installed,
+            // Unmanaged files in tool folders can block receiving; offer to archive them.
+            ...state.candidates
+              .filter((row) => row.tool && !managed.has(row.path))
+              .map((row) => ({ ...row, local: true })),
+          ]
+        : state.archives.filter((row) => !row.restored);
   const query = $("search").value.toLowerCase();
   rows = rows.filter((r) =>
     [r.name, r.kind, r.path, r.relative_path]
@@ -284,10 +265,10 @@ function render() {
         view === "archive"
           ? "No assets waiting to be restored."
           : view === "installed"
-            ? "No managed assets yet."
+            ? "Nothing in this project's agent folders yet."
             : $("source").value
-              ? "No matching assets."
-              : "Connect a library to get started.",
+              ? "No local originals to share."
+              : "Add a library first.",
       ),
       el("p", "Your existing project files stay in place."),
     );
@@ -297,7 +278,7 @@ function render() {
   rows.forEach((row, index) => {
     const wrap = el("div", undefined, "asset");
     const main = el("div", undefined, "asset-main");
-    if (view === "inbound" || view === "outbound") {
+    if (view === "outbound") {
       const checked = state.config[view][key(row)];
       const draft = drafts[draftKey(row)];
       const input = el("input");
@@ -306,9 +287,7 @@ function render() {
       input.checked = draft
         ? draft.enabled
         : !!checked && (view !== "outbound" || checked.path === row.path);
-      input.disabled =
-        !["available", "local"].includes(row.status) ||
-        (view === "inbound" && row.kind === "powers");
+      input.disabled = !["available", "local"].includes(row.status);
       input.dataset.row = JSON.stringify(row);
       input.addEventListener("change", () =>
         remember(row, input, main.querySelector(".alias")),
@@ -321,47 +300,8 @@ function render() {
         el("div", row.kind + " · " + row.status, "asset-type"),
         el("div", row.path, "asset-path"),
       );
-      main.append(
-        revealButton(
-          view === "inbound" ? row.path : state.target + "/" + row.path,
-        ),
-      );
+      main.append(revealButton(state.target + "/" + row.path));
       if (row.error) main.append(el("p", row.error));
-      if (view === "inbound" && row.kind === "powers" && row.kiro)
-        main.append(powerControls(row));
-      else if (view === "inbound" && row.status === "available") {
-        const list = el("div", undefined, "destinations");
-        const origin = state.config.origins?.inbound?.[key(row)];
-        if (origin && origin !== state.target)
-          list.append(
-            el("span", "inherited from " + origin.split("/").pop(), "badge"),
-          );
-        if (state.user_installed?.includes(key(row)))
-          list.append(el("span", "installed for your user", "badge installed"));
-        // A folder is a template for its projects; it has no links of its own.
-        for (const d of here().kind === "folder" ? [] : row.destinations)
-          list.append(
-            el(
-              "span",
-              TOOL_NAMES[d.tool] + " · " + DESTINATION_LABELS[d.state],
-              "badge " + d.state,
-            ),
-          );
-        if (!row.destinations.length && here().kind !== "folder")
-          list.append(
-            el("span", "No enabled tool reads " + row.kind, "badge blocked"),
-          );
-        main.append(list);
-      }
-      if (view === "inbound" && !input.disabled) {
-        const alias = el("input");
-        alias.className = "alias";
-        alias.placeholder = "Local alias (optional)";
-        alias.setAttribute("aria-label", "Local alias for " + row.name);
-        alias.value = draft ? draft.alias : checked?.alias || "";
-        alias.addEventListener("input", () => remember(row, input, alias));
-        main.append(alias);
-      }
     } else {
       const installed = view === "installed";
       if (row.local && !rows[index - 1]?.local)
@@ -436,12 +376,7 @@ function changedDrafts() {
     .filter(([k, draft]) => {
       if (!k.startsWith(prefix)) return false;
       const saved = state.config[view][key(draft.row)];
-      return (
-        draft.enabled !== isSaved(draft.row) ||
-        (view === "inbound" &&
-          draft.enabled &&
-          (draft.alias || "") !== (saved?.alias || ""))
-      );
+      return draft.enabled !== isSaved(draft.row) || false;
     })
     .map(([, draft]) => draft);
 }
@@ -484,9 +419,18 @@ async function preview(spec = { direction: view }) {
         pending.conflicts.length +
         (pending.conflicts.length === 1 ? " conflict" : " conflicts")
       : "");
+  setReviewHint(false);
   pending.changes.forEach((change) => {
     const div = el("div", undefined, "change");
-    div.append(el("strong", change.op), el("div", change.path));
+    div.append(
+      el(
+        "strong",
+        change.op,
+        /archive|uninstall/.test(change.op) ? "op-remove" : "",
+      ),
+      " ",
+      el("code", relativeTo(change.path, state.target)),
+    );
     if (change.source) div.append(el("div", "From " + change.source));
     if (change.command)
       div.append(el("code", "Runs " + change.command.join(" "), "command"));
@@ -507,45 +451,6 @@ async function preview(spec = { direction: view }) {
   $("conflict-help").hidden = !pending.conflicts.length;
   $("apply").disabled = !pending.can_apply;
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-const POWER_LABELS = {
-  "not-installed": "not installed",
-  current: "installed, same as library",
-  differs: "installed, differs from library",
-};
-function powerControls(row) {
-  const box = el("div", undefined, "destinations");
-  box.append(
-    el(
-      "span",
-      "Kiro powers (user-wide) · " + POWER_LABELS[row.kiro],
-      "badge " +
-        (row.kiro === "current"
-          ? "installed"
-          : row.kiro === "differs"
-            ? "changed"
-            : "absent"),
-    ),
-  );
-  const actions =
-    row.kiro === "not-installed"
-      ? [["install", "Install in Kiro"]]
-      : row.kiro === "differs"
-        ? [
-            ["install", "Update in Kiro"],
-            ["uninstall", "Uninstall from Kiro"],
-          ]
-        : [["uninstall", "Uninstall from Kiro"]];
-  for (const [action, label] of actions) {
-    const button = el("button", label, "quiet");
-    button.type = "button";
-    button.onclick = () =>
-      task(() =>
-        preview({ power: true, action, source: row.source, name: row.name }),
-      );
-    box.append(button);
-  }
-  return box;
 }
 function renderProjects() {
   $("count").textContent =
@@ -581,13 +486,13 @@ function renderProjects() {
         status + (row.path === state.target ? " · open here" : ""),
         "asset-type",
       ),
-      el("div", row.path, "asset-path"),
+      el("div", shortPath(row.path), "asset-path"),
     );
     const actions = el("div", undefined, "destinations");
     if (row.path !== state.target) {
       const open = el("button", "Work on it", "quiet");
       open.type = "button";
-      open.onclick = () => task(() => switchPlace(row.path, "inbound"));
+      open.onclick = () => task(() => switchPlace(row.path, "patch"));
       actions.append(open);
     }
     const sync = el("button", "Preview sync", "quiet");
@@ -625,8 +530,13 @@ async function previewMany(rows) {
   $("review").hidden = false;
   $("changes").replaceChildren();
   $("errors").replaceChildren();
+  setReviewHint(!!undo);
   let total = 0;
-  for (const { row, plan } of plans) {
+  // Places that are already in sync add nothing to review; leave them out.
+  const shown = plans.filter(
+    ({ plan }) => plan.changes.length || plan.conflicts.length,
+  );
+  for (const { row, plan } of shown) {
     total += plan.changes.length;
     $("changes").append(
       el(
@@ -635,47 +545,43 @@ async function previewMany(rows) {
           " · " +
           (plan.conflicts.length
             ? plan.conflicts.length + " conflicts, not applied"
-            : plan.changes.length
-              ? plan.changes.length +
-                (plan.changes.length === 1 ? " change" : " changes")
-              : "already in sync"),
+            : plan.changes.length +
+              (plan.changes.length === 1 ? " change" : " changes")),
         "group-title",
       ),
     );
     for (const change of plan.changes) {
       const div = el("div", undefined, "change");
-      div.append(el("strong", change.op), el("div", change.path));
+      div.append(
+        el(
+          "strong",
+          change.op,
+          /archive|uninstall/.test(change.op) ? "op-remove" : "",
+        ),
+        " ",
+        el("code", relativeTo(change.path, row.path)),
+      );
       $("changes").append(div);
     }
+    // Fixes act on the window's own place; other places name the conflict only.
     for (const conflict of plan.conflicts)
-      $("errors").append(el("p", row.label + ": " + conflict.message));
+      $("errors").append(
+        row.path === state.target
+          ? conflictRow(conflict, { direction: "inbound" })
+          : el("p", row.label + ": " + conflict.message),
+      );
   }
+  if (!shown.length)
+    $("changes").append(el("p", "Everything is already in place."));
   $("review-count").textContent =
     total +
     (total === 1 ? " change" : " changes") +
-    " in " +
-    plans.length +
-    (plans.length === 1 ? " project" : " projects");
+    (shown.length > 1 ? " in " + shown.length + " places" : "");
   $("conflict-help").hidden = !plans.some(({ plan }) => plan.conflicts.length);
   $("apply").disabled = !plans.some(
     ({ plan }) => plan.can_apply && plan.changes.length,
   );
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-async function previewHere(direction) {
-  if (direction === "inbound" && here().kind === "folder") {
-    const inside = projects.filter((row) =>
-      row.path.startsWith(state.target + "/"),
-    );
-    if (!inside.length) {
-      message(
-        "Saved for this folder. Register its projects under Projects to sync them.",
-      );
-      return;
-    }
-    return previewMany(inside);
-  }
-  return preview({ direction });
 }
 function conflictRow(conflict, spec) {
   const div = el("div", undefined, "conflict");
@@ -685,6 +591,8 @@ function conflictRow(conflict, spec) {
     const archive = el("button", "Archive local copy", "quiet");
     archive.onclick = () =>
       task(async () => {
+        // Continuing with a fix keeps the saved choices.
+        undo = null;
         resumeSpec = spec;
         await preview({
           action: "remove",
@@ -808,38 +716,38 @@ $("add-source").onsubmit = (event) => {
         "This folder is already connected as " + info.connected_as + ".",
       );
     const name = $("source-name").value.trim() || info.name;
+    // Every project inherits libraries plugged in for the user.
+    const scope =
+      $("source-scope").value === "user" ? homePath() : state.target;
     await api("source", {
       name,
       path: info.path,
       layout: $("source-layout").value,
+      target: scope,
     });
-    await refresh();
-    $("source").value = name;
-    await loadCatalog();
-    await loadRepository();
-    render();
     resetAddLibrary();
     $("add-library").open = false;
-    message("Library " + name + " connected. Choose assets under Receive.");
+    view = "patch";
+    await refresh();
+    message("Library " + name + " added. Click a circle to install an asset.");
   });
 };
 $("source").onchange = () =>
   task(async () => {
     invalidate();
-    await loadCatalog();
     await loadRepository();
     render();
   });
-$("refresh").onclick = () => task(refresh);
-$("search").oninput = render;
+$("search").oninput = () => (view === "patch" ? renderMatrix() : render());
 $("save").onclick = () => task(saveSelection);
 $("preview").onclick = () =>
   task(async () => {
     await saveSelection(true);
-    await previewHere(view);
+    await preview({ direction: view });
   });
 $("apply").onclick = () =>
   task(async () => {
+    undo = null;
     if (pendingBatch) {
       const batch = pendingBatch;
       let synced = 0,
@@ -855,9 +763,9 @@ $("apply").onclick = () =>
       }
       await refresh(true);
       message(
-        "Synced " +
+        "Applied changes in " +
           synced +
-          (synced === 1 ? " project" : " projects") +
+          (synced === 1 ? " place" : " places") +
           (skipped ? "; " + skipped + " skipped because of conflicts." : "."),
       );
       return;
@@ -877,41 +785,27 @@ $("apply").onclick = () =>
     );
     if (resume) await preview(resume);
   });
-$("tools").onchange = (event) =>
+$("dismiss").onclick = () => task(cancelReview);
+$("place").onchange = () =>
   task(async () => {
-    const tools = [...$("tools").querySelectorAll("input:checked")].map(
-      (input) => input.value,
-    );
-    if (!tools.length) {
-      event.target.checked = true;
-      throw new Error("Keep at least one tool enabled.");
-    }
-    await api("tools", { tools });
-    await refresh(true);
-    message(
-      "Tools saved. Preview to add or archive links for the changed tools.",
-    );
+    await cancelReview();
+    await switchPlace($("place").value);
   });
-$("dismiss").onclick = invalidate;
-$("place").onchange = () => task(() => switchPlace($("place").value));
 $("preview-all").onclick = () => task(() => previewMany(projects));
 $("add-project").onclick = () => openFolderPicker("project-path");
-document.querySelectorAll("nav button").forEach(
+document.querySelectorAll(".faceplate-nav button").forEach(
   (button) =>
-    (button.onclick = () => {
-      view = button.dataset.tab;
-      $("search").value = "";
-      invalidate();
-      render();
-    }),
+    (button.onclick = () =>
+      task(async () => {
+        await cancelReview();
+        view = button.dataset.tab;
+        $("search").value = "";
+        invalidate();
+        render();
+      })),
 );
 function selectable() {
-  // Powers are installed by Kiro, not linked, so they are never inbound selections.
-  return (view === "inbound" ? catalog : state.candidates).filter(
-    (r) =>
-      ["available", "local"].includes(r.status) &&
-      !(view === "inbound" && r.kind === "powers"),
-  );
+  return state.candidates.filter((r) => r.status === "local");
 }
 function isSaved(row) {
   const saved = state.config[view][key(row)];
@@ -921,17 +815,12 @@ function unsaved() {
   return changedDrafts().length;
 }
 function selectionCount() {
-  if (!state || !["inbound", "outbound"].includes(view)) return;
+  if (!state || view !== "outbound") return;
   const rows = selectable();
   const selected = rows.filter((r) => {
     const draft = drafts[draftKey(r)];
     return draft ? draft.enabled : isSaved(r);
   }).length;
-  $("selected-count").textContent =
-    selected +
-    " / " +
-    rows.length +
-    " selected · all assets, including filtered results";
   const changes = unsaved();
   $("selection-actions").classList.toggle("dirty", changes > 0);
   $("pending-count").textContent =
@@ -941,49 +830,6 @@ function selectionCount() {
       ? changes + (changes === 1 ? " unsaved change" : " unsaved changes")
       : "no unsaved changes");
 }
-function selectAll(enabled, rows = selectable()) {
-  if (!$("source").value) throw new Error("Choose a library first.");
-  if (
-    enabled &&
-    view === "outbound" &&
-    new Set(rows.map(key)).size !== rows.length
-  )
-    throw new Error(
-      "Multiple originals share a name. Select the intended originals individually.",
-    );
-  for (const row of rows) {
-    const saved = state.config[view][key(row)],
-      prior = drafts[draftKey(row)];
-    drafts[draftKey(row)] = {
-      row,
-      enabled,
-      alias: prior?.alias ?? saved?.alias ?? "",
-    };
-  }
-  invalidate();
-  render();
-}
-$("select-all").onclick = () => task(async () => selectAll(true));
-$("deselect-all").onclick = () => task(async () => selectAll(false));
-$("full-pack").onclick = () =>
-  task(async () => {
-    // Assets blocked by local files stay unselected so the rest can install.
-    const rows = selectable().filter(installable);
-    const skipped = selectable().length - rows.length;
-    if (!rows.length)
-      throw new Error("No asset in this library can be installed as is.");
-    selectAll(true, rows);
-    await saveSelection(true);
-    await previewHere("inbound");
-    if (skipped)
-      message(
-        "Full pack: " +
-          rows.length +
-          " selected, " +
-          skipped +
-          " skipped: a local file is in the way, no enabled agent reads them, or they are installed for your user.",
-      );
-  });
 function repoSource() {
   return $("repo-scope").value === "project" ? "" : $("source").value;
 }
@@ -1109,16 +955,575 @@ $("clone-source").onsubmit = (event) => {
       url: $("clone-url").value,
       path: $("clone-path").value,
       layout: $("clone-layout").value,
+      target: homePath(),
     });
+    view = "patch";
     await refresh();
-    $("source").value = name;
-    await loadCatalog();
-    await loadRepository();
-    render();
     message(
-      "Repository cloned and connected. Choose Install full pack to preview all assets.",
+      "Cloned and added for every project. Click a circle to install an asset.",
     );
   });
+};
+
+// ---------------------------------------------------------------- patch bay
+const KIND_LABELS = {
+  skills: "Skill",
+  agents: "Agent",
+  prompts: "Prompt",
+  steering: "Steering",
+  powers: "Kiro power",
+  copilot: "Copilot",
+  "copilot-instructions": "Copilot",
+  "copilot-prompts": "Copilot",
+};
+const AGENTS = [
+  ["kiro", "Kiro"],
+  ["claude", "Claude"],
+  ["codex", "Codex"],
+  ["copilot", "Copilot"],
+];
+function patchKey(place, key) {
+  return place + "\n" + key;
+}
+function patchCount() {
+  return patches.size;
+}
+function visibleColumns() {
+  const folders = bay.columns.filter((col) => col.kind === "folder");
+  // The nearest folder and any folder that already passes patches down stay visible.
+  const used = new Set(
+    bay.rows.flatMap((row) =>
+      folders.filter((col) => row.cells[col.path]?.own).map((col) => col.path),
+    ),
+  );
+  return bay.columns.filter(
+    (col) =>
+      col.kind !== "folder" ||
+      showAllFolders ||
+      col.path === folders[0]?.path ||
+      used.has(col.path) ||
+      [...patches.keys()].some((k) => k.startsWith(col.path + "\n")),
+  );
+}
+function folderPatch(row, col) {
+  // A pending change on a folder above this place reaches this place too.
+  const index = bay.columns.findIndex((c) => c.path === col.path);
+  for (const above of bay.columns.slice(index + 1)) {
+    if (above.kind !== "folder") continue;
+    const pending = patches.get(patchKey(above.path, row.key));
+    if (pending !== undefined) return { from: above.path, on: pending };
+  }
+  return null;
+}
+function jackState(row, col) {
+  const cell = row.cells[col.path] || {};
+  const pending = patches.get(patchKey(col.path, row.key));
+  let on = pending === undefined ? cell.on : pending;
+  const user = bay.columns.find((c) => c.kind === "user");
+  const userPending = user && patches.get(patchKey(user.path, row.key));
+  const coveredByUser =
+    col.kind !== "user" &&
+    user &&
+    (userPending === undefined ? row.cells[user.path]?.on : userPending);
+  if (row.kind === "powers")
+    return col.kind === "user"
+      ? {
+          kind: "power",
+          label:
+            {
+              "not-installed": "not installed",
+              current: "installed",
+              differs: "update available",
+            }[cell.power] || "unavailable",
+          lit: cell.power === "current",
+          stale: cell.power === "differs",
+        }
+      : { kind: "na", label: "Kiro powers install for your user" };
+  if (row.status !== "available")
+    return { kind: "na", label: row.error || "invalid" };
+  let from = cell.from;
+  let flowing = false;
+  const upstream =
+    col.kind !== "user" && pending === undefined && !cell.own
+      ? folderPatch(row, col)
+      : null;
+  if (upstream && (upstream.on || cell.from === upstream.from)) {
+    on = upstream.on;
+    from = upstream.from;
+    flowing = true;
+  }
+  // A pending change at this place stays visible even when the user install covers it.
+  if (coveredByUser && !on && pending === undefined)
+    return { kind: "covered", label: "installed for your user" };
+  const folderName = from ? from.split("/").pop() : "";
+  return {
+    kind: "jack",
+    on,
+    pending: pending !== undefined,
+    flowing,
+    inherited: !!from && on && pending === undefined,
+    from,
+    linked: cell.linked,
+    blocked: on && ["blocked", "contributed", "changed"].includes(cell.dest),
+    dest: cell.dest,
+    label: flowing
+      ? on
+        ? "will come from " + folderName
+        : "will be removed with " + folderName
+      : pending !== undefined
+        ? on
+          ? "will be installed"
+          : "will be removed"
+        : from && on
+          ? "from " + folderName
+          : on
+            ? col.kind === "folder"
+              ? "shared with projects inside"
+              : cell.linked
+                ? "installed"
+                : "selected, not linked yet"
+            : "not installed",
+  };
+}
+function toggleJack(row, col) {
+  if (undo)
+    // The review is open on saved choices; put them back first, then edit.
+    return task(async () => {
+      await cancelReview();
+      toggleJack(row, col);
+    });
+  const s = jackState(row, col);
+  if (s.kind === "power")
+    return task(() =>
+      preview({
+        power: true,
+        action: s.lit ? "uninstall" : "install",
+        source: row.source,
+        name: row.name,
+        target: homePath(),
+      }),
+    );
+  if (s.kind === "covered") {
+    message(
+      row.name +
+        " is already installed for your user, so every project has it.",
+    );
+    return;
+  }
+  if (s.kind !== "jack") return;
+  const cell = row.cells[col.path] || {};
+  const k = patchKey(col.path, row.key);
+  const next = !s.on;
+  if (next === !!cell.on) patches.delete(k);
+  else patches.set(k, next);
+  invalidate();
+  renderMatrix();
+}
+function renderKindFilter(kinds) {
+  const box = $("kind-filter");
+  box.replaceChildren();
+  for (const [value, label] of [
+    ["", "All"],
+    ...kinds.map((k) => [k, KIND_LABELS[k] + "s"]),
+  ]) {
+    const chip = el(
+      "button",
+      label,
+      "chip" + (kindFilter === value ? " active" : ""),
+    );
+    chip.type = "button";
+    chip.setAttribute("aria-pressed", String(kindFilter === value));
+    chip.onclick = () => {
+      kindFilter = value;
+      renderMatrix();
+    };
+    box.append(chip);
+  }
+}
+function placeName(col) {
+  return col?.kind === "user" ? "your user" : col?.label || "";
+}
+function columnHead(col) {
+  const head = el("div", undefined, "col-head col-" + col.kind);
+  head.setAttribute("role", "columnheader");
+  const title = el("strong", col.kind === "user" ? "Your user" : col.label);
+  title.title = col.path;
+  head.append(
+    title,
+    el(
+      "span",
+      col.kind === "project"
+        ? "this project"
+        : col.kind === "folder"
+          ? "folder · shared below"
+          : "every project",
+      "col-kind",
+    ),
+  );
+  const agents = el("div", undefined, "agent-chips");
+  for (const [tool, name] of AGENTS) {
+    if (tool === "copilot" && col.kind === "user") continue;
+    const chip = el(
+      "button",
+      name,
+      "agent" + (col.tools.includes(tool) ? " on" : ""),
+    );
+    chip.type = "button";
+    chip.setAttribute("aria-pressed", String(col.tools.includes(tool)));
+    chip.title =
+      (col.tools.includes(tool) ? "Stop linking into " : "Also link into ") +
+      name +
+      " here";
+    chip.onclick = () =>
+      task(async () => {
+        await cancelReview();
+        const tools = col.tools.includes(tool)
+          ? col.tools.filter((t) => t !== tool)
+          : [...col.tools, tool];
+        if (!tools.length)
+          throw new Error("Keep at least one agent for this place.");
+        await api("tools", { tools, target: col.path });
+        bay = await api("matrix");
+        renderMatrix();
+        message(
+          name +
+            (tools.includes(tool) ? " added" : " removed") +
+            " for " +
+            placeName(col) +
+            ". Review and apply to update its links.",
+        );
+        patchesTouched(col.path);
+      });
+    agents.append(chip);
+  }
+  head.append(agents);
+  return head;
+}
+function patchesTouched(place) {
+  // A tool change needs a sync even without jack changes; remember the place.
+  touchedPlaces.add(place);
+  renderRouting();
+}
+const touchedPlaces = new Set();
+// Cables already on screen; only new ones draw in.
+let drawnCables = new Set();
+function renderMatrix() {
+  const grid = $("matrix");
+  grid.replaceChildren();
+  const cols = visibleColumns();
+  grid.style.setProperty("--cols", cols.length);
+  const hidden =
+    bay.columns.filter((c) => c.kind === "folder").length -
+    cols.filter((c) => c.kind === "folder").length;
+  const kinds = [...new Set(bay.rows.map((r) => r.kind))];
+  renderKindFilter(kinds);
+  // Header row
+  const head = el("div", undefined, "mx-row mx-head");
+  head.setAttribute("role", "row");
+  const corner = el("div", undefined, "mx-asset corner");
+  corner.append(el("span", "Asset", "engraved"));
+  if (hidden || showAllFolders) {
+    const more = el(
+      "button",
+      showAllFolders
+        ? "Fewer folders"
+        : "+" + hidden + (hidden === 1 ? " folder above" : " folders above"),
+      "quiet small",
+    );
+    more.type = "button";
+    more.onclick = () => {
+      showAllFolders = !showAllFolders;
+      renderMatrix();
+    };
+    corner.append(more);
+  }
+  head.append(corner, ...cols.map(columnHead));
+  grid.append(head);
+  const query = $("search").value.toLowerCase();
+  const rows = bay.rows.filter(
+    (r) =>
+      (!kindFilter || r.kind === kindFilter) &&
+      (r.name + " " + r.description + " " + r.source)
+        .toLowerCase()
+        .includes(query),
+  );
+  $("count").textContent =
+    rows.length + (rows.length === 1 ? " asset" : " assets");
+  const cables = new Set();
+  let library = null;
+  for (const row of rows) {
+    if (row.source !== library) {
+      library = row.source;
+      const section = el("div", undefined, "mx-section");
+      section.setAttribute("role", "row");
+      section.append(
+        el("span", library, "engraved"),
+        el(
+          "span",
+          bay.rows.filter((r) => r.source === library).length + " assets",
+          "col-kind",
+        ),
+      );
+      grid.append(section);
+    }
+    const line = el("div", undefined, "mx-row");
+    line.setAttribute("role", "row");
+    const asset = el("div", undefined, "mx-asset");
+    asset.setAttribute("role", "rowheader");
+    const title = el("div", undefined, "asset-name");
+    title.append(
+      el("span", row.name),
+      el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+    );
+    asset.append(title);
+    const desc = el("p", row.description || row.error || "", "asset-desc");
+    asset.append(desc);
+    asset.tabIndex = 0;
+    asset.onclick = () => asset.classList.toggle("open");
+    asset.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        asset.classList.toggle("open");
+      }
+    };
+    line.append(asset);
+    cols.forEach((col, index) => {
+      const s = jackState(row, col);
+      const cell = el("div", undefined, "mx-cell");
+      cell.setAttribute("role", "gridcell");
+      if (s.kind === "na") {
+        cell.append(el("span", undefined, "jack-none"));
+        cell.title = s.label;
+      } else {
+        const jack = el("button", undefined, "jack");
+        jack.type = "button";
+        const classes = [s.kind];
+        if (s.kind === "jack") {
+          if (s.on) classes.push("on");
+          if (s.pending || s.flowing) classes.push("pending");
+          if (s.inherited || (s.flowing && s.on)) classes.push("inherited");
+          if (s.blocked) classes.push("blocked");
+          if (
+            s.on &&
+            !s.pending &&
+            !s.flowing &&
+            !s.linked &&
+            col.kind !== "folder"
+          )
+            classes.push("unsynced");
+          jack.setAttribute("aria-pressed", String(!!s.on));
+        }
+        if (s.kind === "power" && s.lit) classes.push("on");
+        if (s.kind === "power" && s.stale) classes.push("pending");
+        jack.className = "jack " + classes.join(" ");
+        jack.setAttribute(
+          "aria-label",
+          row.name +
+            " · " +
+            (col.kind === "user" ? "your user" : col.label) +
+            ": " +
+            s.label,
+        );
+        const at = (row.cells[col.path]?.paths || []).join(", ");
+        jack.title = !s.blocked
+          ? s.label
+          : s.dest === "changed"
+            ? "The managed link at " +
+              at +
+              " changed. Review this place for the fix."
+            : "A local file is in the way at " +
+              at +
+              ". Review this place to archive it.";
+        jack.onclick = () => toggleJack(row, col);
+        cell.append(jack);
+        // Cable from the folder that shares the asset down to this place.
+        if (s.kind === "jack" && s.on && s.from && (s.inherited || s.flowing)) {
+          const from = cols.findIndex((c) => c.path === s.from);
+          if (from > index) {
+            const id = row.key + "\n" + col.path + "\n" + s.from;
+            const cable = el(
+              "span",
+              undefined,
+              "cable" +
+                (s.flowing ? " flowing" : "") +
+                (drawnCables.has(id) ? "" : " fresh"),
+            );
+            cable.style.setProperty("--span", from - index);
+            cell.append(cable);
+            cables.add(id);
+          }
+        }
+      }
+      line.append(cell);
+    });
+    grid.append(line);
+  }
+  drawnCables = cables;
+  if (!rows.length)
+    grid.append(el("p", "No asset matches this filter.", "mx-empty"));
+  renderRouting();
+}
+function routingPhrase(place, adds, removes) {
+  const name = placeName(bay.columns.find((c) => c.path === place)) || place;
+  const what = (keys) =>
+    keys.length === 1
+      ? keys[0].split("/").slice(2).join("/")
+      : keys.length + " assets";
+  const parts = [];
+  if (adds.length) parts.push("add " + what(adds) + " to " + name);
+  if (removes.length) parts.push("remove " + what(removes) + " from " + name);
+  if (!parts.length) parts.push("update agent links for " + name);
+  return parts.join(", ");
+}
+function renderRouting() {
+  const byPlace = new Map();
+  for (const [k, on] of patches) {
+    const [place, key] = k.split("\n");
+    const entry = byPlace.get(place) || { add: [], remove: [] };
+    entry[on ? "add" : "remove"].push(key);
+    byPlace.set(place, entry);
+  }
+  for (const place of touchedPlaces)
+    if (!byPlace.has(place)) byPlace.set(place, { add: [], remove: [] });
+  $("routing").hidden = view !== "patch" || !byPlace.size;
+  const phrases = [...byPlace].map(([place, n]) =>
+    routingPhrase(place, n.add, n.remove),
+  );
+  const text =
+    phrases.length > 2
+      ? patches.size +
+        (patches.size === 1 ? " change" : " changes") +
+        " in " +
+        phrases.length +
+        " places"
+      : phrases.join("; ");
+  $("routing-summary").textContent =
+    text.charAt(0).toUpperCase() + text.slice(1);
+}
+function setReviewHint(saved) {
+  $("review-hint").textContent = saved
+    ? "Your choices are saved; the links below are created only when you apply. Cancel puts your choices back."
+    : "Nothing changes on disk until you apply.";
+  $("dismiss").textContent = saved ? "Cancel" : "Close";
+}
+async function cancelReview() {
+  const saved = undo;
+  undo = null;
+  invalidate();
+  if (!saved) return;
+  for (const step of saved.steps) await api("restore-selections", step);
+  patches = saved.patches;
+  for (const place of saved.touched) touchedPlaces.add(place);
+  bay = await api("matrix");
+  renderMatrix();
+}
+async function saveAndReview() {
+  // 1. Save each place's choices as selections, grouped by library.
+  const groups = new Map();
+  for (const [k, on] of patches) {
+    const [place, key] = k.split("\n");
+    const [source, kind, ...rest] = key.split("/");
+    const id = place + "\n" + source;
+    if (!groups.has(id)) groups.set(id, { place, source, selections: [] });
+    groups.get(id).selections.push({ kind, name: rest.join("/"), enabled: on });
+  }
+  const saved = {
+    steps: [],
+    patches: new Map(patches),
+    touched: [...touchedPlaces],
+  };
+  try {
+    for (const group of groups.values()) {
+      const result = await api("selections", {
+        target: group.place,
+        source: group.source,
+        direction: "inbound",
+        selections: group.selections,
+      });
+      saved.steps.push({
+        target: group.place,
+        direction: "inbound",
+        previous: result.previous,
+      });
+    }
+  } catch (error) {
+    // Put back whatever part of the batch was saved before the failure.
+    for (const step of saved.steps) await api("restore-selections", step);
+    throw error;
+  }
+  // 2. Preview every place whose links can change.
+  const changed = new Set(
+    [...groups.values()].map((g) => g.place).concat([...touchedPlaces]),
+  );
+  const user = bay.columns.find((c) => c.kind === "user");
+  const project = bay.columns.find((c) => c.kind === "project");
+  const targets = [];
+  if (user && changed.has(user.path))
+    targets.push({ path: user.path, label: "Your user" });
+  const folders = [...changed].filter(
+    (p) => bay.columns.find((c) => c.path === p)?.kind === "folder",
+  );
+  if (project && (changed.has(project.path) || folders.length))
+    targets.push({ path: project.path, label: project.label });
+  for (const folder of folders)
+    for (const other of projects)
+      if (
+        other.path.startsWith(folder + "/") &&
+        !targets.some((t) => t.path === other.path)
+      )
+        targets.push({ path: other.path, label: other.label });
+  patches = new Map();
+  touchedPlaces.clear();
+  bay = await api("matrix");
+  renderMatrix();
+  if (!targets.length) {
+    message("Saved. Nothing else to sync here.");
+    return;
+  }
+  undo = saved;
+  await previewMany(targets);
+}
+$("routing-review").onclick = () => task(saveAndReview);
+$("routing-clear").onclick = () => {
+  patches = new Map();
+  touchedPlaces.clear();
+  renderMatrix();
+};
+
+// ---------------------------------------------------------------- libraries
+function renderLibraries() {
+  const list = $("library-list");
+  list.replaceChildren();
+  const sources = Object.entries(state.config.sources);
+  if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
+  for (const [name, spec] of sources) {
+    const row = el("div", undefined, "library-row");
+    const count = bay.rows.filter((r) => r.source === name).length;
+    row.append(
+      el("strong", name),
+      el("span", count + (count === 1 ? " asset" : " assets"), "col-kind"),
+      el(
+        "code",
+        shortPath(spec.path || "not bound on this machine"),
+        "faceplate-path",
+      ),
+    );
+    if (spec.path)
+      row.append(revealButton(spec.path, "Show in " + state.file_manager));
+    list.append(row);
+  }
+}
+$("first-choose").onclick = () => {
+  view = "libraries";
+  render();
+  $("add-library").open = true;
+  openFolderPicker("source-path");
+};
+$("first-clone").onclick = () => {
+  view = "libraries";
+  render();
+  $("clone-library").open = true;
+  $("clone-url").focus();
 };
 task(refresh);
 

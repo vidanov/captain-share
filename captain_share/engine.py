@@ -125,6 +125,42 @@ def frontmatter(text):
     return fields
 
 
+def describe(path, kind):
+    """One-line description of an asset for people browsing a library."""
+    try:
+        if kind in ("skills", "powers") and path.is_dir():
+            manifest = path / "plugin.json"
+            if kind == "powers" and manifest.is_file():
+                return str(json.loads(manifest.read_text()).get("description", ""))[:300]
+            path = path / ("SKILL.md" if kind == "skills" else "POWER.md")
+        if path.suffix == ".json":
+            return str(json.loads(path.read_text()).get("description", ""))[:300]
+        text = path.read_text(errors="replace")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---" and "---" in [x.strip() for x in lines[1:]]:
+        head = lines[1 : 1 + [x.strip() for x in lines[1:]].index("---")]
+        for index, line in enumerate(head):
+            if line.startswith("description:"):
+                value = line.partition(":")[2].strip()
+                if value in ("", ">", ">-", "|", "|-"):
+                    # Folded or literal block: join the indented lines that follow.
+                    parts = []
+                    for follow in head[index + 1 :]:
+                        if follow and not follow.startswith((" ", "\t")):
+                            break
+                        parts.append(follow.strip())
+                    value = " ".join(p for p in parts if p)
+                return value.strip("\"'")[:300]
+        lines = lines[1 + len(head) + 1 :]
+    for line in lines:
+        stripped = line.strip().lstrip("#").strip()
+        if stripped:
+            return stripped[:300]
+    return ""
+
+
 def validate_power(path, outbound=False):
     """Agent Plugins 1.0.0 plugin.json, or a legacy POWER.md, named like its folder."""
     if not path.is_dir():
@@ -239,6 +275,7 @@ def catalog(target, source):
             if not candidate(item, kind):
                 continue
             row = {"source": source, "kind": kind, "name": item.name, "path": str(item)}
+            row["description"] = describe(item, kind)
             try:
                 c.asset_name(kind, item.name)
                 validate_asset(item, kind)

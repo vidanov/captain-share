@@ -8,153 +8,227 @@
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <header>
-      <div class="mark">C↗</div>
-      <div>
-        <p class="eyebrow">YOUR SHARED TOOLBOX</p>
-        <h1>Captain Share</h1>
-      </div>
-      <span class="local">● Local workspace</span>
-      <a href="/" id="workspace-link" class="header-link" aria-current="page"
-        >Workspace</a
+    <header class="faceplate">
+      <a href="/" id="workspace-link" class="wordmark" aria-current="page"
+        ><span class="wordmark-jack" aria-hidden="true"></span>Captain Share</a
       >
-      <a href="/about" id="about-link" class="header-link">About</a>
+      <div class="faceplate-place">
+        <label for="place" class="engraved">Project</label>
+        <select id="place"></select>
+        <code id="target" class="faceplate-path">Connecting…</code>
+      </div>
+      <nav class="faceplate-nav" aria-label="Sections">
+        <button data-tab="patch" class="active">Assets</button
+        ><button data-tab="libraries">Libraries</button
+        ><span class="nav-rule" aria-hidden="true"></span
+        ><button data-tab="projects" class="minor">Projects</button
+        ><button data-tab="outbound" class="minor">Share back</button
+        ><button data-tab="installed" class="minor">
+          Local files
+          <span id="installed-count" class="count-chip" hidden>0</span></button
+        ><button data-tab="archive" class="minor">Archive</button>
+      </nav>
+      <a href="/about" id="about-link" class="faceplate-about">About</a>
     </header>
+    <div id="message" role="status" aria-live="polite"></div>
+
     <main id="workspace-page">
-      <section class="intro">
-        <div>
-          <h2>A home for what your agents know.</h2>
-          <p>Choose what this project receives and what it contributes.</p>
-        </div>
-        <button id="refresh" class="quiet">Refresh</button>
-      </section>
-      <div id="message" role="status" aria-live="polite"></div>
-      <section class="workspace">
-        <label class="label" for="place">WORKING ON</label>
-        <select id="place" aria-describedby="place-help"></select>
-        <p id="place-help" class="scope-hint"></p>
-        <code id="target">Connecting…</code>
-        <button id="reveal-workspace" class="quiet">Show folder</button>
-        <fieldset id="tools" class="tools">
-          <legend>Agents that receive links</legend>
-          <label
-            ><input type="checkbox" value="kiro" /> Kiro (IDE and CLI)
-            <span class="hint" id="tool-hint-kiro"></span></label
-          ><label
-            ><input type="checkbox" value="claude" /> Claude Code
-            <span class="hint" id="tool-hint-claude"></span></label
-          ><label
-            ><input type="checkbox" value="codex" /> Codex
-            <span class="hint" id="tool-hint-codex"></span></label
-          ><label
-            ><input type="checkbox" value="copilot" /> GitHub Copilot
-            <span class="hint" id="tool-hint-copilot"></span
-          ></label>
-        </fieldset>
-        <p class="hint tools-hint">
-          One library original, one live link per agent. Turning an agent on
-          previews its links; a file with the same name already there shows as
-          "local file in the way" and is never overwritten. Turning an agent off
-          archives its links at the next apply. Kiro powers install user-wide
-          from their row.
+      <section id="first-run" class="first-run" hidden>
+        <h1>Add a library</h1>
+        <p>
+          A library is a folder, usually a Git checkout, with shared skills,
+          agents, prompts, steering, or Kiro powers. Add one and every project
+          on this machine can use it.
         </p>
-        <details>
-          <summary>Configuration layers</summary>
-          <ul id="layers"></ul>
-        </details>
+        <ol class="first-run-steps">
+          <li>
+            <strong>Add a library.</strong> Choose its folder or clone it.
+          </li>
+          <li>
+            <strong>Pick skills.</strong> Click a circle to install a skill in
+            this project or for your user.
+          </li>
+          <li>
+            <strong>Review and apply.</strong> Nothing changes until you apply.
+          </li>
+        </ol>
+        <div class="first-run-actions">
+          <button id="first-choose" type="button">Choose library folder…</button
+          ><button id="first-clone" type="button" class="quiet">
+            Clone from Git…
+          </button>
+        </div>
       </section>
-      <div class="layout">
-        <aside>
-          <section class="card">
-            <h3>Libraries</h3>
-            <label for="source">Library</label
+
+      <section id="bay" class="bay" aria-labelledby="view-title">
+        <div class="bay-head">
+          <div>
+            <h1 id="view-title">Assets</h1>
+            <p id="view-help">Click a circle to install an asset there.</p>
+          </div>
+          <div class="bay-tools">
+            <label class="visually-hidden" for="search">Filter assets</label
+            ><input
+              id="search"
+              type="search"
+              placeholder="Filter by name or description"
+            />
+            <div
+              id="kind-filter"
+              class="kind-filter"
+              role="group"
+              aria-label="Asset kinds"
+            ></div>
+            <span id="count" class="count-text">0</span>
+          </div>
+        </div>
+        <div id="bay-body" class="bay-body">
+          <div
+            id="matrix"
+            class="matrix"
+            role="grid"
+            aria-labelledby="view-title"
+          ></div>
+          <aside class="key" aria-label="What the circles mean">
+            <ul class="legend">
+              <li><span class="jack on sample"></span>Installed here</li>
+              <li>
+                <span class="jack on inherited sample"></span>From a folder
+                above
+              </li>
+              <li>
+                <span class="jack covered sample"></span>Installed for your user
+              </li>
+              <li>
+                <span class="jack pending on sample"></span>Will be installed
+              </li>
+              <li><span class="jack pending sample"></span>Will be removed</li>
+              <li>
+                <span class="jack blocked on sample"></span>A local file is in
+                the way
+              </li>
+            </ul>
+            <p class="key-note">
+              Agent buttons in a column choose which agents get links there. Lit
+              means linked.
+            </p>
+          </aside>
+        </div>
+        <div id="routing" class="routing" hidden>
+          <span id="routing-summary"></span>
+          <button id="routing-clear" type="button" class="quiet">Discard</button
+          ><button id="routing-review" type="button">Review and apply</button>
+        </div>
+
+        <div id="list-view" hidden>
+          <div id="source-bar" class="source-bar">
+            <label for="source" class="engraved">Library</label
             ><select id="source">
               <option value="">Choose a library</option>
             </select>
-            <p class="hint">
-              A library is a folder, usually a Git checkout, that holds shared
-              skills, agents, prompts, steering, and Kiro powers. Projects link
-              to its files; the originals stay in the library.
-            </p>
-            <details id="add-library">
-              <summary>Add a library folder</summary>
-              <form id="add-source">
-                <p class="hint">
-                  Choose the folder that contains <code>ip/</code> or
-                  <code>skills/</code>, <code>agents/</code>, … Nothing is
-                  installed until you select assets and apply.
-                </p>
-                <button type="button" id="browse-source" class="folder-browse">
-                  Choose library folder…</button
-                ><label for="source-path">Folder</label
-                ><input
-                  id="source-path"
-                  required
-                  placeholder="/path/to/library"
-                  autocomplete="off"
-                />
-                <p id="source-detected" class="hint" aria-live="polite"></p>
-                <label for="source-name">Name</label
-                ><input
-                  id="source-name"
-                  placeholder="filled from the folder name"
-                  pattern="[a-zA-Z0-9_-][a-zA-Z0-9_.-]*"
-                />
-                <details class="advanced">
-                  <summary>Asset layout</summary>
-                  <label for="source-layout">Assets live under</label
-                  ><select id="source-layout">
-                    <option value="">Detect from the folder</option>
-                    <option value="ip">ip/skills, ip/agents, …</option>
-                    <option value="flat">skills, agents, … at the root</option>
-                  </select>
-                </details>
-                <button type="submit" id="connect-source" disabled>
-                  Connect library
-                </button>
-              </form>
-            </details>
-          </section>
-          <section class="card">
-            <details>
-              <summary>Clone a repository</summary>
-              <form id="clone-source">
-                <label for="clone-name">Library name</label
-                ><input id="clone-name" required placeholder="shared-tools" />
-                <label for="clone-url">Repository URL</label
-                ><input
-                  id="clone-url"
-                  required
-                  placeholder="https://github.com/team/shared-tools.git"
-                />
-                <label for="clone-path">New checkout folder</label
-                ><input
-                  id="clone-path"
-                  required
-                  placeholder="/path/to/shared-tools"
-                /><button
-                  type="button"
-                  id="browse-clone"
-                  class="quiet folder-browse"
-                >
-                  Choose parent folder…
-                </button>
-                <label for="clone-layout">Repository layout</label
-                ><select id="clone-layout">
-                  <option value="">Detect after cloning</option>
+          </div>
+          <div id="project-actions" class="actions" hidden>
+            <button id="add-project" class="quiet">Add project…</button
+            ><button id="preview-all">Preview sync for all</button>
+            <input id="project-path" type="hidden" />
+          </div>
+          <div id="assets" class="assets"></div>
+          <details id="restore-history" hidden>
+            <summary id="restore-history-summary">Restore history</summary>
+            <p class="hint">Completed restores, grouped by asset.</p>
+            <div id="restore-history-list"></div>
+          </details>
+          <div class="routing" id="selection-actions" hidden>
+            <span id="pending-count"></span>
+            <button id="save" class="quiet">Save selection</button
+            ><button id="preview">Save and preview</button>
+          </div>
+        </div>
+
+        <div id="libraries-view" class="libraries" hidden>
+          <div id="library-list" class="library-list"></div>
+          <details id="add-library" class="panel-block">
+            <summary>Add a library folder</summary>
+            <label for="source-scope" class="engraved"
+              >Make it available to</label
+            ><select id="source-scope">
+              <option value="user">Every project (your user)</option>
+              <option value="project">This project only</option>
+            </select>
+            <form id="add-source">
+              <p class="hint">
+                Choose the folder that contains <code>ip/</code> or
+                <code>skills/</code>, <code>agents/</code>, … Nothing is
+                installed until you select assets and apply.
+              </p>
+              <button type="button" id="browse-source" class="folder-browse">
+                Choose library folder…</button
+              ><label for="source-path">Folder</label
+              ><input
+                id="source-path"
+                required
+                placeholder="/path/to/library"
+                autocomplete="off"
+              />
+              <p id="source-detected" class="hint" aria-live="polite"></p>
+              <label for="source-name">Name</label
+              ><input
+                id="source-name"
+                placeholder="filled from the folder name"
+                pattern="[a-zA-Z0-9_-][a-zA-Z0-9_.-]*"
+              />
+              <details class="advanced">
+                <summary>Asset layout</summary>
+                <label for="source-layout">Assets live under</label
+                ><select id="source-layout">
+                  <option value="">Detect from the folder</option>
                   <option value="ip">ip/skills, ip/agents, …</option>
-                  <option value="flat">skills, agents, …</option>
+                  <option value="flat">skills, agents, … at the root</option>
                 </select>
-                <button type="submit">Clone and connect</button>
-                <p class="hint">
-                  Uses your existing Git credentials. Choose a folder that does
-                  not exist yet.
-                </p>
-              </form>
-            </details>
-          </section>
-          <section class="card" aria-label="Repository status">
-            <h3>Repository status</h3>
+              </details>
+              <button type="submit" id="connect-source" disabled>
+                Add library
+              </button>
+            </form>
+          </details>
+          <details id="clone-library" class="panel-block">
+            <summary>Clone a library from Git</summary>
+            <form id="clone-source">
+              <label for="clone-name">Library name</label
+              ><input id="clone-name" required placeholder="shared-tools" />
+              <label for="clone-url">Repository URL</label
+              ><input
+                id="clone-url"
+                required
+                placeholder="https://github.com/team/shared-tools.git"
+              />
+              <label for="clone-path">New checkout folder</label
+              ><input
+                id="clone-path"
+                required
+                placeholder="/path/to/shared-tools"
+              /><button
+                type="button"
+                id="browse-clone"
+                class="quiet folder-browse"
+              >
+                Choose parent folder…
+              </button>
+              <label for="clone-layout">Repository layout</label
+              ><select id="clone-layout">
+                <option value="">Detect after cloning</option>
+                <option value="ip">ip/skills, ip/agents, …</option>
+                <option value="flat">skills, agents, …</option>
+              </select>
+              <button type="submit">Clone and add</button>
+              <p class="hint">
+                Uses your existing Git credentials. Choose a folder that does
+                not exist yet.
+              </p>
+            </form>
+          </details>
+          <section class="panel-block" aria-label="Repository status">
+            <h2>Repository</h2>
             <label for="repo-scope">Show repository</label
             ><select id="repo-scope">
               <option value="library">Selected library</option>
@@ -176,104 +250,42 @@
               ><button id="git-cancel" class="quiet">Cancel</button>
             </div>
           </section>
-          <section class="card compact">
-            <h3>How sharing works</h3>
-            <p>
-              <strong>Receive</strong> creates live shortcuts. Editing an
-              original updates every connected project.
-            </p>
-            <p>
-              <strong>Contribute</strong> copies selected originals into a
-              library checkout. Commit and push from that repository when ready.
-            </p>
-            <p>
-              <strong>Archive</strong> preserves removed local assets so you can
-              restore them.
-            </p>
-          </section>
-        </aside>
-        <section class="content">
-          <nav aria-label="Asset views">
-            <button data-tab="inbound" class="active">Receive</button
-            ><button data-tab="outbound">Contribute</button
-            ><button data-tab="installed">
-              Installed <span id="installed-count">0</span></button
-            ><button data-tab="archive">Archive</button
-            ><button data-tab="projects">Projects</button>
-          </nav>
-          <div class="panel">
-            <div class="panel-heading">
-              <div>
-                <h3 id="view-title">Receive from a library</h3>
-                <p id="view-help">Choose the tools this project can use.</p>
-              </div>
-              <span id="count" class="badge">0 assets</span>
-            </div>
-            <label class="search-label" for="search">Filter assets</label
-            ><input
-              id="search"
-              type="search"
-              placeholder="Search by name or type"
-            />
-            <div id="bulk-actions" class="actions bulk">
-              <button id="select-all" class="quiet">Select all</button
-              ><button id="deselect-all" class="quiet">Deselect all</button
-              ><button id="full-pack">Install full pack</button>
-              <span id="selected-count" class="hint"></span>
-            </div>
-            <div id="project-actions" class="actions bulk" hidden>
-              <button id="add-project" class="quiet">Add project…</button
-              ><button id="preview-all">Preview sync for all</button>
-              <span class="hint"
-                >Registered projects and this window's project. Sync applies
-                each project's selections, including ones inherited from parent
-                folders.</span
-              >
-              <input id="project-path" type="hidden" />
-            </div>
-            <div id="assets" class="assets"></div>
-            <details id="restore-history" hidden>
-              <summary id="restore-history-summary">Restore history</summary>
-              <p class="hint">
-                Completed restores, grouped by asset. Current installations
-                appear under Installed.
-              </p>
-              <div id="restore-history-list"></div>
-            </details>
-            <div class="actions sticky-actions" id="selection-actions">
-              <span id="pending-count" class="hint" aria-live="polite"></span>
-              <button id="save" class="secondary">Save selection</button
-              ><button id="preview">Save and preview</button>
-            </div>
-          </div>
-          <section id="review" class="card review" hidden>
-            <div class="panel-heading">
-              <h3>Review changes</h3>
-              <span id="review-count" class="badge"></span>
-            </div>
-            <p>These changes apply to the folders shown below.</p>
-            <div id="changes"></div>
-            <div id="errors" role="alert"></div>
-            <p id="conflict-help" class="hint" hidden>
-              Nothing is applied while a conflict remains. Resolve each one, or
-              deselect it, then preview again.
-            </p>
-            <div class="actions">
-              <button id="apply" disabled>Apply changes</button
-              ><button id="dismiss" class="quiet">Dismiss</button>
-            </div>
-          </section>
-        </section>
-      </div>
-      <footer>
-        Kiro · Claude Code · GitHub Copilot
-        <span>One library. Many independent projects.</span>
-      </footer>
+          <details class="panel-block">
+            <summary>Configuration layers</summary>
+            <ul id="layers"></ul>
+          </details>
+          <button id="reveal-workspace" class="quiet">Show folder</button>
+        </div>
+      </section>
+
+      <aside
+        id="review"
+        class="review-sheet"
+        hidden
+        aria-labelledby="review-title"
+      >
+        <div class="review-head">
+          <h2 id="review-title">Review changes</h2>
+          <span id="review-count" class="count-chip"></span>
+        </div>
+        <p id="review-hint" class="hint">
+          Nothing changes on disk until you apply.
+        </p>
+        <div id="changes"></div>
+        <div id="errors" role="alert"></div>
+        <p id="conflict-help" class="hint" hidden>
+          A project with a conflict is not changed. Resolve it, or stop
+          receiving that asset, then review again.
+        </p>
+        <div class="review-actions">
+          <button id="apply" disabled>Apply changes</button
+          ><button id="dismiss" class="quiet">Close</button>
+        </div>
+      </aside>
     </main>
 
-    <main id="about-page" hidden>
+    <main id="about-page" class="about" hidden>
       <section class="about-hero">
-        <p class="eyebrow">ABOUT CAPTAIN SHARE</p>
         <h2 id="about-title" tabindex="-1">
           One library. Many independent projects.
         </h2>
@@ -294,29 +306,24 @@
           <h3>Start here</h3>
           <ol>
             <li>
-              <strong>Add a library.</strong> Choose its folder; the name and
-              layout come from the folder. Or use Clone and connect with an
-              HTTPS/SSH repository URL and a new local folder.
+              <strong>Add a library.</strong> Choose its folder, or clone it
+              from Git. Libraries added for your user appear in every project.
             </li>
             <li>
-              <strong>Choose assets.</strong> Receive individual assets or use
-              Install full pack for every currently available asset in the
-              library.
+              <strong>Click circles on the Assets page.</strong> Rows are
+              library assets, columns are places: this project, the folders
+              above it (they share assets with every project inside), and your
+              user.
             </li>
             <li>
-              <strong>Review and apply.</strong> Preview shows the file changes
-              and any conflicts. Apply changes performs the installation.
+              <strong>Review and apply.</strong> The review lists every link per
+              place; Apply changes creates them. Cancel puts your choices back.
             </li>
             <li>
-              <strong>Check Installed.</strong> Inspect managed links and
-              archive assets you no longer want in this project.
+              <strong>Choose agents per place</strong> with the chips under each
+              column: Kiro (IDE and CLI), Claude Code, Codex, Copilot.
             </li>
           </ol>
-          <p>
-            Select all and Deselect all include filtered-out assets. Full-pack
-            selection is a snapshot; select newly added library assets when you
-            want to include them.
-          </p>
         </section>
         <section class="card">
           <h3>What “current folder” means</h3>
@@ -337,13 +344,13 @@ captain-share serve --open</code></pre>
         <section class="card">
           <h3>How sharing works</h3>
           <dl>
-            <dt>Receive</dt>
+            <dt>Install</dt>
             <dd>
               Creates live symbolic links to library originals. Editing an
               original, or pulling updates into its checkout, updates every
               project linked to it.
             </dd>
-            <dt>Contribute</dt>
+            <dt>Share back</dt>
             <dd>
               Copies selected local originals into a library checkout. Review
               and commit those changes before pushing. Deselecting outbound
@@ -351,23 +358,25 @@ captain-share serve --open</code></pre>
             </dd>
             <dt>Tools</dt>
             <dd>
-              Each received asset gets one live link per enabled tool that reads
-              its kind, all pointing at the same original. Kiro and Copilot are
-              on by default; enable Claude Code or Codex to also link skills
-              into
+              Each installed asset gets one live link per enabled agent that
+              reads its kind, all pointing at the same original. Kiro and
+              Copilot are on by default; light Claude or Codex in a column head
+              to also link skills into
               <code>.claude/skills/</code> or <code>.agents/skills/</code>.
               There is no copying back and forth between tool folders.
             </dd>
             <dt>Aliases</dt>
             <dd>
-              Change the local file or folder name. They do not rewrite skill
-              frontmatter or references inside agents.
+              Change the local file or folder name; set them with the CLI (<code
+                >select inbound … --alias NAME</code
+              >). They do not rewrite skill frontmatter or references inside
+              agents.
             </dd>
             <dt>Source of truth</dt>
             <dd>
               The library holds the maintained original. To move ownership
-              there, contribute the original, archive the local copy, then
-              receive the library version.
+              there, share the original back, archive the local copy, then
+              install the library version.
             </dd>
           </dl>
         </section>

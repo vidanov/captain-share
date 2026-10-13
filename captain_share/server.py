@@ -163,6 +163,99 @@ def project_summary(row):
         return {**row, "error": str(exc)}
 
 
+def matrix(startup, target):
+    """Library assets as rows and places as columns, for the patch bay view."""
+    home = c.global_dir().parent
+    allowed = {row["path"]: row for row in places(startup)}
+    columns = [target]
+    for parent in target.parents:
+        if parent == home or home not in parent.parents:
+            break
+        if str(parent) in allowed:
+            columns.append(parent)
+    if target != home:
+        columns.append(home)
+    info = []
+    for place in columns:
+        cfg = c.effective(place)
+        own_file = c.read_json(place / ".captain/sharing.json", c.blank()) or c.blank()
+        installed: dict[str, list[str]] = {}
+        for rel, row in e.state(place)["inbound"].items():
+            installed.setdefault(row.get("key"), []).append(rel)
+        kind = "user" if place == home else "project" if place == target else "folder"
+        info.append(
+            {
+                "path": place,
+                "cfg": cfg,
+                "own": own_file.get("inbound", {}),
+                "installed": installed,
+                "column": {
+                    "path": str(place),
+                    "kind": kind,
+                    "label": "Your user" if kind == "user" else place.name,
+                    "tools": cfg["tools"],
+                },
+            }
+        )
+    rows = []
+    for source in sorted(c.effective(target)["sources"]):
+        listings: dict[str, dict[tuple[str, str], dict]] = {}
+        for col in info:
+            if col["column"]["kind"] == "folder" or source not in col["cfg"]["sources"]:
+                continue
+            try:
+                listings[str(col["path"])] = {
+                    (r["kind"], r["name"]): r for r in e.catalog(col["path"], source)
+                }
+            except c.ShareError:
+                continue
+        base = listings.get(str(target)) or next(iter(listings.values()), None) or {}
+        for (kind, name), item in sorted(
+            base.items(), key=lambda x: (c.KINDS.index(x[0][0]), x[0][1])
+        ):
+            key = f"{source}/{kind}/{name}"
+            cells = {}
+            for col in info:
+                place = str(col["path"])
+                origin = col["cfg"]["origins"]["inbound"].get(key)
+                cell = {
+                    "on": key in col["cfg"]["inbound"],
+                    "own": origin == place,
+                    "from": origin if origin and origin != place else None,
+                    "masked": col["own"].get(key) == {"enabled": False},
+                    "linked": key in col["installed"],
+                }
+                listed = listings.get(place, {}).get((kind, name))
+                if listed and listed.get("destinations"):
+                    states = [d["state"] for d in listed["destinations"]]
+                    for state in ("blocked", "contributed", "changed", "absent", "installed"):
+                        if state in states:
+                            cell["dest"] = state
+                            cell["paths"] = [d["path"] for d in listed["destinations"]]
+                            break
+                if (
+                    kind == "powers"
+                    and col["column"]["kind"] == "user"
+                    and item["status"] == "available"
+                ):
+                    cell["power"] = i.power_state(Path(item["path"]))
+                cells[place] = cell
+            rows.append(
+                {
+                    "key": key,
+                    "source": source,
+                    "kind": kind,
+                    "name": name,
+                    "description": item.get("description", ""),
+                    "status": item["status"],
+                    "error": item.get("error"),
+                    "path": item["path"],
+                    "cells": cells,
+                }
+            )
+    return {"columns": [col["column"] for col in info], "rows": rows}
+
+
 def make_server(target, port=0):
     startup = c.root(target)
     token = secrets.token_urlsafe(32)
@@ -238,6 +331,8 @@ def make_server(target, port=0):
                 elif parsed.path == "/api/repository":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(r.status(target, source))
+                elif parsed.path == "/api/matrix":
+                    self.respond(matrix(startup, target))
                 elif parsed.path == "/api/projects":
                     self.respond(
                         [
@@ -355,11 +450,33 @@ def make_server(target, port=0):
                     with c.locks([directory]):
                         local = c.read_json(directory / "sharing.json")
                         c.validate(local, directory / "sharing.json")
+                        # The prior entries let the window undo a save the user cancels.
+                        previous = {key: local[direction].get(key) for key in rows}
                         local[direction].update(rows)
                         c.validate(local, directory / "sharing.json")
                         c.atomic_json(directory / "sharing.json", local)
                     plans.clear()
-                    result = {"saved": len(rows)}
+                    result = {"saved": len(rows), "previous": previous}
+                elif path == "/api/restore-selections":
+                    direction = data["direction"]
+                    if direction not in ("inbound", "outbound"):
+                        raise c.ShareError("Unknown direction")
+                    previous = data["previous"]
+                    if not isinstance(previous, dict) or len(previous) > 500:
+                        raise c.ShareError("Expected at most 500 selections")
+                    directory = c.config_dir(target)
+                    with c.locks([directory]):
+                        local = c.read_json(directory / "sharing.json")
+                        c.validate(local, directory / "sharing.json")
+                        for key, entry in previous.items():
+                            if entry is None:
+                                local[direction].pop(key, None)
+                            else:
+                                local[direction][key] = entry
+                        c.validate(local, directory / "sharing.json")
+                        c.atomic_json(directory / "sharing.json", local)
+                    plans.clear()
+                    result = {"restored": len(previous)}
                 elif path == "/api/plan" and data.get("power"):
                     result = i.power_plan(target, data["action"], data["source"], data["name"])
                     if not data.get("batch"):

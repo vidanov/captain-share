@@ -1,0 +1,526 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T21:07:56+00:00",
+  "title": "Design System: Captain Share",
+  "extensions": {
+    "colorMeta": {
+      "panel": {
+        "role": "neutral",
+        "displayName": "Anodized Panel",
+        "canonical": "oklch(19.5% 0.007 258)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222427",
+          "#3e4043",
+          "#5b5e61",
+          "#7b7d81",
+          "#9c9fa3",
+          "#c1c4c9",
+          "#edeef1"
+        ],
+        "cssVariable": "--panel"
+      },
+      "panel-2": {
+        "role": "neutral",
+        "displayName": "Lifted Panel",
+        "canonical": "oklch(22.9% 0.009 256)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#212428",
+          "#3d4045",
+          "#5a5e63",
+          "#7a7e83",
+          "#9b9fa4",
+          "#c0c4ca",
+          "#eceff2"
+        ],
+        "cssVariable": "--panel-2"
+      },
+      "panel-3": {
+        "role": "neutral",
+        "displayName": "Raised Control",
+        "canonical": "oklch(26.7% 0.011 254)",
+        "tonalRamp": [
+          "#090b0e",
+          "#202429",
+          "#3c4046",
+          "#595e64",
+          "#797e84",
+          "#9a9fa5",
+          "#bfc5cb",
+          "#ebeff3"
+        ],
+        "cssVariable": "--panel-3"
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(30.0% 0.012 258)",
+        "tonalRamp": [
+          "#090b0e",
+          "#20242a",
+          "#3c4046",
+          "#595e65",
+          "#797e85",
+          "#9a9fa6",
+          "#bfc4cc",
+          "#ebeff3"
+        ],
+        "cssVariable": "--rule"
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "oklch(37.3% 0.016 256)",
+        "tonalRamp": [
+          "#090b0f",
+          "#1f242c",
+          "#3a4048",
+          "#585e67",
+          "#777e87",
+          "#989fa8",
+          "#bdc5cf",
+          "#eaeff5"
+        ],
+        "cssVariable": "--rule-strong"
+      },
+      "jack-ring": {
+        "role": "neutral",
+        "displayName": "Jack Ring",
+        "canonical": "oklch(52.5% 0.018 257)",
+        "tonalRamp": [
+          "#080b10",
+          "#1f242d",
+          "#3a4049",
+          "#575e68",
+          "#777e88",
+          "#989faa",
+          "#bdc5d0",
+          "#eaeff6"
+        ],
+        "cssVariable": "--jack-ring"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Engraved Ink",
+        "canonical": "oklch(93.5% 0.009 85)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#26241f",
+          "#423f3b",
+          "#605d58",
+          "#807d78",
+          "#a19e98",
+          "#c7c4be",
+          "#f0eeeb"
+        ],
+        "cssVariable": "--ink"
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "oklch(76.3% 0.011 262)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#212429",
+          "#3d4046",
+          "#5a5e64",
+          "#7a7d84",
+          "#9b9fa5",
+          "#c0c4cb",
+          "#eceff3"
+        ],
+        "cssVariable": "--ink-2"
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(65.5% 0.015 258)",
+        "tonalRamp": [
+          "#090b0f",
+          "#20242b",
+          "#3b4048",
+          "#585e66",
+          "#787e86",
+          "#999fa8",
+          "#bec5ce",
+          "#ebeff5"
+        ],
+        "cssVariable": "--ink-3"
+      },
+      "amber": {
+        "role": "primary",
+        "displayName": "Patch Amber",
+        "canonical": "oklch(77.6% 0.148 69)",
+        "tonalRamp": [
+          "#200000",
+          "#4c0200",
+          "#6e2800",
+          "#904800",
+          "#b46900",
+          "#d88b14",
+          "#ffb14b",
+          "#ffe5ae"
+        ],
+        "cssVariable": "--amber"
+      },
+      "amber-hover": {
+        "role": "primary",
+        "displayName": "Lit Amber",
+        "canonical": "oklch(81.7% 0.130 73)",
+        "tonalRamp": [
+          "#1d0200",
+          "#460f00",
+          "#672f00",
+          "#884e00",
+          "#ab6e00",
+          "#cf9033",
+          "#f7b65d",
+          "#ffe7b5"
+        ],
+        "cssVariable": "--amber-hover"
+      },
+      "amber-ink": {
+        "role": "primary",
+        "displayName": "Amber Ink",
+        "canonical": "oklch(19.5% 0.028 76)",
+        "tonalRamp": [
+          "#0f0a04",
+          "#2c2214",
+          "#483e2f",
+          "#675c4c",
+          "#877b6b",
+          "#a99c8c",
+          "#cfc2b1",
+          "#f5ede2"
+        ],
+        "cssVariable": "--amber-ink"
+      },
+      "mint": {
+        "role": "secondary",
+        "displayName": "Live Mint",
+        "canonical": "oklch(72.6% 0.132 163)",
+        "tonalRamp": [
+          "#001403",
+          "#00350f",
+          "#00532b",
+          "#007348",
+          "#009567",
+          "#38b887",
+          "#66dfac",
+          "#beffe0"
+        ],
+        "cssVariable": "--mint"
+      },
+      "mint-dim": {
+        "role": "secondary",
+        "displayName": "Dim Mint",
+        "canonical": "oklch(48.8% 0.078 168)",
+        "tonalRamp": [
+          "#001107",
+          "#002f1c",
+          "#004d37",
+          "#276c55",
+          "#4a8c74",
+          "#6cae95",
+          "#91d5ba",
+          "#d1f9e8"
+        ],
+        "cssVariable": "--mint-dim"
+      },
+      "mint-ring": {
+        "role": "secondary",
+        "displayName": "Mint Ring",
+        "canonical": "oklch(57.3% 0.095 167)",
+        "tonalRamp": [
+          "#001206",
+          "#003119",
+          "#004f34",
+          "#0e6e52",
+          "#3b8f71",
+          "#5fb192",
+          "#85d8b7",
+          "#cbfbe6"
+        ],
+        "cssVariable": "--mint-ring"
+      },
+      "red": {
+        "role": "tertiary",
+        "displayName": "Fault Red",
+        "canonical": "oklch(67.9% 0.173 23)",
+        "tonalRamp": [
+          "#290000",
+          "#5e0000",
+          "#84000a",
+          "#aa1e2b",
+          "#d0474a",
+          "#f76b6a",
+          "#ff928e",
+          "#ffd3ce"
+        ],
+        "cssVariable": "--red"
+      },
+      "red-ink": {
+        "role": "tertiary",
+        "displayName": "Fault Ink",
+        "canonical": "oklch(90.9% 0.047 18)",
+        "tonalRamp": [
+          "#150607",
+          "#381a1b",
+          "#563536",
+          "#765353",
+          "#987273",
+          "#ba9393",
+          "#e1b8b9",
+          "#ffe7e7"
+        ],
+        "cssVariable": "--red-ink"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "First-run heading only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "View title at the top of each tab."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sheet and section headings."
+      },
+      "subtitle": {
+        "displayName": "Subtitle",
+        "purpose": "About page section headings."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "The faceplate wordmark on every view."
+      },
+      "row-title": {
+        "displayName": "Row Title",
+        "purpose": "Asset and library names in rows."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text; paragraphs in Secondary Ink."
+      },
+      "hint": {
+        "displayName": "Hint",
+        "purpose": "Help lines, descriptions, legend entries."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons, inputs, tabs."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Engraved small caps for panel labels; never a kicker."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Paths, commands, change lines only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog-lift",
+        "value": "0 12px 24px rgba(0, 0, 0, 0.5)",
+        "purpose": "Folder picker dialog only, over a rgba(5, 6, 8, 0.6) backdrop."
+      },
+      {
+        "name": "lamp-bezel",
+        "value": "inset 0 0 0 3px var(--panel-2)",
+        "purpose": "Ring of panel color inside a lit jack and the wordmark lamp; a bezel, not elevation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The single easing curve (--ease) for every transition and animation."
+      },
+      {
+        "name": "control-state",
+        "value": "160ms",
+        "purpose": "Button background, border and text color changes."
+      },
+      {
+        "name": "jack-state",
+        "value": "180ms",
+        "purpose": "Jack ring, fill and hover scale (1.08)."
+      },
+      {
+        "name": "cable-in",
+        "value": "200ms scaleX(0 to 1) from the folder side",
+        "purpose": "The one authored motion; only new cables draw. Off under reduced motion."
+      },
+      {
+        "name": "sheet-in",
+        "value": "220ms translateX(24px) and opacity 0.6 to rest",
+        "purpose": "Review sheet entry. Off under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "900px",
+        "purpose": "Max-width query: faceplate wraps to 6.5rem, key moves above the matrix, matrix scrolls in two axes with sticky asset column, gutter 16px."
+      }
+    ],
+    "layout": {
+      "faceplateHeight": "3.75rem (6.5rem at narrow width)",
+      "assetColumn": "25rem (9rem at narrow width)",
+      "placeColumn": "9rem (6.5rem at narrow width)",
+      "keyWidth": "17rem",
+      "reviewSheetWidth": "min(34rem, 100%)",
+      "colorScheme": "dark only"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The forward step: Review and apply, Apply changes, Add library.",
+      "html": "<button class=\"ds-btn-primary\">Review and apply</button>",
+      "css": ".ds-btn-primary { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: var(--amber-hover, #f6b55c); } .ds-btn-primary:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.45; cursor: default; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Secondary actions: Discard, Cancel, Clone from Git, Pull, Push.",
+      "html": "<button class=\"ds-btn-quiet\">Discard</button>",
+      "css": ".ds-btn-quiet { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid var(--rule-strong, #3b4149); border-radius: 6px; background: transparent; color: var(--ink, #ece9e3); cursor: pointer; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-quiet:hover { background: var(--panel-3, #22262b); border-color: var(--ink-3, #8b919a); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Search, paths and names on the Raised Control tone.",
+      "html": "<input class=\"ds-input\" type=\"search\" placeholder=\"Filter by name or description\">",
+      "css": ".ds-input { font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; width: 17rem; padding: 8px 10px; color: var(--ink, #ece9e3); background: var(--panel-3, #22262b); border: 1px solid var(--rule-strong, #3b4149); border-radius: 6px; caret-color: var(--amber, #f2a33a); } .ds-input::placeholder { color: var(--ink-3, #8b919a); } .ds-input:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Faceplate Tabs",
+      "kind": "nav",
+      "refersTo": "faceplate",
+      "description": "Major and minor section tabs split by a hairline; active tab carries an amber underline.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Assets</button><button class=\"ds-tab\">Libraries</button><span class=\"ds-nav-rule\"></span><button class=\"ds-tab ds-minor\">Projects</button><button class=\"ds-tab ds-minor\">Archive</button></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 2px; padding: 0 24px; background: var(--panel-2, #1a1d21); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-tab { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: transparent; color: var(--ink-2, #aeb2b9); border: 0; border-bottom: 2px solid transparent; padding: 18px 12px 16px; cursor: pointer; } .ds-tab:hover { color: var(--ink, #ece9e3); } .ds-tab:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-tab.is-active { color: var(--ink, #ece9e3); font-weight: 600; border-bottom-color: var(--amber, #f2a33a); } .ds-minor { font-size: 12.5px; font-weight: 500; color: var(--ink-3, #8b919a); } .ds-nav-rule { width: 1px; height: 18px; margin: 0 10px; background: var(--rule-strong, #3b4149); }"
+    },
+    {
+      "name": "Filter Chips",
+      "kind": "chip",
+      "refersTo": "chip-filter",
+      "description": "Asset kind filter; the active chip fills amber.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip is-active\" aria-pressed=\"true\">All</button><button class=\"ds-chip\" aria-pressed=\"false\">Skills</button><button class=\"ds-chip\" aria-pressed=\"false\">Agents</button></div>",
+      "css": ".ds-chips { display: flex; gap: 4px; } .ds-chip { font: 600 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 4px 11px; border: 1px solid var(--rule-strong, #3b4149); border-radius: 999px; background: transparent; color: var(--ink-2, #aeb2b9); cursor: pointer; } .ds-chip:hover { background: var(--panel-3, #22262b); } .ds-chip:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-chip.is-active { background: var(--amber, #f2a33a); border-color: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); }"
+    },
+    {
+      "name": "Agent Chips",
+      "kind": "chip",
+      "refersTo": "agent-chip",
+      "description": "Per-place agent toggles with a small lamp, lit mint when linked.",
+      "html": "<div class=\"ds-agents\"><button class=\"ds-agent is-on\" aria-pressed=\"true\">Kiro</button><button class=\"ds-agent\" aria-pressed=\"false\">Claude</button><button class=\"ds-agent\" aria-pressed=\"false\">Codex</button><button class=\"ds-agent is-on\" aria-pressed=\"true\">Copilot</button></div>",
+      "css": ".ds-agents { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 8.5rem; } .ds-agent { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 1px 2px; font: 600 10.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; border-radius: 4px; background: transparent; color: var(--ink-3, #8b919a); border: 1px solid var(--rule, #2a2e34); cursor: pointer; } .ds-agent::before { content: ''; width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--rule-strong, #3b4149); } .ds-agent:hover { background: var(--panel-3, #22262b); color: var(--ink, #ece9e3); } .ds-agent:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-agent.is-on { color: var(--ink, #ece9e3); border-color: var(--rule-strong, #3b4149); } .ds-agent.is-on::before { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); }"
+    },
+    {
+      "name": "Jack States",
+      "kind": "custom",
+      "refersTo": "jack",
+      "description": "Signature control: seven states of a 22px circle, with a cable from a folder jack.",
+      "html": "<div class=\"ds-jacks\"><button class=\"ds-jack\" aria-label=\"Free\"></button><button class=\"ds-jack on\" aria-label=\"Installed here\"></button><button class=\"ds-jack inherited\" aria-label=\"From a folder above\"></button><button class=\"ds-jack covered\" aria-label=\"Installed for your user\"></button><button class=\"ds-jack pending on\" aria-label=\"Will be installed\"></button><button class=\"ds-jack pending\" aria-label=\"Will be removed\"></button><button class=\"ds-jack blocked\" aria-label=\"A local file is in the way\"></button></div>",
+      "css": ".ds-jacks { display: flex; gap: 18px; padding: 16px; background: var(--panel-2, #1a1d21); } .ds-jack { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid var(--jack-ring, #646b75); background: var(--panel, #131518); cursor: pointer; transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-jack:hover { border-color: var(--ink-3, #8b919a); background: var(--panel-3, #22262b); transform: scale(1.08); } .ds-jack:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-jack.on { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); box-shadow: inset 0 0 0 3px var(--panel-2, #1a1d21); } .ds-jack.inherited { background: var(--mint-dim, #2a6e57); border-color: var(--mint-ring, #358a6c); box-shadow: inset 0 0 0 3px var(--panel-2, #1a1d21); } .ds-jack.covered { border-style: dashed; border-color: var(--mint-ring, #358a6c); background: transparent; } .ds-jack.pending { border-color: var(--amber, #f2a33a); background: var(--panel, #131518); box-shadow: none; } .ds-jack.pending::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--amber, #f2a33a); } .ds-jack.pending:not(.on)::after { background: transparent; border: 2px solid var(--amber, #f2a33a); inset: 5px; } .ds-jack.blocked { border-color: var(--red, #f06464); } .ds-jack.blocked::before { content: ''; position: absolute; left: 3px; right: 3px; top: 8px; height: 2px; background: var(--red, #f06464); transform: rotate(-45deg); }"
+    },
+    {
+      "name": "Routing Bar",
+      "kind": "custom",
+      "refersTo": "routing-bar",
+      "description": "Sticky summary of pending changes with Discard and Review and apply.",
+      "html": "<div class=\"ds-routing\"><span>Add reviewer.json to your user</span><button class=\"ds-routing-quiet\">Discard</button><button class=\"ds-routing-go\">Review and apply</button></div>",
+      "css": ".ds-routing { display: flex; align-items: center; gap: 10px; min-width: min(40rem, 100%); padding: 10px 12px 10px 18px; background: var(--panel-3, #22262b); border: 1px solid var(--amber, #f2a33a); border-radius: 10px; } .ds-routing > span { margin-right: auto; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink, #ece9e3); font-variant-numeric: tabular-nums; } .ds-routing button { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border-radius: 6px; cursor: pointer; } .ds-routing-quiet { background: transparent; color: var(--ink, #ece9e3); border: 1px solid var(--rule-strong, #3b4149); } .ds-routing-quiet:hover { background: var(--panel-3, #22262b); border-color: var(--ink-3, #8b919a); } .ds-routing-go { background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); border: 1px solid transparent; } .ds-routing-go:hover { background: var(--amber-hover, #f6b55c); } .ds-routing button:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Matrix Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Lifted panel with hairline rows: a recessed library band, then an asset row with engraved kind tag.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-band\"><span class=\"ds-engraved\">Team</span><span class=\"ds-muted\">5 assets</span></div><div class=\"ds-row\"><div class=\"ds-name\">plan <span class=\"ds-kind\">Skill</span></div><p class=\"ds-desc\">Plan a change before editing.</p></div></div>",
+      "css": ".ds-panel { width: 25rem; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-band { display: flex; align-items: baseline; gap: 10px; padding: 16px 16px 8px; background: var(--panel, #131518); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-engraved { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #ece9e3); } .ds-muted { font-size: 11px; color: var(--ink-3, #8b919a); } .ds-row { padding: 11px 16px; } .ds-row:hover { background: rgba(255, 255, 255, 0.02); } .ds-name { font-size: 13.5px; font-weight: 620; color: var(--ink, #ece9e3); } .ds-kind { margin-left: 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3, #8b919a); } .ds-desc { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-3, #8b919a); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Patch Bay",
+    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nThe window is a rack-mounted patch bay. Library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and a legend that sits beside the matrix at all times.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
+    "keyCharacteristics": [
+      "Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.",
+      "Color is state: mint is installed, amber is pending or your action, red is blocked.",
+      "The jack (22px circle) is the signature control, with seven legible states and a legend beside it.",
+      "Engraved small caps label the panel; they never act as headings or kickers.",
+      "One authored motion: a new cable draws out of the folder jack in 200ms."
+    ],
+    "rules": [
+      {
+        "name": "The Two Lamps Rule",
+        "body": "Mint says \"this is installed\"; amber says \"this will change, or you are touching it\". Neither appears as decoration, and mint never fills a button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Token Rule",
+        "body": "Every color lives as a custom property on `:root`. A new surface extends that set; it does not introduce a raw hex.",
+        "section": "colors"
+      },
+      {
+        "name": "The Readable Ring Rule",
+        "body": "Every jack ring that identifies a state or a control holds at least 3:1 against the panel it sits on; fills may be dimmer, rings may not.",
+        "section": "colors"
+      },
+      {
+        "name": "The Engraving Rule",
+        "body": "Uppercase tracked caps label a part of the panel: a control, the matrix corner, a library group, an asset's kind. They are never placed above a heading to introduce it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Machine Text Rule",
+        "body": "Monospace means a machine path or command. Prose, names and buttons stay in the sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Count Rule",
+        "body": "Every live count (asset totals, the routing summary, count chips) uses tabular numerals so it does not jitter as it changes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sized-to-Fit Rule",
+        "body": "The matrix is as wide as its columns and no wider. It is never stretched to fill the viewport.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Panel Rule",
+        "body": "Panels, bars and sheets are separated by tone and hairline, never by a drop shadow. Only a modal dialog casts one.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** show install state with the jack and its seven states, and keep the legend visible beside or above the matrix.",
+      "**Do** use the three panel tones and 1px hairlines for every separation; keep the matrix sized to its columns.",
+      "**Do** reserve Patch Amber for pending changes, the forward action, focus, the active tab and selection.",
+      "**Do** keep monospace for paths, commands and change lines only.",
+      "**Do** use tabular numerals for every count that updates live.",
+      "**Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.",
+      "**Do** use plain words in the interface (\"circle\", \"install\", \"Review and apply\"); keep the patch-bay vocabulary in visuals and class names.",
+      "**Do** turn the cable and sheet animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`."
+    ],
+    "donts": [
+      "**Don't** fill a button, banner or decoration with mint; mint means installed.",
+      "**Don't** put a drop shadow on panels, bars or sheets; only a modal dialog casts one.",
+      "**Don't** place engraved small caps above a heading as a kicker or eyebrow.",
+      "**Don't** use a circle for anything that is not a state lamp or a toggleable jack.",
+      "**Don't** add raw hex values in component rules; extend the `:root` custom properties.",
+      "**Don't** lay out card grids or stack boxed panels inside the matrix or lists; rows inside a panel are divided by hairlines."
+    ]
+  }
+}
