@@ -176,6 +176,12 @@ captain-share --target "$HOME" select inbound personal skills review-code
 captain-share --target "$HOME" sync --apply
 ```
 
+Selections saved for your home folder are user-wide installs into `~/.kiro` or
+`~/.claude`, which agent tools already read in every project. Projects inherit the
+home layer's sources and tools, but not its selections, so a user-wide skill is
+not linked again into each project. Use an ancestor folder's `.captain` (for
+example `~/Documents/PROJECTS`) for selections that projects should inherit.
+
 Portable selections can be committed. Machine paths, installation records, and
 archives are locally ignored. Git repositories also get exact local exclusions
 for managed links; existing hooks are left alone. `guard` reports forcibly tracked
