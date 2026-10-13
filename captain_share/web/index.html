@@ -30,28 +30,30 @@
       </section>
       <div id="message" role="status" aria-live="polite"></div>
       <section class="workspace">
-        <span class="label">CURRENT FOLDER</span
-        ><code id="target">Connecting…</code>
+        <label class="label" for="place">WORKING ON</label>
+        <select id="place" aria-describedby="place-help"></select>
+        <p id="place-help" class="scope-hint"></p>
+        <code id="target">Connecting…</code>
         <button id="reveal-workspace" class="quiet">Show folder</button>
-        <p class="scope-hint">
-          This window manages the folder chosen when it started.
-        </p>
         <fieldset id="tools" class="tools">
-          <legend>Install received assets for</legend>
+          <legend>Agents that receive links</legend>
           <label
             ><input type="checkbox" value="kiro" /> Kiro
-            <span class="hint">skills, agents, prompts, steering</span></label
+            <span class="hint" id="tool-hint-kiro"></span></label
           ><label
             ><input type="checkbox" value="claude" /> Claude Code
-            <span class="hint">skills</span></label
+            <span class="hint" id="tool-hint-claude"></span></label
           ><label
             ><input type="checkbox" value="copilot" /> GitHub Copilot
-            <span class="hint">Copilot instructions and prompts</span></label
-          >
+            <span class="hint" id="tool-hint-copilot"></span
+          ></label>
         </fieldset>
         <p class="hint tools-hint">
-          One library original, one live link per tool. Turning a tool off
-          archives its links at the next apply.
+          One library original, one live link per agent. Turning an agent on
+          previews its links; a file with the same name already there shows as
+          "local file in the way" and is never overwritten. Turning an agent off
+          archives its links at the next apply. Kiro powers install user-wide
+          from their row.
         </p>
         <details>
           <summary>Configuration layers</summary>
@@ -193,7 +195,8 @@
             ><button data-tab="outbound">Contribute</button
             ><button data-tab="installed">
               Installed <span id="installed-count">0</span></button
-            ><button data-tab="archive">Archive</button>
+            ><button data-tab="archive">Archive</button
+            ><button data-tab="projects">Projects</button>
           </nav>
           <div class="panel">
             <div class="panel-heading">
@@ -214,6 +217,16 @@
               ><button id="deselect-all" class="quiet">Deselect all</button
               ><button id="full-pack">Install full pack</button>
               <span id="selected-count" class="hint"></span>
+            </div>
+            <div id="project-actions" class="actions bulk" hidden>
+              <button id="add-project" class="quiet">Add project…</button
+              ><button id="preview-all">Preview sync for all</button>
+              <span class="hint"
+                >Registered projects and this window's project. Sync applies
+                each project's selections, including ones inherited from parent
+                folders.</span
+              >
+              <input id="project-path" type="hidden" />
             </div>
             <div id="assets" class="assets"></div>
             <details id="restore-history" hidden>
