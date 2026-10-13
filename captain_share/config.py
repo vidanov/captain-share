@@ -249,6 +249,7 @@ def effective(target) -> dict[str, Any]:
     result = blank()
     result["layers"] = []
     result["tools"] = list(DEFAULT_TOOLS)
+    result["origins"] = {"inbound": {}, "outbound": {}}
     for p, data, local in layers(target):
         result["layers"].append(str(p))
         if "tools" in data:
@@ -264,6 +265,8 @@ def effective(target) -> dict[str, Any]:
         if not local and not (user_wide_only and p.parent == home):
             for direction in ("inbound", "outbound"):
                 result[direction].update(data.get(direction, {}))
+                for key in data.get(direction, {}):
+                    result["origins"][direction][key] = str(p.parent.parent)
     for direction in ("inbound", "outbound", "sources"):
         result[direction] = {k: v for k, v in result[direction].items() if v.get("enabled", True)}
     return result

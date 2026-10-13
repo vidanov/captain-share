@@ -6,6 +6,7 @@ from unittest.mock import patch
 from urllib.parse import quote
 
 from captain_share import __version__
+from captain_share import config as c
 from captain_share.server import make_server
 from tests.test_sharing import SharingFixture
 
@@ -193,6 +194,82 @@ class ServerTests(SharingFixture):
         self.assertEqual(self.request("/api/library?path=relative")[0], 400)
         self.assertEqual(self.request("/api/source", {"name": "other", "path": str(other)})[0], 200)
         self.assertEqual(self.request("/api/catalog?source=other")[1][0]["name"], "helper.json")
+
+    def select_at(self, target, name="hello"):
+        return self.request(
+            "/api/selections",
+            {
+                "target": str(target),
+                "direction": "inbound",
+                "source": "team",
+                "selections": [{"kind": "skills", "name": name}],
+            },
+        )
+
+    def test_window_acts_only_on_its_places(self):
+        home, folder = self.base, self.repo.parent  # CAPTAIN_SHARE_HOME is <base>/global
+        _, state = self.request("/api/state")
+        kinds = {row["path"]: row["kind"] for row in state["places"]}
+        self.assertEqual(
+            kinds, {str(self.repo): "project", str(folder): "folder", str(home): "user"}
+        )
+        outside = self.base.parent
+        self.assertEqual(self.request("/api/state?target=" + quote(str(outside)))[0], 400)
+        code, _ = self.request(
+            "/api/selections",
+            {"target": str(outside), "direction": "inbound", "source": "team", "selections": []},
+        )
+        self.assertEqual(code, 400)
+        self.assertEqual(
+            self.request("/api/state?target=" + quote(str(home)))[1]["target"], str(home)
+        )
+
+    def test_folder_template_is_inherited_and_user_installs_are_marked(self):
+        # As in real use, the home folder's .captain is the global layer.
+        with patch.dict("os.environ", {"CAPTAIN_SHARE_HOME": str(self.base / ".captain")}):
+            self._folder_template_and_user_installs()
+
+    def _folder_template_and_user_installs(self):
+        folder = self.repo.parent
+        c.add_source(self.base, "team", self.lib)
+        self.assertEqual(self.select_at(folder)[0], 200)
+        _, state = self.request("/api/state")
+        self.assertIn("team/skills/hello", state["config"]["inbound"])
+        self.assertEqual(state["config"]["origins"]["inbound"]["team/skills/hello"], str(folder))
+        _, plan = self.request("/api/plan", {"direction": "inbound"})
+        self.assertEqual(len(plan["changes"]), 1)
+        self.skill(self.lib / "ip/skills/personal")
+        self.select_at(self.base, "personal")
+        _, home_plan = self.request("/api/plan", {"target": str(self.base), "direction": "inbound"})
+        self.request("/api/apply", {"fingerprint": home_plan["fingerprint"]})
+        _, state = self.request("/api/state")
+        self.assertEqual(state["user_installed"], ["team/skills/personal"])
+        self.assertNotIn("team/skills/personal", state["config"]["inbound"])
+
+    def test_registered_projects_sync_in_one_batch(self):
+        other = self.base / "other"
+        other.mkdir()
+        code, registered = self.request("/api/projects", {"path": str(other)})
+        self.assertEqual((code, registered["name"]), (200, "other"))
+        for target in (self.repo, other):
+            c.add_source(target, "team", self.lib)
+            self.select_at(target)
+        _, rows = self.request("/api/projects")
+        self.assertEqual(
+            {r["path"]: r["changes"] for r in rows}, {str(self.repo): 1, str(other): 1}
+        )
+        _, first = self.request("/api/plan", {"target": str(self.repo), "direction": "inbound"})
+        _, second = self.request(
+            "/api/plan", {"target": str(other), "direction": "inbound", "batch": True}
+        )
+        for plan in (first, second):
+            self.assertEqual(
+                self.request("/api/apply", {"fingerprint": plan["fingerprint"]})[0], 200
+            )
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+        self.assertTrue((other / ".kiro/skills/hello").is_symlink())
+        _, rows = self.request("/api/projects")
+        self.assertEqual({r["changes"] for r in rows}, {0})
 
     def test_invalid_batch_does_not_save_partial_selection(self):
         code, _ = self.request(

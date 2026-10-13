@@ -115,8 +115,56 @@ def reveal_path(target, value):
     return {"revealed": str(candidate)}
 
 
+def places(startup):
+    """Folders this window may act on (ADR 004): the startup folder, the folders
+    above it inside the home folder, the home folder itself (user-wide), and
+    projects the user registered."""
+    home = c.global_dir().parent
+    rows: list[dict[str, str]] = []
+
+    def add(path, kind, label):
+        if all(row["path"] != str(path) for row in rows):
+            rows.append({"path": str(path), "kind": kind, "label": label})
+
+    add(startup, "user" if startup == home else "project", startup.name)
+    for parent in startup.parents:
+        if parent == home or home not in parent.parents:
+            break
+        add(parent, "folder", parent.name)
+    add(home, "user", "Your user")
+    for label, path in sorted(i.repositories()["repositories"].items()):
+        if Path(path).is_dir():
+            add(Path(path).resolve(), "project", label)
+    return rows
+
+
+def place(startup, value):
+    if not value:
+        return startup
+    path = Path(value).expanduser().resolve()
+    if any(row["path"] == str(path) for row in places(startup)):
+        return path
+    raise c.ShareError("This window does not manage that folder. Register it as a project first.")
+
+
+def project_summary(row):
+    target = Path(row["path"])
+    try:
+        current = e.status(target)
+        preview = e.plan(target)
+        return {
+            **row,
+            "linked": sum(1 for x in current["installed"] if x["status"] == "linked"),
+            "drift": sum(1 for x in current["installed"] if x["status"] != "linked"),
+            "changes": len(preview["changes"]),
+            "conflicts": len(preview["conflicts"]),
+        }
+    except (c.ShareError, OSError) as exc:
+        return {**row, "error": str(exc)}
+
+
 def make_server(target, port=0):
-    target = c.root(target)
+    startup = c.root(target)
     token = secrets.token_urlsafe(32)
     plans: dict[str, dict[str, Any]] = {}
 
@@ -159,8 +207,18 @@ def make_server(target, port=0):
             if not self.authorized(parsed.path.startswith("/api/")):
                 return
             try:
+                target = place(startup, parse_qs(parsed.query).get("target", [""])[0])
                 if parsed.path == "/api/state":
                     result = e.status(target)
+                    result["startup"] = str(startup)
+                    result["places"] = places(startup)
+                    home = c.global_dir().parent
+                    # Assets already installed user-wide, so a project need not add them.
+                    result["user_installed"] = (
+                        []
+                        if target == home
+                        else sorted({row["key"] for row in e.state(home)["inbound"].values()})
+                    )
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
                     result["destinations"] = c.DESTINATIONS
@@ -180,6 +238,14 @@ def make_server(target, port=0):
                 elif parsed.path == "/api/repository":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(r.status(target, source))
+                elif parsed.path == "/api/projects":
+                    self.respond(
+                        [
+                            project_summary(row)
+                            for row in places(startup)
+                            if row["kind"] == "project"
+                        ]
+                    )
                 elif parsed.path == "/api/catalog":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     rows = e.catalog(target, source)
@@ -225,6 +291,7 @@ def make_server(target, port=0):
                 if not isinstance(data, dict):
                     raise c.ShareError("Expected a JSON object")
                 path = urlparse(self.path).path
+                target = place(startup, data.get("target", ""))
                 if path == "/api/reveal":
                     result = reveal_path(target, data["path"])
                 elif path == "/api/clone":
@@ -237,6 +304,10 @@ def make_server(target, port=0):
                         target, data.get("source", ""), data["action"], data["fingerprint"]
                     )
                     plans.clear()
+                elif path == "/api/projects":
+                    folder = c.root(data["path"])
+                    taken = set(i.repositories()["repositories"])
+                    result = i.register(data.get("name") or c.suggest_name(folder, taken), folder)
                 elif path == "/api/tools":
                     result = c.set_tools(target, data["tools"])
                     plans.clear()
@@ -291,7 +362,8 @@ def make_server(target, port=0):
                     result = {"saved": len(rows)}
                 elif path == "/api/plan" and data.get("power"):
                     result = i.power_plan(target, data["action"], data["source"], data["name"])
-                    plans.clear()
+                    if not data.get("batch"):
+                        plans.clear()
                     plans[result["fingerprint"]] = result
                 elif path == "/api/plan":
                     result = e.plan(
@@ -303,7 +375,9 @@ def make_server(target, port=0):
                         archive_id=data.get("id"),
                         path=data.get("path"),
                     )
-                    plans.clear()
+                    # A batch previews several projects; keep the earlier plans of it.
+                    if not data.get("batch"):
+                        plans.clear()
                     plans[result["fingerprint"]] = result
                 elif path == "/api/apply":
                     fingerprint = data.get("fingerprint")

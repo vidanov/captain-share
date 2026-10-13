@@ -54,7 +54,19 @@ function message(text, error = false) {
 }
 $("message").title = "Dismiss";
 $("message").onclick = () => message("");
+let currentTarget = "",
+  projects = [],
+  pendingBatch = null;
 async function api(path, data) {
+  // Every request names the folder it acts on (ADR 004); the server checks it.
+  if (currentTarget) {
+    if (data === undefined)
+      path +=
+        (path.includes("?") ? "&" : "?") +
+        "target=" +
+        encodeURIComponent(currentTarget);
+    else if (!("target" in data)) data = { ...data, target: currentTarget };
+  }
   const res = await fetch("/api/" + path, {
     method: data === undefined ? "GET" : "POST",
     headers: {
@@ -83,12 +95,56 @@ async function task(fn) {
 }
 function invalidate() {
   pending = null;
+  pendingBatch = null;
   resumeSpec = null;
   $("review").hidden = true;
   $("apply").disabled = true;
 }
+function here() {
+  return state.places.find((row) => row.path === state.target) || {};
+}
+function homePath() {
+  return (state.places.find((row) => row.kind === "user") || {}).path;
+}
+function renderPlaces() {
+  $("place").replaceChildren(
+    ...state.places.map((row) => {
+      const option = el(
+        "option",
+        row.kind === "user"
+          ? "Your user (every project)"
+          : row.kind === "folder"
+            ? "Folder " + row.label + " (projects inside inherit)"
+            : "Project " +
+              row.label +
+              (row.path === state.startup ? " (this window)" : ""),
+      );
+      option.value = row.path;
+      return option;
+    }),
+  );
+  $("place").value = state.target;
+  const kind = here().kind;
+  $("place-help").textContent =
+    kind === "user"
+      ? "Installs into ~/.kiro and ~/.claude, which agents read in every project. Projects do not link these again."
+      : kind === "folder"
+        ? "Selections saved here are inherited by every project inside this folder. Saving previews the registered projects inside it."
+        : "Selections here apply to this project only.";
+  const user = kind === "user";
+  $("tool-hint-kiro").textContent =
+    (user ? "~/.kiro/" : ".kiro/") + " skills, agents, prompts, steering";
+  $("tool-hint-claude").textContent =
+    (user ? "~/.claude/skills/" : ".claude/skills/") + " (skills only)";
+  $("tool-hint-copilot").textContent = user
+    ? "no user-wide folder; set it per project"
+    : ".github/ instructions and prompts";
+}
 async function refresh(keepDrafts = false) {
   state = await api("state");
+  currentTarget = state.target;
+  renderPlaces();
+  projects = await api("projects").catch(() => []);
   for (const input of $("tools").querySelectorAll("input"))
     input.checked = state.config.tools.includes(input.value);
   $("target").textContent = state.target;
@@ -120,6 +176,8 @@ async function refresh(keepDrafts = false) {
 function installable(row) {
   return (
     row.status === "available" &&
+    // Installed for the user already: a project copy would be a duplicate.
+    !state.user_installed?.includes(key(row)) &&
     row.destinations?.length > 0 &&
     row.destinations.every((d) => ["absent", "installed"].includes(d.state))
   );
@@ -162,7 +220,16 @@ function render() {
       "Archived assets",
       "Only assets waiting to be restored appear here. Completed restores are in the history below.",
     ],
+    projects: [
+      "Projects",
+      "Sync each project after changing shared selections or pulling a library.",
+    ],
   };
+  if (view === "inbound" && here().kind === "folder")
+    titles.inbound[1] =
+      "Choose what every project inside this folder receives.";
+  if (view === "inbound" && here().kind === "user")
+    titles.inbound[1] = "Choose the tools available in all your projects.";
   $("view-title").textContent = titles[view][0];
   $("view-help").textContent = titles[view][1];
   document
@@ -171,6 +238,14 @@ function render() {
   $("selection-actions").hidden = !["inbound", "outbound"].includes(view);
   $("bulk-actions").hidden = !["inbound", "outbound"].includes(view);
   $("full-pack").hidden = view !== "inbound";
+  $("project-actions").hidden = view !== "projects";
+  $("search").hidden = view === "projects";
+  document.querySelector(".search-label").hidden = view === "projects";
+  if (view === "projects") {
+    renderHistory("");
+    renderProjects();
+    return;
+  }
   selectionCount();
   const managed = new Set(state.installed.map((row) => row.path));
   let rows =
@@ -253,7 +328,15 @@ function render() {
         main.append(powerControls(row));
       else if (view === "inbound" && row.status === "available") {
         const list = el("div", undefined, "destinations");
-        for (const d of row.destinations)
+        const origin = state.config.origins?.inbound?.[key(row)];
+        if (origin && origin !== state.target)
+          list.append(
+            el("span", "inherited from " + origin.split("/").pop(), "badge"),
+          );
+        if (state.user_installed?.includes(key(row)))
+          list.append(el("span", "installed for your user", "badge installed"));
+        // A folder is a template for its projects; it has no links of its own.
+        for (const d of here().kind === "folder" ? [] : row.destinations)
           list.append(
             el(
               "span",
@@ -261,7 +344,7 @@ function render() {
               "badge " + d.state,
             ),
           );
-        if (!row.destinations.length)
+        if (!row.destinations.length && here().kind !== "folder")
           list.append(
             el("span", "No enabled tool reads " + row.kind, "badge blocked"),
           );
@@ -461,6 +544,136 @@ function powerControls(row) {
   }
   return box;
 }
+function renderProjects() {
+  $("count").textContent =
+    projects.length + (projects.length === 1 ? " project" : " projects");
+  $("assets").replaceChildren();
+  if (!projects.length) {
+    const empty = el("div", undefined, "empty");
+    empty.append(
+      el("strong", "No projects registered."),
+      el("p", "Add project… registers a folder so it can be synced from here."),
+    );
+    $("assets").append(empty);
+    return;
+  }
+  for (const row of projects) {
+    const wrap = el("div", undefined, "asset");
+    const main = el("div", undefined, "asset-main");
+    const status = row.error
+      ? row.error
+      : row.linked +
+        " linked · " +
+        (row.changes
+          ? row.changes +
+            (row.changes === 1 ? " change" : " changes") +
+            " to sync"
+          : "in sync") +
+        (row.drift ? " · " + row.drift + " need attention" : "") +
+        (row.conflicts ? " · " + row.conflicts + " conflicts" : "");
+    main.append(
+      el("div", row.label, "asset-title"),
+      el(
+        "div",
+        status + (row.path === state.target ? " · open here" : ""),
+        "asset-type",
+      ),
+      el("div", row.path, "asset-path"),
+    );
+    const actions = el("div", undefined, "destinations");
+    if (row.path !== state.target) {
+      const open = el("button", "Work on it", "quiet");
+      open.type = "button";
+      open.onclick = () => task(() => switchPlace(row.path, "inbound"));
+      actions.append(open);
+    }
+    const sync = el("button", "Preview sync", "quiet");
+    sync.type = "button";
+    sync.onclick = () => task(() => previewMany([row]));
+    actions.append(sync);
+    main.append(actions);
+    wrap.append(main);
+    $("assets").append(wrap);
+  }
+}
+async function switchPlace(path, nextView) {
+  currentTarget = path;
+  drafts = {};
+  if (nextView) view = nextView;
+  await refresh();
+  message(
+    "Working on " + (here().kind === "user" ? "your user" : here().label) + ".",
+  );
+}
+async function previewMany(rows) {
+  if (!rows.length) throw new Error("No registered projects to sync here.");
+  const plans = [];
+  for (const [index, row] of rows.entries())
+    plans.push({
+      row,
+      plan: await api("plan", {
+        direction: "inbound",
+        target: row.path,
+        batch: index > 0,
+      }),
+    });
+  pending = null;
+  pendingBatch = plans;
+  $("review").hidden = false;
+  $("changes").replaceChildren();
+  $("errors").replaceChildren();
+  let total = 0;
+  for (const { row, plan } of plans) {
+    total += plan.changes.length;
+    $("changes").append(
+      el(
+        "p",
+        row.label +
+          " · " +
+          (plan.conflicts.length
+            ? plan.conflicts.length + " conflicts, not applied"
+            : plan.changes.length
+              ? plan.changes.length +
+                (plan.changes.length === 1 ? " change" : " changes")
+              : "already in sync"),
+        "group-title",
+      ),
+    );
+    for (const change of plan.changes) {
+      const div = el("div", undefined, "change");
+      div.append(el("strong", change.op), el("div", change.path));
+      $("changes").append(div);
+    }
+    for (const conflict of plan.conflicts)
+      $("errors").append(el("p", row.label + ": " + conflict.message));
+  }
+  $("review-count").textContent =
+    total +
+    (total === 1 ? " change" : " changes") +
+    " in " +
+    plans.length +
+    (plans.length === 1 ? " project" : " projects");
+  $("conflict-help").hidden = !plans.some(({ plan }) => plan.conflicts.length);
+  $("apply").disabled = !plans.some(
+    ({ plan }) => plan.can_apply && plan.changes.length,
+  );
+  $("review").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+async function previewHere(direction) {
+  if (direction === "inbound" && here().kind === "folder") {
+    const inside = projects.filter((row) =>
+      row.path.startsWith(state.target + "/"),
+    );
+    if (!inside.length) {
+      message(
+        "Saved for this folder. Register its projects under Projects to sync them.",
+      );
+      return;
+    }
+    return previewMany(inside);
+  }
+  return preview({ direction });
+}
 function conflictRow(conflict, spec) {
   const div = el("div", undefined, "conflict");
   div.append(el("p", conflict.message));
@@ -620,10 +833,32 @@ $("save").onclick = () => task(saveSelection);
 $("preview").onclick = () =>
   task(async () => {
     await saveSelection(true);
-    await preview({ direction: view });
+    await previewHere(view);
   });
 $("apply").onclick = () =>
   task(async () => {
+    if (pendingBatch) {
+      const batch = pendingBatch;
+      let synced = 0,
+        skipped = 0;
+      for (const { plan } of batch) {
+        if (!plan.changes.length) continue;
+        if (!plan.can_apply) {
+          skipped++;
+          continue;
+        }
+        await api("apply", { fingerprint: plan.fingerprint });
+        synced++;
+      }
+      await refresh(true);
+      message(
+        "Synced " +
+          synced +
+          (synced === 1 ? " project" : " projects") +
+          (skipped ? "; " + skipped + " skipped because of conflicts." : "."),
+      );
+      return;
+    }
     if (!pending) return;
     const result = await api("apply", { fingerprint: pending.fingerprint });
     const resume = resumeSpec;
@@ -655,6 +890,9 @@ $("tools").onchange = (event) =>
     );
   });
 $("dismiss").onclick = invalidate;
+$("place").onchange = () => task(() => switchPlace($("place").value));
+$("preview-all").onclick = () => task(() => previewMany(projects));
+$("add-project").onclick = () => openFolderPicker("project-path");
 document.querySelectorAll("nav button").forEach(
   (button) =>
     (button.onclick = () => {
@@ -733,14 +971,14 @@ $("full-pack").onclick = () =>
       throw new Error("No asset in this library can be installed as is.");
     selectAll(true, rows);
     await saveSelection(true);
-    await preview({ direction: "inbound" });
+    await previewHere("inbound");
     if (skipped)
       message(
         "Full pack: " +
           rows.length +
           " selected, " +
           skipped +
-          " skipped because a local file is in the way or no enabled tool reads them.",
+          " skipped: a local file is in the way, no enabled agent reads them, or they are installed for your user.",
       );
   });
 function repoSource() {
@@ -961,15 +1199,22 @@ async function openFolderPicker(field) {
   const cloning = field === "clone-path";
   let path = $(field).value.trim();
   $("folder-new").hidden = !cloning;
+  const registering = field === "project-path";
   $("folder-picker-title").textContent = cloning
     ? "Choose checkout parent folder"
-    : "Choose a library folder";
+    : registering
+      ? "Choose a project folder"
+      : "Choose a library folder";
   $("folder-picker-help").textContent = cloning
     ? "Choose an existing parent and name the new checkout. The folder is created when you clone."
-    : "Folders marked library contain ip/ or skills/, agents/, … Open one and choose Use this folder.";
+    : registering
+      ? "Open the project folder and register it. Nothing is installed until you sync it."
+      : "Folders marked library contain ip/ or skills/, agents/, … Open one and choose Use this folder.";
   $("folder-select").textContent = cloning
     ? "Use checkout location"
-    : "Use this folder";
+    : registering
+      ? "Register this project"
+      : "Use this folder";
   if (cloning) {
     path = path.replace(/\/$/, "");
     const split = path.lastIndexOf("/");
@@ -1012,6 +1257,13 @@ $("folder-select").onclick = () => {
   $(pickerField).value = path;
   $("folder-picker").close();
   if (pickerField === "source-path") describeLibrary();
+  if (pickerField === "project-path")
+    task(async () => {
+      const result = await api("projects", { path });
+      projects = await api("projects");
+      render();
+      message("Project " + result.name + " registered.");
+    });
   if (pickerField === "clone-path" && !$("clone-name").value.trim())
     $("clone-name").value = suggestName(path.split("/").pop());
 };

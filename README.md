@@ -241,6 +241,17 @@ performs the mechanical work.
 
 Start it with `captain-share --target FOLDER serve --open`.
 
+### Places and projects
+
+Working on switches the window between this project, the folders above it (their
+selections are inherited by every project inside), and Your user (installs into
+`~/.kiro` and `~/.claude` for every project). Receive rows show "inherited from …"
+and "installed for your user", so a skill is installed in one place only. The
+Projects tab lists this project and registered ones with their sync state; Add
+project… registers a folder, Preview sync previews one project, and Preview sync for
+all previews every project before one Apply. Saving at a folder previews the
+registered projects inside it. See [ADR 004](docs/adr/004-web-places.md).
+
 ### Selection and full pack
 
 Select all / Deselect all affect every eligible asset in the chosen library and
