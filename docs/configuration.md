@@ -5,7 +5,7 @@
 ```json
 {
   "version": 1,
-  "tools": ["kiro", "claude", "copilot"],
+  "tools": ["kiro", "claude", "codex", "copilot"],
   "sources": {"team": {"description": "Shared team tooling"}},
   "inbound": {
     "team/skills/review-code": {
@@ -33,7 +33,7 @@ Library-only kinds such as `powers` cannot be inbound selections; Kiro installs
 them user-wide (see the README).
 
 `tools` is optional and lists the agent tools that receive inbound links: `kiro`,
-`claude`, `copilot`. The deepest layer that sets it replaces inherited lists; without
+`claude`, `codex`, `copilot`. The deepest layer that sets it replaces inherited lists; without
 it the default is `["kiro", "copilot"]`. It belongs only in portable `sharing.json`.
 Installation state records the tool of every managed link.
 

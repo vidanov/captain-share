@@ -30,10 +30,10 @@ when they are explicitly synced, not automatically to every child repository.
   Generated outputs, private project context, fonts and licensed material need
   their own distribution decision. The built-in credential/path scan is only a
   heuristic, never a confidentiality or licensing verdict.
-- **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude copilot`
-  sets it for the target (`--scope global` for defaults). Skills then link into
-  both `.kiro/skills/` and `.claude/skills/` from one original. Steering, agents,
-  and prompts stay Kiro-only; do not hand-copy them into `.claude/`.
+- **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude codex
+  copilot` sets it for the target (`--target "$HOME"` for every project). Skills then
+  link into `.kiro/skills/`, `.claude/skills/`, and `.agents/skills/` (Codex) from one
+  original. Steering, agents, and prompts stay Kiro-only; do not hand-copy them.
 - **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
   `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
   install state; `powers install SOURCE POWER` previews and `--apply` runs

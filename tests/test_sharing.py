@@ -427,6 +427,17 @@ class SharingTests(SharingFixture):
         self.assertEqual((self.repo / ".claude/skills/greet/SKILL.md").read_text(), "one edit")
         self.assertEqual(e.plan(self.repo)["changes"], [])
 
+    def test_codex_reads_skills_from_agents_folder(self):
+        c.set_tools(self.repo, ["kiro", "codex"])
+        self.select()
+        e.apply(e.plan(self.repo))
+        link = self.repo / ".agents/skills/hello"
+        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/hello"))
+        self.assertEqual(c.effective(self.repo)["tools"], ["kiro", "codex"])
+        self.skill(self.repo / ".agents/skills/local-only")
+        row = [r for r in e.scan(self.repo) if r["name"] == "local-only"][0]
+        self.assertEqual(row["tool"], "codex")
+
     def test_disabling_a_tool_archives_only_its_links(self):
         c.set_tools(self.repo, ["kiro", "claude"])
         self.select()

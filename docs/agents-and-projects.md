@@ -7,23 +7,25 @@ agent tool reads, for one project, for a group of projects, or for your whole us
 
 | Agent | Project folder | User-wide folder | Kinds it reads |
 | --- | --- | --- | --- |
-| Kiro IDE and Kiro CLI | `.kiro/` | `~/.kiro/` | skills, agents, prompts, steering |
+| Kiro IDE and Kiro CLI (one setting: `kiro`) | `.kiro/` | `~/.kiro/` | skills, prompts, steering; agents (`.json`) are Kiro CLI agent configs |
 | Kiro powers (IDE and CLI) | – | `~/.kiro/powers/installed/` | powers, installed by `kiro-cli` |
 | Claude Code | `.claude/skills/` | `~/.claude/skills/` | skills |
+| Codex | `.agents/skills/` (and parent folders up to the repository root) | `~/.agents/skills/` | skills |
 | GitHub Copilot | `.github/` | – | `copilot-instructions.md`, `*.instructions.md`, `*.prompt.md` |
 
 Choose the agents for a target with `tools`. The default is `kiro copilot`:
 
 ```bash
-captain-share --target /path/to/project tools kiro claude copilot
+captain-share --target /path/to/project tools kiro claude codex copilot
 captain-share --target /path/to/project sync --apply
 ```
 
 Each enabled agent gets its own live link to the same original; nothing is copied
-between `.kiro/` and `.claude/`. Turning an agent off archives its links at the
+between `.kiro/`, `.claude/`, and `.agents/`. Turning an agent off archives its links at the
 next sync. Kiro steering, Kiro JSON agents, and prompts are not converted for Claude
-Code; those stay Kiro-only. Agents not in the table (for example Cursor or Codex)
-are not targets today.
+Code; those stay Kiro-only. Agents not in the table (for example Cursor)
+are not targets today. Codex custom prompts are deprecated by OpenAI, and its
+`AGENTS.md` instruction files are not managed here.
 
 Kiro powers are installed for your user, not linked:
 `captain-share powers install LIBRARY NAME --apply` runs `kiro-cli powers install`.
@@ -37,8 +39,8 @@ Library edits reach Kiro after another install.
 | A group of projects | `--target /path/to/parent-folder` | A baseline every project in that folder inherits |
 | One project | `--target /path/to/project` | Project- or customer-specific assets |
 
-**Your user.** Selections saved for your home folder link into `~/.kiro` and
-`~/.claude`, which the agents read in every project. Projects inherit your home
+**Your user.** Selections saved for your home folder link into `~/.kiro`,
+`~/.claude`, and `~/.agents`, which the agents read in every project. Projects inherit your home
 libraries and `tools` setting, but not these selections, so a user-wide skill is
 never linked a second time into a project.
 

@@ -21,11 +21,11 @@ folder. Initially:
 
 | Kind | Tools and destinations |
 | --- | --- |
-| `skills` | `kiro` → `.kiro/skills`, `claude` → `.claude/skills` |
+| `skills` | `kiro` → `.kiro/skills`, `claude` → `.claude/skills`, `codex` → `.agents/skills` |
 | `agents`, `prompts`, `steering` | `kiro` → `.kiro/…` |
 | `copilot*` | `copilot` → `.github/…` |
 
-Portable configuration may contain `"tools": ["kiro", "claude", "copilot"]`. The
+Portable configuration may contain `"tools": ["kiro", "claude", "codex", "copilot"]`. The
 deepest layer that sets `tools` wins; the default is `["kiro", "copilot"]`, which
 keeps existing installations unchanged. An inbound selection installs one live link
 per enabled tool that reads its kind. Selecting a kind that no enabled tool reads is
