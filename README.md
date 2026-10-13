@@ -9,6 +9,9 @@ receives and contributes.
 The public tool contains the sharing mechanics. Your libraries and their private
 content stay in separate repositories. Captain is not a runtime dependency.
 
+See [agents and projects](docs/agents-and-projects.md) for which agent reads what
+and how to install for your user, a group of projects, or one project.
+
 ## Start
 
 Python 3.9+, Git, and macOS or Linux. No third-party runtime packages or frontend
