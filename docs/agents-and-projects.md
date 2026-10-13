@@ -58,6 +58,22 @@ A project can drop one inherited asset with `deselect inbound LIBRARY KIND NAME`
 `.captain/sharing.json` can be committed so teammates get the same selection;
 checkout paths stay in the ignored `sharing.local.json`.
 
+## In the web interface
+
+`captain-share --target /path/to/project serve --open` opens one window for all three
+places ([ADR 004](adr/004-web-places.md)):
+
+- **Working on** switches between the project, the folders above it (templates for
+  the projects inside), and Your user. Agent checkboxes show where links go for the
+  chosen place.
+- **Receive** marks assets "inherited from …" or "installed for your user", so you
+  install each skill in one place.
+- Saving at a folder previews the registered projects inside it; the folder itself
+  gets no links.
+- **Projects** lists this project and registered ones with their sync state. Add
+  project… registers a folder; Preview sync for all previews every project for one
+  Apply.
+
 ## Connect libraries once
 
 Connect each library for your user; every project then lists it:
