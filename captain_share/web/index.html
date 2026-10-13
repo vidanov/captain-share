@@ -61,39 +61,52 @@
       <div class="layout">
         <aside>
           <section class="card">
-            <h3>Connected libraries</h3>
+            <h3>Libraries</h3>
             <label for="source">Library</label
             ><select id="source">
               <option value="">Choose a library</option>
             </select>
             <p class="hint">
-              Each library keeps its own originals and repository access.
+              A library is a folder, usually a Git checkout, that holds shared
+              skills, agents, prompts, steering, and Kiro powers. Projects link
+              to its files; the originals stay in the library.
             </p>
-            <details>
-              <summary>Connect a checkout</summary>
+            <details id="add-library">
+              <summary>Add a library folder</summary>
               <form id="add-source">
-                <label for="source-name">Short name</label
-                ><input
-                  id="source-name"
-                  required
-                  placeholder="team-tools"
-                  pattern="[a-zA-Z0-9_-][a-zA-Z0-9_.-]*"
-                /><label for="source-path">Local checkout folder</label
+                <p class="hint">
+                  Choose the folder that contains <code>ip/</code> or
+                  <code>skills/</code>, <code>agents/</code>, … Nothing is
+                  installed until you select assets and apply.
+                </p>
+                <button type="button" id="browse-source" class="folder-browse">
+                  Choose library folder…</button
+                ><label for="source-path">Folder</label
                 ><input
                   id="source-path"
                   required
                   placeholder="/path/to/library"
-                /><button
-                  type="button"
-                  id="browse-source"
-                  class="quiet folder-browse"
-                >
-                  Browse folders…</button
-                ><label for="source-layout">Assets live under</label
-                ><select id="source-layout">
-                  <option value="ip">ip/skills, ip/agents, …</option>
-                  <option value="flat">skills, agents, …</option></select
-                ><button type="submit">Connect library</button>
+                  autocomplete="off"
+                />
+                <p id="source-detected" class="hint" aria-live="polite"></p>
+                <label for="source-name">Name</label
+                ><input
+                  id="source-name"
+                  placeholder="filled from the folder name"
+                  pattern="[a-zA-Z0-9_-][a-zA-Z0-9_.-]*"
+                />
+                <details class="advanced">
+                  <summary>Asset layout</summary>
+                  <label for="source-layout">Assets live under</label
+                  ><select id="source-layout">
+                    <option value="">Detect from the folder</option>
+                    <option value="ip">ip/skills, ip/agents, …</option>
+                    <option value="flat">skills, agents, … at the root</option>
+                  </select>
+                </details>
+                <button type="submit" id="connect-source" disabled>
+                  Connect library
+                </button>
               </form>
             </details>
           </section>
@@ -123,6 +136,7 @@
                 </button>
                 <label for="clone-layout">Repository layout</label
                 ><select id="clone-layout">
+                  <option value="">Detect after cloning</option>
                   <option value="ip">ip/skills, ip/agents, …</option>
                   <option value="flat">skills, agents, …</option>
                 </select>
@@ -264,9 +278,9 @@
           <h3>Start here</h3>
           <ol>
             <li>
-              <strong>Connect a library.</strong> Choose an existing checkout,
-              or use Clone and connect with an HTTPS/SSH repository URL and a
-              new local folder.
+              <strong>Add a library.</strong> Choose its folder; the name and
+              layout come from the folder. Or use Clone and connect with an
+              HTTPS/SSH repository URL and a new local folder.
             </li>
             <li>
               <strong>Choose assets.</strong> Receive individual assets or use
@@ -639,6 +653,7 @@ SOFTWARE.
       <label class="folder-hidden"
         ><input id="folder-hidden" type="checkbox" /> Show hidden folders</label
       >
+      <p id="folder-detected" class="hint" aria-live="polite"></p>
       <p id="folder-error" role="alert"></p>
       <div id="folder-list" aria-label="Folders"></div>
       <div id="folder-new" hidden>

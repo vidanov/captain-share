@@ -68,7 +68,10 @@ async function api(path, data) {
   return body;
 }
 async function task(fn) {
-  if (busy) return;
+  if (busy) {
+    message("Still working on the previous action. Try again in a moment.");
+    return;
+  }
   busy = true;
   try {
     await fn();
@@ -107,6 +110,7 @@ async function refresh(keepDrafts = false) {
     ? saved
     : Object.keys(state.config.sources)[0] || "";
   $("installed-count").textContent = state.installed.length;
+  if (!Object.keys(state.config.sources).length) $("add-library").open = true;
   await loadCatalog();
   await loadRepository();
   if (!keepDrafts) drafts = {};
@@ -496,16 +500,111 @@ function conflictRow(conflict, spec) {
   }
   return div;
 }
+let nameTouched = false;
+function suggestName(value) {
+  // Mirrors config.suggest_name: lower-case, unsafe characters become "-".
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, "-")
+      .replace(/^[-.]+|[-.]+$/g, "") || "library"
+  );
+}
+async function describeLibrary() {
+  const path = $("source-path").value.trim();
+  const note = $("source-detected");
+  // Never disable while checking: the field's change event fires on the same
+  // mouse press that clicks Connect, and a disabled button drops that click.
+  $("connect-source").disabled = !path;
+  if (!path) {
+    note.textContent = "";
+    return null;
+  }
+  let info;
+  try {
+    info = await api("library?path=" + encodeURIComponent(path));
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = "hint warn";
+    if (!nameTouched) $("source-name").value = "";
+    return null;
+  }
+  // The checkout root is the library even when its ip/ folder was chosen.
+  $("source-path").value = info.path;
+  if (!nameTouched || !$("source-name").value.trim()) {
+    $("source-name").value = info.name;
+    nameTouched = false;
+  }
+  const found = Object.entries(info.assets)
+    .map(([kind, count]) => count + " " + assetNoun(kind, count))
+    .join(", ");
+  note.textContent = info.connected_as
+    ? "Already connected as " + info.connected_as + "."
+    : !info.layout
+      ? "No ip/ or skills/, agents/, … folders here. Choose the checkout root."
+      : "Found " +
+        (found || "no assets yet") +
+        (info.layout === "ip" ? " under ip/." : " at the folder root.");
+  note.className = "hint" + (info.connected_as || !info.layout ? " warn" : "");
+  // Connect only a folder that is a library and not connected yet.
+  $("connect-source").disabled = !!info.connected_as || !info.layout;
+  return info;
+}
+function assetNoun(kind, count) {
+  const nouns = {
+    skills: ["skill", "skills"],
+    agents: ["agent", "agents"],
+    prompts: ["prompt", "prompts"],
+    steering: ["steering file", "steering files"],
+    powers: ["Kiro power", "Kiro powers"],
+    copilot: ["Copilot instruction file", "Copilot instruction files"],
+    "copilot-instructions": ["Copilot instruction", "Copilot instructions"],
+    "copilot-prompts": ["Copilot prompt", "Copilot prompts"],
+  };
+  return (nouns[kind] || [kind, kind])[count === 1 ? 0 : 1];
+}
+function resetAddLibrary() {
+  for (const id of ["source-path", "source-name"]) $(id).value = "";
+  $("source-layout").value = "";
+  $("source-detected").textContent = "";
+  $("connect-source").disabled = true;
+  nameTouched = false;
+}
+$("source-name").oninput = () => (nameTouched = true);
+// Not routed through task(): a busy flag here would swallow the Connect click.
+let describeTimer = null;
+$("source-path").oninput = () => {
+  $("connect-source").disabled = !$("source-path").value.trim();
+  clearTimeout(describeTimer);
+  describeTimer = setTimeout(describeLibrary, 400);
+};
+$("source-path").onchange = () => describeLibrary();
 $("add-source").onsubmit = (event) => {
   event.preventDefault();
   task(async () => {
+    const info = await describeLibrary();
+    if (!info?.layout)
+      throw new Error(
+        "Choose a library folder (with ip/ or skills/, agents/, …) first.",
+      );
+    if (info.connected_as)
+      throw new Error(
+        "This folder is already connected as " + info.connected_as + ".",
+      );
+    const name = $("source-name").value.trim() || info.name;
     await api("source", {
-      name: $("source-name").value,
-      path: $("source-path").value,
+      name,
+      path: info.path,
       layout: $("source-layout").value,
     });
     await refresh();
-    message("Library connected. Choose the assets to receive or contribute.");
+    $("source").value = name;
+    await loadCatalog();
+    await loadRepository();
+    render();
+    resetAddLibrary();
+    $("add-library").open = false;
+    message("Library " + name + " connected. Choose assets under Receive.");
   });
 };
 $("source").onchange = () =>
@@ -747,6 +846,18 @@ $("git-confirm").onclick = () =>
     await refresh();
     message(result.output);
   });
+let cloneNameTouched = false;
+$("clone-name").oninput = () => (cloneNameTouched = true);
+$("clone-url").oninput = () => {
+  if (cloneNameTouched) return;
+  const last = $("clone-url")
+    .value.trim()
+    .replace(/\/+$/, "")
+    .split(/[/:]/)
+    .pop()
+    .replace(/\.git$/, "");
+  $("clone-name").value = last ? suggestName(last) : "";
+};
 $("clone-source").onsubmit = (event) => {
   event.preventDefault();
   task(async () => {
@@ -809,8 +920,18 @@ async function browseFolders(path) {
     pickerListing = result;
     $("folder-location").value = result.path;
     $("folder-list").replaceChildren();
+    $("folder-detected").textContent =
+      pickerField === "source-path" && result.library
+        ? "This folder is a library (" +
+          (result.library === "ip"
+            ? "assets under ip/"
+            : "assets at its root") +
+          "). Use it, or open a subfolder."
+        : "";
     for (const folder of result.folders) {
       const button = el("button", folder.name, "folder-entry quiet");
+      if (pickerField === "source-path" && folder.library)
+        button.append(el("span", "library", "badge"));
       button.type = "button";
       button.onclick = () => browseFolders(folder.path);
       $("folder-list").append(button);
@@ -845,7 +966,7 @@ async function openFolderPicker(field) {
     : "Choose a library folder";
   $("folder-picker-help").textContent = cloning
     ? "Choose an existing parent and name the new checkout. The folder is created when you clone."
-    : "Browse to the repository checkout you want to connect.";
+    : "Folders marked library contain ip/ or skills/, agents/, … Open one and choose Use this folder.";
   $("folder-select").textContent = cloning
     ? "Use checkout location"
     : "Use this folder";
@@ -858,6 +979,9 @@ async function openFolderPicker(field) {
         : $("clone-name").value.trim() || "shared-tools";
     path = split >= 0 ? path.slice(0, split) || "/" : "";
   }
+  // Libraries usually sit beside projects, so start one level above this one.
+  if (!path && !cloning && state)
+    path = state.target.replace(/\/[^/]+\/?$/, "") || "/";
   $("folder-location").value = path || state?.target || "";
   $("folder-picker").showModal();
   await browseFolders(path);
@@ -887,6 +1011,9 @@ $("folder-select").onclick = () => {
   }
   $(pickerField).value = path;
   $("folder-picker").close();
+  if (pickerField === "source-path") describeLibrary();
+  if (pickerField === "clone-path" && !$("clone-name").value.trim())
+    $("clone-name").value = suggestName(path.split("/").pop());
 };
 $("folder-cancel").onclick = () => $("folder-picker").close();
 $("folder-picker").onclose = () => {
