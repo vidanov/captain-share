@@ -42,6 +42,11 @@ Outbound paths always resolve against the target being synced; inherited selecti
 therefore work as folder templates. Absolute paths and `..` are rejected there.
 Unknown versions, fields, asset kinds, and invalid names are rejected.
 
+The global folder (`~/.captain`, the home target's own `.captain`) is special:
+its sources, bindings, and tools are inherited by every target, but its inbound and
+outbound selections apply only to the home target. Those are user-wide installs
+into `~/.kiro` or `~/.claude`.
+
 To exclude one inherited selection, save the same key with `{"enabled": false}`.
 The CLI `deselect` writes this mask. To resume inheritance, remove the local override
 from `sharing.json`; selecting the asset explicitly writes an explicit local choice.
