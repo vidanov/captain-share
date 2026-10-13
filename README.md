@@ -44,10 +44,10 @@ chosen at startup; navigating the UI or changing another terminal's directory do
 not change it. Global and ancestor settings are inherited into that target.
 
 The server binds only to `127.0.0.1`, chooses a free port, and prints a URL with a
-per-launch access token. The UI supports connecting a checkout, choosing which
-tools receive links, choosing inbound and outbound assets, setting aliases,
-previewing/applying changes, resolving conflicts, installing Kiro powers, and
-archiving and restoring local assets. Each server is tied to the target folder it
+per-launch access token. The UI supports adding a library, choosing which
+agents get links, installing assets per project, folder or user, sharing local
+assets back, previewing/applying changes, resolving conflicts, installing Kiro
+powers, and archiving and restoring local assets. Each server is tied to the target folder it
 was started for; start another instance for another project. See
 [Web interface](#web-interface) for details.
 
@@ -241,42 +241,43 @@ performs the mechanical work.
 
 Start it with `captain-share --target FOLDER serve --open`.
 
-### Places and projects
+### Assets: one grid for every place
 
-Working on switches the window between this project, the folders above it (their
-selections are inherited by every project inside), and Your user (installs into
-`~/.kiro` and `~/.claude` for every project). Receive rows show "inherited from …"
-and "installed for your user", so a skill is installed in one place only. The
-Projects tab lists this project and registered ones with their sync state; Add
-project… registers a folder, Preview sync previews one project, and Preview sync for
-all previews every project before one Apply. Saving at a folder previews the
-registered projects inside it. See [ADR 004](docs/adr/004-web-places.md).
+The Assets page is a grid. Rows are library assets, grouped by library, with each
+asset's description. Columns are places: this project, the folders above it inside
+your home folder, and Your user (installs into `~/.kiro`, `~/.claude` and
+`~/.agents` for every project). Click a circle to install an asset in that place or
+remove it. A folder shares its assets with every project inside it; a line from
+the folder's circle marks each project that gets the asset from it, and a dashed
+circle marks an asset already installed for your user, so each skill lives in one
+place. Only the nearest folder is shown until another folder has selections;
+"+N folders above" shows the rest. A key beside the grid explains every state.
 
-### Selection and full pack
+Each column head lists the agents (Kiro, Claude, Codex, Copilot) that get links in
+that place; click one to switch it on or off. Kiro powers install for your user
+only and show Kiro's install state.
 
-Select all / Deselect all affect every eligible asset in the chosen library and
-view, including search results currently hidden. Existing aliases are preserved.
-Install full pack selects every asset that can be installed as is and opens the
-normal preview; Apply changes installs it. Invalid assets, assets blocked by a
-local file, assets no enabled tool reads, and Kiro powers are skipped, and the
-message says how many. Selection is a snapshot: new assets added to a library
-later require selection again.
+Changes wait in the bar at the bottom ("Add reviewer.json to your user"). Review
+and apply saves the choices and opens one review for every place they affect,
+including registered projects inside a changed folder. Apply changes creates the
+links; Cancel puts the saved choices back as they were. See
+[ADR 004](docs/adr/004-web-places.md).
 
-### Tools, conflicts, and powers
+The Projects page lists this project and registered ones with their sync state.
+Add project… registers a folder, Preview sync previews one project, and Preview
+sync for all previews every project before one Apply.
 
-The workspace card sets which tools receive links (Kiro, Claude Code, Copilot) for
-this target. Each Receive row shows its state per tool: installed, not installed,
-local file in the way, this folder's original, or link needs review. Save and
-preview stays pinned at the bottom of long lists, with the number of unsaved
-changes; status messages appear at the top of the window.
+### Conflicts, local files, and powers
 
-A preview with conflicts applies nothing. Each conflict offers a fix: Archive local
-copy previews archiving the unmanaged file and, once applied, previews the original
-changes again; Stop receiving deselects the asset. Installed also lists local files
-in tool folders that Captain Share does not manage, each with Archive.
+A review with conflicts applies nothing in that place. Conflicts in the window's
+own place offer a fix: Archive local copy previews archiving the unmanaged file and,
+once applied, previews the original changes again; Stop receiving deselects the
+asset. A circle with a red stroke marks a file in the way. Local files lists files
+in agent folders that Captain Share does not manage, each with Archive; Archive
+restores what was archived.
 
-Kiro power rows show Kiro's install state and offer Install, Update, or Uninstall.
-The review names the exact `kiro-cli` command before Apply runs it.
+The review names the exact `kiro-cli` command before Apply runs it for a Kiro
+power.
 
 ### Adding a library
 
@@ -285,9 +286,10 @@ level above the project and marks folders that contain `ip/` or asset folders as
 library. After a folder is chosen (or a path typed), the card shows what it found,
 for example "Found 39 skills, 3 prompts under ip/", fills the name from the folder
 name (editable), and detects the layout. Choosing a library's `ip/` folder selects
-the library itself. Connect is refused for folders without asset folders and for
-folders already connected, with the reason shown. Clone and connect fills the
-library name from the repository URL.
+the library itself. Add library is refused for folders without asset folders and for
+folders already added, with the reason shown. "Make it available to" chooses every
+project (your user) or this project only. Clone and add fills the library name from
+the repository URL.
 
 ### Git, cloning, and folders
 

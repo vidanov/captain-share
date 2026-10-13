@@ -65,13 +65,14 @@ checkout paths stay in the ignored `sharing.local.json`.
 `captain-share --target /path/to/project serve --open` opens one window for all three
 places ([ADR 004](adr/004-web-places.md)):
 
-- **Working on** switches between the project, the folders above it (templates for
-  the projects inside), and Your user. Agent checkboxes show where links go for the
-  chosen place.
-- **Receive** marks assets "inherited from …" or "installed for your user", so you
-  install each skill in one place.
-- Saving at a folder previews the registered projects inside it; the folder itself
-  gets no links.
+- **Assets** is a grid: rows are library assets, columns are this project, the
+  folders above it (shared with the projects inside), and Your user. Click a circle
+  to install an asset there. Agent buttons in each column head show where links go.
+- A line from a folder's circle marks projects that get an asset from that folder;
+  a dashed circle marks an asset installed for your user, so you install each skill
+  in one place.
+- **Review and apply** opens one review for every affected place, including the
+  registered projects inside a changed folder; Cancel puts your choices back.
 - **Projects** lists this project and registered ones with their sync state. Add
   project… registers a folder; Preview sync for all previews every project for one
   Apply.
@@ -100,5 +101,5 @@ A project that needs a library only it uses can connect it with its own target.
 
 An agent that sees the same skill name in its user-wide and project folders uses
 one of them, and which one is not always obvious. Install a skill in one place:
-user-wide for personal tools, per project for project-specific ones. The Receive
-view shows each destination's state before you apply.
+user-wide for personal tools, per project for project-specific ones. The Assets
+grid shows each place's state before you apply.

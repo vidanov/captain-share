@@ -140,6 +140,41 @@ class ServerTests(SharingFixture):
             self.request("/api/apply", {"fingerprint": restore["fingerprint"]})[0], 200
         )
 
+    def test_api_cancelled_selection_save_is_restored(self):
+        def inbound():
+            return json.loads((self.repo / ".captain/sharing.json").read_text())["inbound"]
+
+        self.request(
+            "/api/selections",
+            {
+                "direction": "inbound",
+                "source": "team",
+                "selections": [{"kind": "skills", "name": "hello"}],
+            },
+        )
+        before = inbound()
+        _, saved = self.request(
+            "/api/selections",
+            {
+                "direction": "inbound",
+                "source": "team",
+                "selections": [
+                    {"kind": "skills", "name": "hello", "enabled": False},
+                    {"kind": "skills", "name": "other"},
+                ],
+            },
+        )
+        self.assertEqual(saved["previous"]["team/skills/other"], None)
+        code, _ = self.request(
+            "/api/restore-selections",
+            {"direction": "inbound", "previous": saved["previous"]},
+        )
+        self.assertEqual((code, inbound()), (200, before))
+        self.assertEqual(
+            self.request("/api/restore-selections", {"direction": "sideways", "previous": {}})[0],
+            400,
+        )
+
     def test_api_tools_and_conflict_resolution_by_path(self):
         self.assertEqual(self.request("/api/tools", {"tools": ["cursor"]})[0], 400)
         code, saved = self.request("/api/tools", {"tools": ["claude", "kiro"]})
