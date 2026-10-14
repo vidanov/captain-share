@@ -170,6 +170,7 @@ function invalidate() {
   resumeSpec = null;
   $("review").hidden = true;
   $("review-where").hidden = true;
+  bulkAdopt = null;
   $("apply").disabled = true;
 }
 function here() {
@@ -849,6 +850,41 @@ $("preview").onclick = () =>
 $("apply").onclick = () =>
   task(async () => {
     undo = null;
+    if (bulkAdopt) {
+      // Each copy is planned again just before it is applied, so every step is fresh.
+      const specs = bulkAdopt;
+      bulkAdopt = null;
+      let done = 0;
+      for (const spec of specs) {
+        const plan = await api("adopt-plan", spec);
+        if (!plan.can_apply) {
+          await refresh(true);
+          shareData = null;
+          message(
+            "Updated " +
+              done +
+              " of " +
+              specs.length +
+              "; " +
+              spec.name +
+              " changed meanwhile. Review it again.",
+            true,
+          );
+          return;
+        }
+        await api("apply", { fingerprint: plan.fingerprint });
+        done++;
+      }
+      await refresh(true);
+      shareData = null;
+      if (view === "share") renderShare();
+      message(
+        done +
+          (done === 1 ? " copy now uses" : " copies now use") +
+          " the team version; the old copies are in the Archive.",
+      );
+      return;
+    }
     if (pendingBatch) {
       const batch = pendingBatch;
       let synced = 0,
@@ -2298,6 +2334,23 @@ async function renderShare() {
         "share-personal",
       ),
     );
+  const older = copies.filter((row) => row.differs && row.older);
+  if (older.length > 1) {
+    const bulk = el("div", undefined, "strip");
+    const text = el("p");
+    text.append(
+      older.length + " copies are older team versions",
+      el(
+        "small",
+        "They match what the team library had earlier, so they are not your changes.",
+      ),
+    );
+    const all = el("button", "Update all " + older.length + "…");
+    all.type = "button";
+    all.onclick = () => task(() => previewAdoptAll(older));
+    bulk.append(el("span", undefined, "strip-dot"), text, all);
+    lists.push(bulk);
+  }
   if (copies.length)
     lists.push(
       listSection(
@@ -2336,6 +2389,8 @@ async function renderShare() {
   box.querySelectorAll(".lib-row").forEach(expandable);
 }
 function shareRow(row, type) {
+  if (type === "local" && row.exists_in && row.differs && row.older)
+    return olderRow(row);
   if (type === "local" && row.exists_in && row.differs) return extendedRow(row);
   const id = type + "/" + (row.source || "") + "/" + row.kind + "/" + row.name;
   const wrap = el("div", undefined, "lib-row");
@@ -3677,6 +3732,97 @@ function pushOutcome(result) {
       parts.push(commandLine(result.push_error_command));
   }
   return parts;
+}
+
+// ---------------------------------------------------------------- outdated copies
+// A local copy equal to an earlier team version: update it, nothing to send.
+function olderRow(row) {
+  const id = "o/" + row.exists_in + "/" + row.kind + "/" + row.name;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", row.name),
+    el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+    el("span", "Older team version", "badge-new"),
+  );
+  wrap.append(name);
+  if (row.description) wrap.append(el("p", row.description, "lib-desc"));
+  wrap.append(
+    el(
+      "p",
+      row.path +
+        " · same as the team version from " +
+        ago(row.older.at) +
+        "; the team has changed it since",
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  const update = el("button", "Update to team version…");
+  update.type = "button";
+  update.onclick = () =>
+    task(() => adoptAsset({ ...row, source: row.exists_in }, true));
+  const show = el("button", "What changed", "link");
+  show.type = "button";
+  show.onclick = () => toggleVersionPanel(id);
+  act.append(update, show);
+  wrap.append(act);
+  if (versionPanel === id)
+    wrap.append(
+      diffPanel("diff", {
+        target: home.project,
+        source: row.exists_in,
+        kind: row.kind,
+        name: row.name,
+        path: row.path,
+      }),
+    );
+  return wrap;
+}
+let bulkAdopt = null;
+async function previewAdoptAll(rows) {
+  await cancelReview();
+  const specs = rows.map((row) => ({
+    target: home.project,
+    source: row.exists_in,
+    kind: row.kind,
+    name: row.name,
+    replace: true,
+  }));
+  $("review").hidden = false;
+  $("changes").replaceChildren();
+  $("errors").replaceChildren();
+  setReviewHint(false);
+  let total = 0,
+    blocked = 0;
+  for (const spec of specs) {
+    const plan = await api("adopt-plan", spec);
+    total += plan.changes.length;
+    $("changes").append(el("p", spec.name, "group-title"));
+    for (const change of plan.changes) {
+      const div = el("div", undefined, "change");
+      div.append(
+        el("strong", change.op, /archive/.test(change.op) ? "op-remove" : ""),
+        " ",
+        el("code", relativeTo(change.path, home.project)),
+      );
+      $("changes").append(div);
+    }
+    for (const conflict of plan.conflicts) {
+      blocked++;
+      $("errors").append(el("p", spec.name + ": " + conflict.message));
+    }
+  }
+  $("review-count").textContent =
+    total +
+    (total === 1 ? " change" : " changes") +
+    " for " +
+    specs.length +
+    " copies";
+  $("conflict-help").hidden = true;
+  bulkAdopt = blocked ? null : specs;
+  $("apply").disabled = !!blocked;
+  $("review").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 task(refresh);

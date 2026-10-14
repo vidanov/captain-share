@@ -75,6 +75,26 @@ class DiffTests(ExtendedCopyFixture):
         self.assertEqual(found["versions"], [])
 
 
+class OlderVersionTests(ExtendedCopyFixture):
+    def test_copy_of_an_earlier_team_version_is_marked_older_not_edited(self):
+        # The team changed the skill after the local copy was taken.
+        self.skill(self.repo / ".kiro/skills/hello")
+        self.skill(self.lib / "ip/skills/hello", "Improved team instructions")
+        self.commit(self.lib, "Improve hello")
+        self.skill(self.repo / ".kiro/skills/mine", "Something new")
+        self.skill(self.lib / "ip/skills/mine", "Team text")
+        self.commit(self.lib, "Add mine")
+        self.start()
+        _, found = self.request("/api/share-candidates")
+        rows = {row["name"]: row for row in found["local"]}
+        self.assertTrue(rows["hello"]["differs"])
+        self.assertIsNotNone(rows["hello"]["older"])
+        self.assertEqual(len(rows["hello"]["older"]["commit"]), 10)
+        # A copy that matches no team version is the user's own change.
+        self.assertTrue(rows["mine"]["differs"])
+        self.assertIsNone(rows["mine"]["older"])
+
+
 class ProposeTests(ExtendedCopyFixture):
     def test_direct_proposal_updates_commits_pushes_and_adopts(self):
         remote = self.remote()

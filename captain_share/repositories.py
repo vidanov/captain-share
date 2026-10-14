@@ -323,6 +323,47 @@ def quiet(repo, *args):
     return proc.stdout.decode(errors="replace") if proc.returncode == 0 else ""
 
 
+def older_version(repo, prefix, kind, name, local, limit=100):
+    """The library commit whose version of this asset equals the local copy, or None.
+    A copy that matches an earlier team version is outdated, not the user's edits."""
+    asset = "/".join(part for part in (prefix, kind, name) if part)
+    local = Path(local)
+    if local.is_symlink():
+        return None
+    if local.is_file():
+        files = {"": local}
+    else:
+        files = {
+            p.relative_to(local).as_posix(): p
+            for p in sorted(local.rglob("*"))
+            if p.is_file() and not p.is_symlink() and not e.ignored(p, local)
+        }
+    if not files or len(files) > 500:
+        return None
+    hashed = quiet(repo, "hash-object", "--no-filters", "--", *map(str, files.values()))
+    blobs = hashed.split()
+    if len(blobs) != len(files):
+        return None
+    mine = dict(zip(files, blobs))
+    history = quiet(repo, "log", f"-n{limit}", "--format=%H %cI", "--", asset).splitlines()
+    for line in history:
+        commit, _, when = line.partition(" ")
+        listing = quiet(repo, "ls-tree", "-r", "--full-tree", commit, "--", asset)
+        theirs = {}
+        for row in listing.splitlines():
+            meta, _, path = row.partition("\t")
+            parts = meta.split()
+            if len(parts) != 3 or parts[1] != "blob":
+                continue
+            rel = "" if path == asset else path[len(asset) + 1 :]
+            if any(part in e.HOUSEKEEPING for part in rel.split("/")):
+                continue
+            theirs[rel] = parts[2]
+        if theirs and theirs == mine:
+            return {"commit": commit[:10], "at": iso(when)}
+    return None
+
+
 def library(target, source):
     """A connected library's checkout, asset root, Git root and asset prefix in Git."""
     cfg = c.effective(target)
