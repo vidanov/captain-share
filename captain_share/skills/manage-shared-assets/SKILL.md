@@ -30,7 +30,11 @@ when they are explicitly synced, not automatically to every child repository.
 - **Share one asset:** `share KIND NAME --source NAME` previews; adding
   `--note TEXT --apply` copies it and commits only its paths in the library
   (`--push` to push; a refused push keeps the commit). Share only when the user
-  asked to, with their wording for the note.
+  asked to, with their wording for the note. Add `--adopt` to swap the project's
+  own copy for a link to the library original afterwards.
+- **Use the library version:** `adopt KIND NAME --source NAME` previews archiving
+  the local copies and linking the original; `--replace` only when the user agrees
+  to archive a copy that differs; `--apply` to apply.
 - **Add from outside:** `import PATH --source NAME` previews the assets in a zip
   file or folder (all valid ones; `--name` picks or renames one, `--kind steering`
   for Markdown). `--note TEXT --apply` copies them into the library and commits only

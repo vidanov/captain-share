@@ -43,6 +43,31 @@ grid stays available as "Where installed".
 - First setup asks once which agents the user uses and stores them as the user
   layer's `tools` (ADR 002).
 
+### Adopting the library version
+
+After a share, the project still holds its own copy, which drifts from the library
+original. An `adopt` plan for one asset (`source`, `kind`, `name`) swaps those copies
+for the library original:
+
+- It considers the asset's destination in every enabled tool folder that reads the
+  kind (for example `.kiro/skills/NAME` and `.claude/skills/NAME`) and, when given,
+  the path the share came from. Copies in folders of tools that are not enabled, or
+  outside the standard asset folders (which a restore could not put back), are
+  listed as kept and left in place.
+- Each unmanaged copy is archived (recoverable as usual), then each enabled tool
+  destination is linked to the original, as an inbound sync would. Applying saves
+  the inbound selection at that place, so later syncs keep the links.
+- A copy whose content differs from the original (same content snapshot the engine
+  uses elsewhere) is a `differs` conflict unless the user chooses to replace it; the
+  replaced copy is archived too. A missing original is an error, managed links
+  already in place need no change, and Git-tracked copies are left to their
+  repository.
+
+Share can adopt in the same step: after the copy, commit and optional push, it plans
+and applies the adopt with `replace` off. An adopt failure is reported and never
+undoes the commit. Adopt keeps the preview fingerprint, locks, rollback and
+ownership checks of every other plan.
+
 ## Consequences
 
 The everyday screens show no places, agents or layers. Previews, ownership checks,
