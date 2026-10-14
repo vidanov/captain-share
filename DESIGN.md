@@ -121,15 +121,14 @@ components:
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
     padding: "8px 10px"
-  chip-filter:
+  agent-summary:
     backgroundColor: "transparent"
     textColor: "{colors.ink-2}"
-    rounded: "{rounded.pill}"
-    padding: "4px 11px"
-  chip-filter-active:
-    backgroundColor: "{colors.amber}"
-    textColor: "{colors.amber-ink}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.chip}"
+    padding: "1px 6px"
+  agent-summary-open:
+    backgroundColor: "{colors.panel-3}"
+    textColor: "{colors.ink}"
   agent-chip:
     backgroundColor: "transparent"
     textColor: "{colors.ink-3}"
@@ -156,6 +155,8 @@ components:
   panel:
     backgroundColor: "{colors.panel-2}"
     rounded: "{rounded.panel}"
+  dock:
+    padding: "0 24px 16px"
   routing-bar:
     backgroundColor: "{colors.panel-3}"
     textColor: "{colors.ink}"
@@ -175,14 +176,14 @@ components:
 
 The window is a rack-mounted patch bay. Library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.
 
-The metaphor lives in the visuals and in the code, not in the words. The interface says "Assets", "click a circle", "Add a library" and "Review and apply"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and a legend that sits beside the matrix at all times.
+The metaphor lives in the visuals and in the code, not in the words. The interface says "Assets", "click a circle", "Add a library" and "Review and apply"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and one quiet legend line under it. Anything that is a setting rather than a state stays folded until asked for.
 
 The system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.
 
 **Key Characteristics:**
 - Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.
 - Color is state: mint is installed, amber is pending or your action, red is blocked.
-- The jack (22px circle) is the signature control, with seven legible states and a legend beside it.
+- The jack (22px circle) is the signature control, with seven legible states and a one-line legend under the grid.
 - Engraved small caps label the panel; they never act as headings or kickers.
 - One authored motion: a new cable draws out of the folder jack in 200ms.
 
@@ -191,7 +192,7 @@ The system is dark-only (`color-scheme: dark`), uses one sans for everything a p
 A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp colors and one fault color.
 
 ### Primary
-- **Patch Amber** (`amber`): Everything the person is doing or about to do. Primary buttons, the active filter chip, the active tab underline, the focus ring, caret, text selection tint, pending jacks, the routing bar's border, cables, and the "Archive" operation in the review list.
+- **Patch Amber** (`amber`): Everything the person is doing or about to do. Primary buttons, the active tab underline, the focus ring, caret, text selection tint, pending jacks, the routing bar's border, cables, and the "Archive" operation in the review list.
 - **Lit Amber** (`amber-hover`): Hover state of primary buttons only.
 - **Amber Ink** (`amber-ink`): Text on any amber fill (8.8:1).
 
@@ -201,13 +202,13 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 - **Mint Ring** (`mint-ring`): The ring of every secondhand-mint jack: the solid ring of an inherited jack and the dashed ring of an asset installed for your user (4.03:1 on the lifted panel).
 
 ### Tertiary
-- **Fault Red** (`red`): Blocked. The ring and slash of a jack where a local file is in the way, and the border of an error toast.
-- **Fault Ink** (`red-ink`): The one error text color: the error toast, conflict messages, warnings and folder errors, readable on every panel tone.
+- **Fault Red** (`red`): Blocked. The ring and slash of a jack where a local file is in the way, and the border of an error message.
+- **Fault Ink** (`red-ink`): The one error text color: error messages, conflict messages, warnings and folder errors, readable on every panel tone.
 
 ### Neutral
 - **Anodized Panel** (`panel`): Page background, the recessed library group rows inside the matrix, and the empty jack face.
 - **Lifted Panel** (`panel-2`): Faceplate, matrix and list panels, review sheet, folder dialog.
-- **Raised Control** (`panel-3`): Inputs, the routing bar, toasts, and hover fill for quiet buttons and chips.
+- **Raised Control** (`panel-3`): Inputs, the routing bar, status messages, the open agent summary, and hover fill for quiet buttons and agent chips.
 - **Hairline** (`rule`): Row and column dividers, panel borders.
 - **Strong Hairline** (`rule-strong`): Control borders, the matrix head's bottom rule, the nav divider, scrollbar thumbs.
 - **Jack Ring** (`jack-ring`): The ring of a free jack, the one hairline-grey edge that must read as a control (3.14:1 on the lifted panel, 3.4:1 on the page).
@@ -237,10 +238,10 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 - **Wordmark** (`wordmark`): "Captain Share" in the faceplate, beside its amber lamp, on every view. The first-run introduction paragraph is set at the same 15px as a one-off lede; it is not a separate role.
 - **Row title** (`row-title`): Asset and library names in matrix and list rows.
 - **Body** (`body`): Running text; paragraphs in Secondary Ink, capped near 44rem, descriptions capped at 62ch and clamped to one line (two at narrow width) until the row is opened.
-- **Hint** (`hint`): Help lines, descriptions, legend entries, in Muted Ink.
-- **Control** (`control`): Buttons, inputs and tabs; small buttons and chips drop to 12px.
+- **Hint** (`hint`): Help lines, descriptions and the 12px legend line, in Muted Ink.
+- **Control** (`control`): Buttons, inputs, selects and tabs; small buttons drop to 12px, and the agent summary and agent chips drop to 11px and 10.5px.
 - **Label** (`label`): Engraved small caps for panel labels. Kind tags ("SKILL", "AGENT") use the same treatment at 10.5px and 0.06em.
-- **Mono** (`mono`): Paths in the faceplate and lists, the review sheet's change lines, preformatted blocks; 11px inside dense file lists.
+- **Mono** (`mono`): Paths in lists and library rows, the review sheet's change lines, preformatted blocks; 11px inside dense file lists.
 
 ### Named Rules
 **The Engraving Rule.** Uppercase tracked caps label a part of the panel: a control, the matrix corner, a library group, an asset's kind. They are never placed above a heading to introduce it.
@@ -251,20 +252,24 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 
 ## Layout
 
-A sticky faceplate (3.75rem) spans the top: wordmark, the project selector with its path, then the section tabs pushed right. Major tabs (Assets, Libraries) and minor tabs (Projects, Share back, Local files, Archive) are split by a short vertical hairline, minor ones in Muted Ink at 12.5px. Content sits in a 24px gutter with 28px above.
+A sticky faceplate (3.75rem) spans the top: wordmark, the project selector, then the section tabs pushed right. The project's full path is not printed; it is the selector's tooltip. Major tabs (Assets, Libraries) and minor tabs (Projects, Share back, Local files, Archive) are split by a short vertical hairline, minor ones in Muted Ink at 12.5px. Content sits in a 24px gutter with 28px above.
 
-The Assets view is a row of two blocks: the matrix, sized exactly to its columns (a 25rem asset column plus one 9rem column per place) so jacks stay near the names they belong to, and a 17rem key (legend plus one note) that sticks beside it 20px below the faceplate. The matrix head sticks under the faceplate. Library groups break the rows with a recessed band. Pending changes collect in the routing bar, a sticky bar pinned 16px above the viewport bottom, at least 40rem wide. The review opens as a 34rem sheet docked to the right edge below the faceplate, with its Apply and Cancel actions stuck to the sheet's bottom.
+The Assets view is one column: a tools row (filter field, a kind select that appears only when a library holds more than one kind, and a tabular count), the matrix, sized exactly to its columns (a 25rem asset column plus one 9rem column per place) so jacks stay near the names they belong to, and a single legend line 12px below it. The matrix head sticks under the faceplate. Library groups break the rows with a recessed band. Folders above the project beyond the nearest collapse behind a "+N folders above" button in the matrix corner.
+
+A dock sticks 16px above the viewport bottom, in the page gutter, and stacks its contents 8px apart: the status message on top, the routing bar (at least 40rem wide) below it, so neither covers the other. The dock passes clicks through its empty space. The review opens as a 34rem sheet docked to the right edge below the faceplate, with its Apply and Cancel actions stuck to the sheet's bottom; while it is open the status message moves into the sheet under its hint.
 
 Secondary views are single columns: Libraries caps at 48rem, About at 72rem with an auto-fill grid of 20rem minimum columns. Rhythm comes from 10px gaps between controls, 16px row insets, 24px gutters and 28px between major blocks.
 
-At 900px and below, the faceplate wraps to two lines (6.5rem) with the tabs on their own horizontally scrolling row and the path hidden. The page gutter drops to 16px. The key moves above the matrix with its legend laid out in a wrapping row. The matrix becomes its own two-axis scroll area, columns narrow to 9rem for assets and 6.5rem for places, and the asset column and head row stick so names and places stay visible while scrolling.
+At 900px and below, the faceplate wraps to two lines (6.5rem) with the tabs on their own horizontally scrolling row and the path hidden. The page gutter and the dock's inset drop to 16px. The legend wraps. The matrix becomes its own two-axis scroll area, columns narrow to 9rem for assets and 6.5rem for places, and the asset column and head row stick so names and places stay visible while scrolling.
 
 ### Named Rules
 **The Sized-to-Fit Rule.** The matrix is as wide as its columns and no wider. It is never stretched to fill the viewport.
 
+**The Folded Settings Rule.** The grid shows state; settings wait to be asked for. A place's agents read as one quiet line in its column head and open into toggles only for the column clicked; a filter that cannot narrow anything is not shown; extra folders, long descriptions and full paths stay folded behind a button, a click on the row, or a tooltip.
+
 ## Elevation & Depth
 
-The system is flat. Depth comes from three panel tones (Anodized, Lifted, Raised) and from 1px hairlines in two strengths. The page is the darkest tone; the faceplate, panels and sheet are lifted one step; inputs, the routing bar and toasts are raised a second step. Group bands inside the matrix drop back to the page tone so they read as recessed. The inset ring on a lit jack and on the wordmark (a 3px ring of panel color inside the lamp) is a lamp bezel, not elevation.
+The system is flat. Depth comes from three panel tones (Anodized, Lifted, Raised) and from 1px hairlines in two strengths. The page is the darkest tone; the faceplate, panels and sheet are lifted one step; inputs, the routing bar and status messages are raised a second step. Group bands inside the matrix drop back to the page tone so they read as recessed. The inset ring on a lit jack and on the wordmark (a 3px ring of panel color inside the lamp) is a lamp bezel, not elevation.
 
 ### Shadow Vocabulary
 - **Dialog lift** (`box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5)`): The folder picker dialog only, over a 60% near-black backdrop.
@@ -274,7 +279,7 @@ The system is flat. Depth comes from three panel tones (Anodized, Lifted, Raised
 
 ## Shapes
 
-Corners are gently rounded and sized by role: 4px on agent chips, 6px on buttons, inputs and toasts, 10px on panels and the routing bar, 12px on the dialog, full pills for filter chips, count chips and badges. Jacks, agent lamps, the wordmark and the first-run step numbers are perfect circles; the circle is reserved for things that show state. Borders are always 1px, except the 2px ring of a jack and the 2px active-tab underline. A disabled slot (an asset that cannot go to that place) is a short 6x2px dash with fully rounded 2px ends instead of a circle; that capsule is a one-off, not a step in the radius scale.
+Corners are gently rounded and sized by role: 4px on agent chips and the agent summary, 6px on buttons, inputs, selects and status messages, 10px on panels and the routing bar, 12px on the dialog, full pills for count chips and badges. Jacks, agent lamps, the wordmark and the first-run step numbers are perfect circles; the circle is reserved for things that show state. Borders are always 1px, except the 2px ring of a jack and the 2px active-tab underline. A disabled slot (an asset that cannot go to that place) is a short 6x2px dash with fully rounded 2px ends instead of a circle; that capsule is a one-off, not a step in the radius scale.
 
 ## Components
 
@@ -288,8 +293,8 @@ Compact and tactile, with color reserved for the step that moves forward.
 - **Disabled:** 45% opacity, default cursor.
 
 ### Chips
-- **Filter chip:** transparent pill with a Strong Hairline border and Secondary Ink text at 12px and weight 600; the active chip fills Patch Amber with Amber Ink text. Exposes `aria-pressed`.
-- **Agent chip:** a 4px-rounded button in each place column (Kiro, Claude, Codex, Copilot) with a 6px lamp before the name. Unlinked: hollow lamp, Muted Ink text. Linked: mint lamp, Engraved Ink text, Strong Hairline border. At narrow width they stack in one column and lose their border.
+- **Agent summary:** a borderless text button under each place's name listing its linked agents ("Kiro, Copilot", or "No agents"), Secondary Ink at 11px and weight 500, truncated with an ellipsis. Hover and open fill Raised Control and brighten to Engraved Ink. It exposes `aria-expanded` and toggles the agent chips for that column only.
+- **Agent chip:** shown only under an open summary. A 4px-rounded button per agent (Kiro, Claude, Codex, Copilot) with a 6px lamp before the name. Unlinked: hollow lamp, Muted Ink text. Linked: mint lamp, Engraved Ink text, Strong Hairline border. At narrow width they stack in one column and lose their border.
 - **Count chip and badge:** hairline pills in Secondary Ink at 11 to 11.5px for counts and facts.
 
 ### Cards / Containers
@@ -301,7 +306,7 @@ Compact and tactile, with color reserved for the step that moves forward.
 - The matrix, asset lists, library list and collapsible form blocks share this panel. On the About page, "cards" are hairline-ruled sections with no box at all.
 
 ### Inputs / Fields
-- **Style:** Raised Control fill, Strong Hairline border, 6px corners, 8px by 10px padding, 13px text; placeholders in Muted Ink. Selects draw their own chevron from two gradients.
+- **Style:** Raised Control fill, Strong Hairline border, 6px corners, 8px by 10px padding, 13px text; placeholders in Muted Ink. Selects draw their own chevron from two gradients. Filters are a search field plus, when there is a choice to make, a natural-width kind select ("All kinds", "Skills", …).
 - **Focus:** 2px amber outline, offset 2px.
 - **Labels:** 12.5px weight 600 Secondary Ink above the field, or engraved small caps where the label names a panel control.
 
@@ -317,28 +322,30 @@ A 22px circle with a 2px ring that is both the state display and the toggle (`ar
 - **Will be installed:** amber ring with a solid amber dot.
 - **Will be removed:** amber ring around a hollow amber inner ring.
 - **Blocked:** red ring crossed by a red diagonal slash.
-- The legend beside the matrix uses 14px samples of the same classes, so the key and the grid can never disagree.
+- The legend line under the matrix uses 14px samples of the same classes, so the legend and the grid can never disagree. Its labels are short: Installed, From a folder, For your user, Will install, Will remove, File in the way.
 
 ### Cable
 A 2px line in 55% amber from the feeding folder's jack across to the place it reaches, drawn behind the jacks. A pending inheritance shows as a dashed full-amber line. A newly added cable scales in from the folder side over 200ms; cables already on screen do not redraw.
 
 ### Routing bar
-The pending-change summary: Raised Control fill, 1px amber border, 10px corners, a tabular plain-language sentence ("Add reviewer.json to your user; remove plan from backend"), then a quiet Discard and a primary "Review and apply". It wraps at narrow width.
+The pending-change summary: Raised Control fill, 1px amber border, 10px corners, a tabular plain-language sentence ("Add reviewer.json to your user; remove plan from backend"), then a quiet Discard and a primary "Review and apply". It sits static in the dock, under any status message, and wraps at narrow width. List views use the same bar, sticky on its own, with a Strong Hairline border instead of amber.
 
 ### Review sheet
 A right-docked Lifted Panel sheet with a Strong Hairline left edge that slides 24px in over 220ms. Changes are grouped by place under 12px bold group titles; each line pairs a colored sans operation word (mint "Link", amber "Archive") with a monospace path. Conflicts appear in Fault Ink with fix buttons inline.
 
-### Status toast
-A Raised Control message with 6px corners, centered 84px above the bottom, up to 44rem wide, dismissed by click. Errors switch the border to Fault Red.
+### Status message
+A Raised Control message with 6px corners and a Strong Hairline border, 10px by 14px padding, 13px text, up to 44rem wide, dismissed by click. It never floats over content: it sits at the top of the dock, or inside the review sheet under its hint while the sheet is open. Errors switch the border to Fault Red and the text to Fault Ink.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** show install state with the jack and its seven states, and keep the legend visible beside or above the matrix.
+- **Do** show install state with the jack and its seven states, and keep the one-line legend directly under the matrix.
 - **Do** use the three panel tones and 1px hairlines for every separation; keep the matrix sized to its columns.
 - **Do** reserve Patch Amber for pending changes, the forward action, focus, the active tab and selection.
 - **Do** keep monospace for paths, commands and change lines only.
 - **Do** use tabular numerals for every count that updates live.
+- **Do** summarize per-place settings in one quiet line and open their controls only on request, for one place at a time.
+- **Do** put status messages and pending changes in the bottom dock, stacked, so neither covers the other or the grid.
 - **Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.
 - **Do** use plain words in the interface ("circle", "install", "Review and apply"); keep the patch-bay vocabulary in visuals and class names.
 - **Do** turn the cable and sheet animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`.
@@ -348,5 +355,6 @@ A Raised Control message with 6px corners, centered 84px above the bottom, up to
 - **Don't** put a drop shadow on panels, bars or sheets; only a modal dialog casts one.
 - **Don't** place engraved small caps above a heading as a kicker or eyebrow.
 - **Don't** use a circle for anything that is not a state lamp or a toggleable jack.
+- **Don't** float toasts over the grid or show a control that has nothing to choose between.
 - **Don't** add raw hex values in component rules; extend the `:root` custom properties.
 - **Don't** lay out card grids or stack boxed panels inside the matrix or lists; rows inside a panel are divided by hairlines.

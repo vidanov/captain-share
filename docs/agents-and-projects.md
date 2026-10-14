@@ -67,7 +67,7 @@ places ([ADR 004](adr/004-web-places.md)):
 
 - **Assets** is a grid: rows are library assets, columns are this project, the
   folders above it (shared with the projects inside), and Your user. Click a circle
-  to install an asset there. Agent buttons in each column head show where links go.
+  to install an asset there. Each column head names the agents that get links there; click it to change them.
 - A line from a folder's circle marks projects that get an asset from that folder;
   a dashed circle marks an asset installed for your user, so you install each skill
   in one place.

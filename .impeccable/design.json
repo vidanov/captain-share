@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-13T21:07:56+00:00",
+  "generatedAt": "2026-10-14T07:05:42+00:00",
   "title": "Design System: Captain Share",
   "extensions": {
     "colorMeta": {
@@ -366,14 +366,15 @@
       {
         "name": "narrow",
         "value": "900px",
-        "purpose": "Max-width query: faceplate wraps to 6.5rem, key moves above the matrix, matrix scrolls in two axes with sticky asset column, gutter 16px."
+        "purpose": "Max-width query: faceplate wraps to 6.5rem, legend wraps, dock inset drops to 16px, matrix scrolls in two axes with sticky asset column, gutter 16px."
       }
     ],
     "layout": {
       "faceplateHeight": "3.75rem (6.5rem at narrow width)",
       "assetColumn": "25rem (9rem at narrow width)",
       "placeColumn": "9rem (6.5rem at narrow width)",
-      "keyWidth": "17rem",
+      "legend": "one line under the matrix, 12px Muted Ink, 14px jack samples",
+      "dock": "sticky 16px above the viewport bottom; message above routing bar, 8px apart",
       "reviewSheetWidth": "min(34rem, 100%)",
       "colorScheme": "dark only"
     }
@@ -412,18 +413,26 @@
       "css": ".ds-nav { display: flex; align-items: center; gap: 2px; padding: 0 24px; background: var(--panel-2, #1a1d21); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-tab { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: transparent; color: var(--ink-2, #aeb2b9); border: 0; border-bottom: 2px solid transparent; padding: 18px 12px 16px; cursor: pointer; } .ds-tab:hover { color: var(--ink, #ece9e3); } .ds-tab:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-tab.is-active { color: var(--ink, #ece9e3); font-weight: 600; border-bottom-color: var(--amber, #f2a33a); } .ds-minor { font-size: 12.5px; font-weight: 500; color: var(--ink-3, #8b919a); } .ds-nav-rule { width: 1px; height: 18px; margin: 0 10px; background: var(--rule-strong, #3b4149); }"
     },
     {
-      "name": "Filter Chips",
-      "kind": "chip",
-      "refersTo": "chip-filter",
-      "description": "Asset kind filter; the active chip fills amber.",
-      "html": "<div class=\"ds-chips\"><button class=\"ds-chip is-active\" aria-pressed=\"true\">All</button><button class=\"ds-chip\" aria-pressed=\"false\">Skills</button><button class=\"ds-chip\" aria-pressed=\"false\">Agents</button></div>",
-      "css": ".ds-chips { display: flex; gap: 4px; } .ds-chip { font: 600 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 4px 11px; border: 1px solid var(--rule-strong, #3b4149); border-radius: 999px; background: transparent; color: var(--ink-2, #aeb2b9); cursor: pointer; } .ds-chip:hover { background: var(--panel-3, #22262b); } .ds-chip:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-chip.is-active { background: var(--amber, #f2a33a); border-color: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); }"
+      "name": "Agent Summary",
+      "kind": "custom",
+      "refersTo": "agent-summary",
+      "description": "Quiet one-line summary of a place's linked agents; clicking it opens that column's agent chips.",
+      "html": "<div class=\"ds-colhead\"><strong>backend</strong><span>this project</span><button class=\"ds-agent-summary\" aria-expanded=\"false\">Kiro, Copilot</button></div>",
+      "css": ".ds-colhead { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 9rem; padding: 12px 6px 10px; background: var(--panel-2, #1a1d21); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; text-align: center; } .ds-colhead strong { font-size: 13px; color: var(--ink, #ece9e3); } .ds-colhead span { font-size: 11px; color: var(--ink-3, #8b919a); } .ds-agent-summary { margin-top: 4px; padding: 1px 6px; max-width: 100%; font: 500 11px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink-2, #aeb2b9); background: transparent; border: 0; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; } .ds-agent-summary:hover, .ds-agent-summary[aria-expanded=true] { color: var(--ink, #ece9e3); background: var(--panel-3, #22262b); } .ds-agent-summary:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Bottom Dock",
+      "kind": "custom",
+      "refersTo": "dock",
+      "description": "Status message stacked above the routing bar; neither covers the other.",
+      "html": "<div class=\"ds-dock\"><div class=\"ds-msg\">Kiro added for backend. Review and apply to update its links.</div><div class=\"ds-dock-bar\"><span>Add reviewer.json to your user</span><button>Review and apply</button></div></div>",
+      "css": ".ds-dock { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0 24px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-msg { max-width: min(44rem, 100%); padding: 10px 14px; border-radius: 6px; background: var(--panel-3, #22262b); border: 1px solid var(--rule-strong, #3b4149); color: var(--ink, #ece9e3); font-size: 13px; cursor: pointer; } .ds-msg:hover { border-color: var(--ink-3, #8b919a); } .ds-dock-bar { display: flex; align-items: center; gap: 10px; min-width: min(40rem, 100%); padding: 10px 12px 10px 18px; background: var(--panel-3, #22262b); border: 1px solid var(--amber, #f2a33a); border-radius: 10px; } .ds-dock-bar span { margin-right: auto; font-size: 13px; color: var(--ink, #ece9e3); font-variant-numeric: tabular-nums; } .ds-dock-bar button { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; } .ds-dock-bar button:hover { background: var(--amber-hover, #f6b55c); } .ds-dock-bar button:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
     },
     {
       "name": "Agent Chips",
       "kind": "chip",
       "refersTo": "agent-chip",
-      "description": "Per-place agent toggles with a small lamp, lit mint when linked.",
+      "description": "Per-place agent toggles with a small lamp, lit mint when linked; shown only under an open agent summary.",
       "html": "<div class=\"ds-agents\"><button class=\"ds-agent is-on\" aria-pressed=\"true\">Kiro</button><button class=\"ds-agent\" aria-pressed=\"false\">Claude</button><button class=\"ds-agent\" aria-pressed=\"false\">Codex</button><button class=\"ds-agent is-on\" aria-pressed=\"true\">Copilot</button></div>",
       "css": ".ds-agents { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 8.5rem; } .ds-agent { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 1px 2px; font: 600 10.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; border-radius: 4px; background: transparent; color: var(--ink-3, #8b919a); border: 1px solid var(--rule, #2a2e34); cursor: pointer; } .ds-agent::before { content: ''; width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--rule-strong, #3b4149); } .ds-agent:hover { background: var(--panel-3, #22262b); color: var(--ink, #ece9e3); } .ds-agent:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-agent.is-on { color: var(--ink, #ece9e3); border-color: var(--rule-strong, #3b4149); } .ds-agent.is-on::before { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); }"
     },
@@ -454,11 +463,11 @@
   ],
   "narrative": {
     "northStar": "The Patch Bay",
-    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nThe window is a rack-mounted patch bay. Library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and a legend that sits beside the matrix at all times.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
+    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nThe window is a rack-mounted patch bay. Library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and one quiet legend line under it. Anything that is a setting rather than a state stays folded until asked for.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
     "keyCharacteristics": [
       "Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.",
       "Color is state: mint is installed, amber is pending or your action, red is blocked.",
-      "The jack (22px circle) is the signature control, with seven legible states and a legend beside it.",
+      "The jack (22px circle) is the signature control, with seven legible states and a one-line legend under the grid.",
       "Engraved small caps label the panel; they never act as headings or kickers.",
       "One authored motion: a new cable draws out of the folder jack in 200ms."
     ],
@@ -499,17 +508,24 @@
         "section": "layout"
       },
       {
+        "name": "The Folded Settings Rule",
+        "body": "The grid shows state; settings wait to be asked for. A place's agents read as one quiet line in its column head and open into toggles only for the column clicked; a filter that cannot narrow anything is not shown; extra folders, long descriptions and full paths stay folded behind a button, a click on the row, or a tooltip.",
+        "section": "layout"
+      },
+      {
         "name": "The Flat Panel Rule",
         "body": "Panels, bars and sheets are separated by tone and hairline, never by a drop shadow. Only a modal dialog casts one.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** show install state with the jack and its seven states, and keep the legend visible beside or above the matrix.",
+      "**Do** show install state with the jack and its seven states, and keep the one-line legend directly under the matrix.",
       "**Do** use the three panel tones and 1px hairlines for every separation; keep the matrix sized to its columns.",
       "**Do** reserve Patch Amber for pending changes, the forward action, focus, the active tab and selection.",
       "**Do** keep monospace for paths, commands and change lines only.",
       "**Do** use tabular numerals for every count that updates live.",
+      "**Do** summarize per-place settings in one quiet line and open their controls only on request, for one place at a time.",
+      "**Do** put status messages and pending changes in the bottom dock, stacked, so neither covers the other or the grid.",
       "**Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.",
       "**Do** use plain words in the interface (\"circle\", \"install\", \"Review and apply\"); keep the patch-bay vocabulary in visuals and class names.",
       "**Do** turn the cable and sheet animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`."
@@ -519,6 +535,7 @@
       "**Don't** put a drop shadow on panels, bars or sheets; only a modal dialog casts one.",
       "**Don't** place engraved small caps above a heading as a kicker or eyebrow.",
       "**Don't** use a circle for anything that is not a state lamp or a toggleable jack.",
+      "**Don't** float toasts over the grid or show a control that has nothing to choose between.",
       "**Don't** add raw hex values in component rules; extend the `:root` custom properties.",
       "**Don't** lay out card grids or stack boxed panels inside the matrix or lists; rows inside a panel are divided by hairlines."
     ]
