@@ -43,6 +43,9 @@ when they are explicitly synced, not automatically to every child repository.
 - **Disconnect a library:** `source disconnect NAME` previews archiving its links
   and removing its selections and bindings everywhere; `--apply` when the user
   confirms. The checkout, unmanaged copies and installed Kiro powers stay (listed).
+- **Library checks:** `check SOURCE` shows the command that runs before a share
+  commits; `--set "COMMAND"` or `--clear` changes it for this machine. A failed check
+  commits nothing: relay its output and command; do not bypass it.
 - **Protected or signed-only libraries:** add `--review` to `share`, `import`,
   `promote` or `starter` to commit on a `share/NAME-USER` branch and open a merge
   request with `--push`. When Git fails, relay the printed hint and command to the

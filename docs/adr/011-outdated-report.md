@@ -31,6 +31,11 @@ already known, for the user-wide (global) installs and the target folder:
 Each group names its next step (Update library, Share, adopt, diff). The report
 only reads; `--fetch` changes only remote-tracking refs.
 
+The Library view shows the same report as **Behind the team** (newer on the server,
+edited in the library, older copies with "Update to team version", kept versions
+behind); copies the user changed are left out there, since they are not behind.
+Where installed offers **Where from?** on each file, which is `why` for that path.
+
 ## Consequences
 
 Nothing new to keep in sync or migrate. The answer is only as fresh as the last

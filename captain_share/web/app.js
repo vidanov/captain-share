@@ -93,6 +93,8 @@ function message(text, error = false, extra = {}) {
   box.replaceChildren();
   if (text) box.append(error ? "Error: " + text : text);
   if (text && extra.hint) box.append(el("span", extra.hint, "message-hint"));
+  if (text && extra.detail)
+    box.append(el("pre", extra.detail, "message-detail"));
   if (text && extra.command) box.append(commandLine(extra.command));
   box.className = error ? "error" : "";
   if (text && !error) messageTimer = setTimeout(() => message(""), 6000);
@@ -114,6 +116,8 @@ function commandLine(command) {
 }
 $("message").title = "Dismiss";
 $("message").onclick = () => message("");
+// Rows of the Library view's "Behind the team" list; null until loaded.
+let behind = null;
 let currentTarget = "",
   projects = [],
   pendingBatch = null;
@@ -146,6 +150,7 @@ async function api(path, data) {
     const error = new Error(body.error || "Request failed");
     error.hint = body.hint;
     error.command = body.command;
+    error.detail = body.detail;
     throw error;
   }
   return body;
@@ -159,7 +164,11 @@ async function task(fn) {
   try {
     await fn();
   } catch (e) {
-    message(e.message, true, { hint: e.hint, command: e.command });
+    message(e.message, true, {
+      hint: e.hint,
+      command: e.command,
+      detail: e.detail,
+    });
   } finally {
     busy = false;
   }
@@ -230,6 +239,7 @@ async function refresh(keepDrafts = false) {
   $("installed-count").hidden = !state.installed.length;
   bay = await api("matrix");
   home = await api("home").catch(() => null);
+  behind = null; // Recomputed with the next Library view.
   await loadRepository();
   if (!keepDrafts) drafts = {};
   invalidate();
@@ -445,6 +455,21 @@ function render() {
             "Show original in " + state.file_manager,
           ),
         );
+      if (installed) {
+        const from = el("button", "Where from?", "quiet");
+        from.type = "button";
+        from.onclick = () =>
+          task(async () => {
+            const found = await api(
+              "why?path=" +
+                encodeURIComponent(state.target + "/" + row.path) +
+                "&target=" +
+                encodeURIComponent(state.target),
+            );
+            message(whyText(found));
+          });
+        main.append(from);
+      }
       const button = el("button", installed ? "Archive" : "Restore", "quiet");
       button.onclick = () =>
         task(() =>
@@ -1755,7 +1780,7 @@ function renderLibraries() {
           name +
           " (for libraries that require signed commits)",
       );
-      list.append(sign, starterEditor(name));
+      list.append(sign, checkEditor(name, spec), starterEditor(name));
     }
   }
 }
@@ -1998,6 +2023,7 @@ function libraryStrip(lib) {
         if (!lib.behind) {
           const status = await api("fetch", { source: lib.source });
           home = await api("home");
+          behind = null;
           renderHome();
           message(
             status.behind
@@ -2289,8 +2315,109 @@ function renderHome() {
     lists.push(
       el("p", query ? "Nothing matches." : "This library is empty.", "hint"),
     );
+  const late = behindSection();
+  if (late && !query) lists.unshift(late);
   $("home-lists").replaceChildren(...lists);
   $("home-lists").querySelectorAll(".lib-row").forEach(expandable);
+  if (behind === null) loadBehind();
+}
+// What is behind the team version (ADR 011), from the commits last fetched.
+async function loadBehind() {
+  behind = [];
+  try {
+    const report = await api(
+      "outdated?target=" + encodeURIComponent(home.project),
+    );
+    behind = report.rows.filter((row) =>
+      ["newer", "edited", "older-copy", "kept-behind"].includes(row.state),
+    );
+  } catch (error) {
+    behind = [];
+  }
+  if (behind.length && view === "home") renderHome();
+}
+// One readable sentence for `why` (the CLI prints the same facts as lines).
+function whyText(found) {
+  const parts = [];
+  if (found.source)
+    parts.push(
+      "From " +
+        found.source +
+        " (" +
+        found.kind +
+        "/" +
+        (found.library_name || found.name) +
+        ")",
+    );
+  if (found.status === "linked")
+    parts.push(
+      found.managed
+        ? "installed by Captain Share"
+        : "a link made by another tool",
+    );
+  if (found.selected_in)
+    parts.push("selected in " + shortPath(found.selected_in) + "/.captain");
+  if (found.note) parts.push(found.note.replace(/\.$/, ""));
+  return parts.join(" · ") + ".";
+}
+function openTab(tab) {
+  document
+    .querySelector('.faceplate-nav button[data-tab="' + tab + '"]')
+    ?.click();
+}
+function behindSection() {
+  if (!behind?.length) return null;
+  const rows = behind.map((item) => {
+    const wrap = el("div", undefined, "lib-row");
+    const name = el("div", undefined, "lib-name");
+    const where =
+      item.place === "Global" ? "Global" : item.place.split("/").pop();
+    name.append(
+      el("span", item.path ? item.path.split("/").pop() : item.name),
+      el("span", KIND_LABELS[item.kind] || item.kind, "kind-tag"),
+    );
+    wrap.append(name);
+    const act = el("div", undefined, "lib-act");
+    const link = (text, fn) => {
+      const button = el("button", text, "quiet");
+      button.type = "button";
+      button.onclick = fn;
+      act.append(button);
+    };
+    let text = "";
+    if (item.state === "newer") {
+      text =
+        item.newer +
+        (item.newer === 1 ? " newer version" : " newer versions") +
+        " on the server · Update library above to get " +
+        (item.newer === 1 ? "it" : "them");
+    } else if (item.state === "edited") {
+      text = "Edited in your library folder, not shared yet";
+      link("Send changes…", () => openTab("share"));
+    } else if (item.state === "older-copy") {
+      text =
+        "A copy of the team version from " + ago(item.older.at) + " · " + where;
+      link("Update to team version…", () =>
+        task(() =>
+          adoptAsset(
+            {
+              source: item.source,
+              kind: item.kind,
+              name: item.name,
+              target: item.place === "Global" ? home.user : item.place,
+            },
+            true,
+          ),
+        ),
+      );
+    } else if (item.state === "kept-behind") {
+      text = "Your version of " + item.of + "; the team changed it since";
+      link("Compare…", () => openTab("share"));
+    }
+    wrap.append(el("p", text, "lib-meta"), act);
+    return wrap;
+  });
+  return listSection("Behind the team · " + rows.length, rows, "home-behind");
 }
 $("home-search").oninput = () => renderHome();
 async function getAsset(a, where) {
@@ -3834,6 +3961,43 @@ function reviewChoice(source, onChange) {
   };
 }
 // What happened after a commit: waiting for review, pushed, or why the push failed.
+// The command that checks a library before Captain Share commits to it. Set per
+// machine; Captain Share never runs a command the library itself asks for.
+function checkEditor(name, spec) {
+  const box = el("div", undefined, "check-editor");
+  const label = el("label", "Check before sharing to " + name);
+  const input = el("input");
+  input.placeholder = "e.g. python3 scripts/check_library.py";
+  input.value = (spec.check || [])
+    .map((arg) => (/[\s"']/.test(arg) ? JSON.stringify(arg) : arg))
+    .join(" ");
+  label.append(input);
+  const save = el("button", "Save", "quiet");
+  save.type = "button";
+  save.onclick = () =>
+    task(async () => {
+      const result = await api("library-settings", {
+        source: name,
+        check: input.value.trim(),
+      });
+      state.config.sources[name].check = result.check || undefined;
+      message(
+        result.check
+          ? "Shares to " + name + " run “" + result.check.join(" ") + "” first."
+          : "Shares to " + name + " no longer run a check.",
+      );
+    });
+  box.append(
+    label,
+    save,
+    el(
+      "p",
+      "Runs in the library folder after the files are copied and before the commit; files it changes are committed too. If it fails, nothing is committed.",
+      "hint",
+    ),
+  );
+  return box;
+}
 // Where a commit went: "Commit a94e79c in kiro-shared on main · pushed".
 function landedLine(result) {
   if (!result.commit) return [];
@@ -3846,6 +4010,7 @@ function landedLine(result) {
     result.landed_on ? el("code", result.landed_on) : "",
     result.pushed ? " · pushed" : " · not pushed, only in your library folder",
   );
+  if (result.checked) line.append(" · checked by ", el("code", result.checked));
   return [line];
 }
 function pushProblem(result) {

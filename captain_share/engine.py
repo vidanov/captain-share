@@ -690,6 +690,8 @@ def plan(
                             "managed",
                         )
                         continue
+                elif existing == {"type": "link", "target": str(linked)} and tool is not None:
+                    pass  # Already links to the original (another tool made it): keep it.
                 elif existing is not None:
                     if not same_as(dest, src, linked) and not replace:
                         conflict(
