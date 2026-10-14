@@ -74,7 +74,10 @@ when they are explicitly synced, not automatically to every child repository.
 - **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude codex
   copilot` sets it for the target (`--target "$HOME"` for every project). Skills then
   link into `.kiro/skills/`, `.claude/skills/`, and `.agents/skills/` (Codex) from one
-  original. Steering, agents, and prompts stay Kiro-only; do not hand-copy them.
+  original. With `claude` enabled, steering and prompts also reach `.claude/rules`
+  and `.claude/commands` as files Captain Share generates from the Kiro original;
+  edit the library original, not the generated file, and relay the preview's notes
+  (manual/auto steering stays Kiro-only). Agents stay Kiro-only; do not hand-copy.
 - **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
   `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
   install state; `powers install SOURCE POWER` previews and `--apply` runs

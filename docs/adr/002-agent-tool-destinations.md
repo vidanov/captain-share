@@ -22,7 +22,7 @@ folder. Initially:
 | Kind | Tools and destinations |
 | --- | --- |
 | `skills` | `kiro` → `.kiro/skills`, `claude` → `.claude/skills`, `codex` → `.agents/skills` |
-| `agents`, `prompts`, `steering` | `kiro` → `.kiro/…` |
+| `agents`, `prompts`, `steering` | `kiro` → `.kiro/…` (since ADR 012 also `claude`: `prompts` → `.claude/commands`, `steering` → `.claude/rules`, as generated files) |
 | `copilot*` | `copilot` → `.github/…` |
 
 Portable configuration may contain `"tools": ["kiro", "claude", "codex", "copilot"]`. The

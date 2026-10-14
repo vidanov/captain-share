@@ -500,6 +500,10 @@ async function saveSelection(quiet = false) {
         : "Nothing changed since the last save.",
     );
 }
+// A generated file for another tool's format (ADR 012) reads better as "generate".
+function opLabel(op) {
+  return op === "render" ? "generate" : op;
+}
 async function preview(spec = { direction: view }, endpoint = "plan") {
   pending = await api(endpoint, spec);
   lastSpec = spec;
@@ -520,7 +524,7 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     div.append(
       el(
         "strong",
-        change.op,
+        opLabel(change.op),
         /archive|uninstall/.test(change.op) ? "op-remove" : "",
       ),
       " ",
@@ -537,6 +541,9 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     }
     $("changes").append(div);
   });
+  // What a conversion for another tool could not carry over (ADR 012).
+  for (const note of pending.notes || [])
+    $("changes").append(el("p", note, "hint"));
   if (!pending.changes.length)
     $("changes").append(
       el(
@@ -665,7 +672,7 @@ async function previewMany(rows) {
       div.append(
         el(
           "strong",
-          change.op,
+          opLabel(change.op),
           /archive|uninstall/.test(change.op) ? "op-remove" : "",
         ),
         " ",
@@ -673,6 +680,8 @@ async function previewMany(rows) {
       );
       $("changes").append(div);
     }
+    for (const note of plan.notes || [])
+      $("changes").append(el("p", note, "hint"));
     // Fixes act on the window's own place; other places name the conflict only.
     for (const conflict of plan.conflicts)
       $("errors").append(

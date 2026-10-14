@@ -145,6 +145,8 @@ def output(value, as_json=False):
                 print(f"           runs: {' '.join(row['command'])}")
         for row in value.get("kept", []):
             print(f"  kept     {row['path']} ({row['reason']})")
+        for note in value.get("notes", []):
+            print(f"  note     {note}")
         for error in value["errors"]:
             print(f"  Blocked: {error}")
         print(

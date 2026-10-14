@@ -691,7 +691,8 @@ def share_candidates(target):
                     files.append(rel)
             edited.append({"source": source, "kind": kind, "name": name, "files": files})
     for row in e.scan(target):
-        if row["status"] != "local":
+        # Claude rules and commands are generated from Kiro originals (ADR 012).
+        if row["status"] != "local" or e.converted_folder(row["path"]):
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
         differs, older = None, None
