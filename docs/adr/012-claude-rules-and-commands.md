@@ -53,8 +53,12 @@ permissions and resources beyond a faithful text conversion.
 
 One steering file or prompt reaches both tools, with scoping kept. Turning on
 `claude` adds these links at the next sync; existing files with the same names are
-conflicts as before. Generated files left by removed selections stay in the global
-`rendered/` folder until it is cleared; nothing links to them. Not verified here:
+conflicts as before. `rendered/index.json` (machine-local) records which places
+link each generated file; applying a plan updates it, and the plan that removes the
+last link archives the generated file in the global archive. `captain-share
+rendered` lists generated files and the places that still link them (checked
+against each place's installation state); `--clean` archives files nothing links,
+such as ones left from before the index. Not verified here:
 whether Claude Code follows a symlinked file in `.claude/commands/` and whether it
 still reads `~/.claude/commands/`; the docs confirm symlinks for rules and skills
 only. Manual and auto steering could later become Claude skills; that is a separate

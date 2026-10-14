@@ -267,6 +267,12 @@ def parser():
     out.add_argument(
         "--fetch", action="store_true", help="Fetch each library first (reads the server)"
     )
+    ren = sub.add_parser(
+        "rendered", help="List files generated for other tools' formats and who links them"
+    )
+    ren.add_argument(
+        "--clean", action="store_true", help="Archive generated files nothing links any more"
+    )
     why = sub.add_parser(
         "why", help="Show which library and asset a file in an agent folder came from"
     )
@@ -894,6 +900,19 @@ def main(argv=None):
             result = r.outdated(target, args.fetch)
             if not args.json:
                 print(outdated_text(result))
+                return 0
+        elif command == "rendered":
+            result = e.rendered_files(apply=args.clean)
+            if not args.json:
+                for row in result["files"]:
+                    used = ", ".join(row["places"]) or "nothing links it"
+                    print(f"{row['path']}\n  {used}")
+                if not result["files"]:
+                    print("No generated files.")
+                elif result["archived"]:
+                    print(f"Archived {len(result['archived'])} unused generated files.")
+                elif result["unused"]:
+                    print(f"{len(result['unused'])} unused; --clean archives them.")
                 return 0
         elif command == "why":
             result = e.why(args.path)
