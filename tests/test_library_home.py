@@ -514,8 +514,12 @@ class AdoptTests(LibraryFixture):
         self.assertEqual(e.plan(self.repo)["changes"], [])
         # The archived copy is recoverable once the link is removed.
         e.apply(e.plan(self.repo, action="remove", kind="skills", asset="hello"))
+        # Two archives share this path (the adopted copy, then the removed link);
+        # ids made in the same second sort randomly, so pick the copy explicitly.
         record = next(
-            row for row in e.archives(self.repo) if row["relative_path"] == ".kiro/skills/hello"
+            row
+            for row in e.archives(self.repo)
+            if row["relative_path"] == ".kiro/skills/hello" and row["snapshot"]["type"] != "link"
         )
         e.apply(e.plan(self.repo, action="restore", archive_id=record["id"]))
         restored = self.repo / ".kiro/skills/hello"
