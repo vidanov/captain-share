@@ -92,32 +92,12 @@
           machine can use it.
         </p>
         <div id="library-strips"></div>
-        <label class="visually-hidden" for="home-search">Search assets</label
-        ><input
-          id="home-search"
-          type="search"
-          placeholder="Search skills, agents, prompts"
-        />
-        <div id="home-lists"></div>
-      </section>
-
-      <section
-        id="share-view"
-        class="home"
-        hidden
-        aria-labelledby="share-title"
-      >
-        <h1 id="share-title">Share with your team</h1>
-        <p>
-          Skills you made or changed that are not in the team library yet.
-          Sharing copies them into the library, commits, and pushes.
-        </p>
         <section class="strip import-strip" aria-labelledby="import-title">
           <p>
-            <span id="import-title">Add a skill from elsewhere</span>
+            <span id="import-title">Install from a zip or folder</span>
             <small
-              >A zip you downloaded or a folder a colleague sent. It is checked,
-              copied into your library, and committed.</small
+              >Downloaded a skill, or got one from a colleague? Try it first. It
+              goes into your own library on this machine; share it later.</small
             >
           </p>
           <input
@@ -134,25 +114,51 @@
           </button>
         </section>
         <div id="import-panel"></div>
+        <div class="list-tools">
+          <label class="visually-hidden" for="home-search">Search assets</label
+          ><input
+            id="home-search"
+            type="search"
+            placeholder="Search skills, agents, prompts"
+          /><button type="button" class="density quiet">Compact view</button>
+        </div>
+        <div id="home-lists"></div>
+      </section>
+
+      <section
+        id="share-view"
+        class="home"
+        hidden
+        aria-labelledby="share-title"
+      >
+        <h1 id="share-title">Share with your team</h1>
+        <p>
+          Skills you made or changed that are not in the team library yet.
+          Sharing copies them into the library, commits, and pushes.
+        </p>
+        <div class="list-tools list-tools-end">
+          <button type="button" class="density quiet">Compact view</button>
+        </div>
         <div id="share-lists"></div>
       </section>
 
       <section id="bay" class="bay" aria-labelledby="view-title">
-        <nav id="subnav" class="subnav" aria-label="Where installed">
-          <button data-tab="patch" class="active">Grid</button
-          ><button data-tab="projects">Projects</button
-          ><button data-tab="installed">
-            Local files
-            <span id="installed-count" class="count-chip" hidden
-              >0</span
-            ></button
-          ><button data-tab="archive">Archive</button>
-        </nav>
         <div class="bay-head">
           <div>
             <h1 id="view-title">Assets</h1>
             <p id="view-help">Click a circle to install an asset there.</p>
           </div>
+          <nav id="subnav" class="subnav" aria-label="Where installed">
+            <button data-tab="patch" class="active">Grid</button
+            ><button data-tab="projects">Projects</button
+            ><button data-tab="installed">
+              Local files
+              <span id="installed-count" class="count-chip" hidden
+                >0</span
+              ></button
+            ><button data-tab="archive">Archive</button>
+          </nav>
+
           <div class="bay-tools">
             <label class="visually-hidden" for="search">Filter assets</label
             ><input
@@ -175,7 +181,7 @@
           <ul class="legend" aria-label="What the circles mean">
             <li><span class="jack on sample"></span>Installed</li>
             <li><span class="jack on inherited sample"></span>From a folder</li>
-            <li><span class="jack covered sample"></span>For your user</li>
+            <li><span class="jack covered sample"></span>Global</li>
             <li><span class="jack pending on sample"></span>Will install</li>
             <li><span class="jack pending sample"></span>Will remove</li>
             <li><span class="jack blocked on sample"></span>File in the way</li>
@@ -217,13 +223,14 @@
           </section>
           <h2 class="settings-title">Libraries</h2>
           <div id="library-list" class="library-list"></div>
+          <h2 class="settings-title">Add a library</h2>
           <div id="settings-found" class="found"></div>
           <details id="add-library" class="panel-block">
             <summary>Add a library folder</summary>
             <label for="source-scope" class="engraved"
               >Make it available to</label
             ><select id="source-scope">
-              <option value="user">Every project (your user)</option>
+              <option value="user">Global (all projects)</option>
               <option value="project">This project only</option>
             </select>
             <form id="add-source">
@@ -298,8 +305,9 @@
               </p>
             </form>
           </details>
-          <section class="panel-block" aria-label="Repository status">
-            <h2>Repository</h2>
+          <h2 class="settings-title">Advanced</h2>
+          <details class="panel-block">
+            <summary>Repository status, pull and push</summary>
             <label for="repo-scope">Show repository</label
             ><select id="repo-scope">
               <option value="library">Selected library</option>
@@ -320,7 +328,7 @@
               <button id="git-confirm">Confirm</button
               ><button id="git-cancel" class="quiet">Cancel</button>
             </div>
-          </section>
+          </details>
           <details class="panel-block">
             <summary>Configuration layers</summary>
             <ul id="layers"></ul>
@@ -347,7 +355,7 @@
           <label class="where-option"
             ><input type="radio" name="where" value="user" checked />
             <span
-              ><strong>Everywhere for me</strong> Every project on this machine.
+              ><strong>Global</strong> All your projects on this machine.
               Recommended.</span
             ></label
           >
@@ -393,7 +401,7 @@
           <h2>Get</h2>
           <p>
             Library shows what is new since you last looked. Get links a skill
-            everywhere for you, or only in one project.
+            globally, for all your projects, or only in one project.
           </p>
         </section>
         <section>
@@ -440,10 +448,12 @@
             Get links an asset from the library into your agents' folders.
             Remove takes the link away and keeps a copy in the Archive.
           </dd>
-          <dt>Everywhere for me · This project</dt>
+          <dt>Global · Only in this project</dt>
           <dd>
-            Where a Get applies: your home folder, so every project sees it, or
-            only the project this window opened on.
+            Where a Get applies. Global installs into your home folder
+            (<code>~/.kiro</code>, <code>~/.claude</code>, …), so every project
+            sees it; Only in this project installs into the project this window
+            opened on.
           </dd>
           <dt>Link · original</dt>
           <dd>
@@ -493,13 +503,13 @@
             <code>.kiro/steering</code>
           </dd>
           <dt>Kiro powers</dt>
-          <dd>installed for you by <code>kiro-cli</code></dd>
+          <dd>installed globally by <code>kiro-cli</code></dd>
           <dt>Copilot</dt>
           <dd><code>.github/</code> instructions and prompts</dd>
         </dl>
         <p class="hint">
           In a project folder, or in your home folder when you get something
-          everywhere for you. Each is a link to the one original in the library.
+          globally. Each is a link to the one original in the library.
         </p>
       </section>
       <details class="about-more">
@@ -509,7 +519,7 @@ captain-share get NAME
 captain-share --help</code></pre>
         <p>
           The window works for the folder you start it in, the folders above it,
-          your user, and projects you register.
+          Global (your home folder), and projects you register.
         </p>
       </details>
       <details class="about-more">

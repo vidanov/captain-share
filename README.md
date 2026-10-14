@@ -10,7 +10,7 @@ The public tool contains the sharing mechanics. Your libraries and their private
 content stay in separate repositories. Captain is not a runtime dependency.
 
 See [agents and projects](docs/agents-and-projects.md) for which agent reads what
-and how to install for your user, a group of projects, or one project.
+and how to install globally, a group of projects, or one project.
 
 ## Start
 
@@ -70,7 +70,7 @@ captain-share --target /path/to/project status
 ```
 
 To get one asset quickly, name it. `get` resolves `NAME`, `SOURCE/NAME` or
-`SOURCE/KIND/NAME` across connected libraries, installs for your user by default
+`SOURCE/KIND/NAME` across connected libraries, installs globally (for your user) by default
 (`--here` installs into `--target` or the current folder), shows the preview and
 applies after you confirm or with `--apply`. A preview with conflicts changes nothing.
 
@@ -302,19 +302,23 @@ bar chooses Auto, Light, or Dark for this browser.
 Library lists what is new since you last looked (with who shared it and when, from
 the library's Git history), what you have, and everything else. Check for updates
 fetches; Update library fast-forwards the checkout and marks new and changed
-assets. Get asks where it should work, everywhere for you or only in this project,
+assets. Get asks where it should work, globally (all your projects) or only in this project,
 shows the links it will create, and applies after Apply changes; Cancel puts the
 choice back. Remove archives the links. Hover a row for Copy get command, a line a
 teammate can run: `captain-share get NAME`.
 
-### Add a skill from elsewhere
+### Install from a zip or folder
 
-Share also takes a skill that arrived without Captain Share: Upload a zip… or
-Choose a folder… (a colleague's folder, a downloaded repository). The archive is
-checked first (no paths outside it, no links, size and file-count limits; nothing
-is run), every skill, agent, prompt or power found is listed with its description,
-and you can rename each one before Add to library copies, commits and optionally
-pushes it. See [ADR 006](docs/adr/006-import-from-outside.md).
+Library takes a skill that arrived without Captain Share: Install from a zip or
+folder (a download, a colleague's folder). The archive is checked first (no paths
+outside it, no links, size and file-count limits; nothing is run). You choose
+Global or Only in this project; the skill goes into your own library
+(`~/Libraries/my-skills`, a local Git repository that is never pushed) and is
+linked like any library asset, so you can try it. When it proves useful, Share →
+In your own library → Share with team copies it into the team library, commits and
+pushes, switches your links to the team version, and moves it out of your own
+library. See [ADR 006](docs/adr/006-import-from-outside.md) and
+[ADR 008](docs/adr/008-personal-library.md).
 
 ### Share: pass a skill on
 
@@ -332,23 +336,47 @@ library show **Use team version…** instead; if your copy differs, the review s
 and offers Replace mine (archived) or Keep mine. CLI: `captain-share adopt KIND NAME
 --source S [--replace] [--apply]`, or `captain-share share … --adopt`.
 
+To try a skill before sharing it, `captain-share install PATH --apply` adds a zip's
+or folder's assets to your private library `my-skills` (`~/Libraries/my-skills`, a
+local Git repository that is never pushed) and installs them for your user (`--here`
+for the project). `captain-share promote KIND NAME --to TEAM --note TEXT --apply`
+later moves one to a team library and relinks every place that used it
+([ADR 008](docs/adr/008-personal-library.md)).
+
+A library's starter set (`profiles/starter.manifest`, offered to new teammates) is
+edited with `captain-share starter SOURCE` (lists it) and `--set kind/name,…`,
+`--add kind/name`, `--remove kind/name` or `--clear`, previewed as a diff and, with
+`--note TEXT --apply [--push]`, committed alone.
+
+When your copy extends the team version, choose what it is
+([ADR 007](docs/adr/007-extended-copies.md)). `captain-share diff KIND NAME --source S`
+shows the changes file by file. `propose KIND NAME --source S --note TEXT --apply`
+sends them to the team: directly (commit only that asset, `--push`, then link the
+project to the library version), or with `--review` as a commit on a new
+`share/NAME-USER` branch built without touching the library checkout, pushed with
+`--push` and returned with a GitHub/GitLab review link when the host is recognised.
+`keep KIND NAME --source S --as NEWNAME --apply` keeps your copy as your own version
+under a new name (the skill's `name:` is updated, the old folder archived, the team
+version linked unless `--no-team`), and `captain-share versions` reports when the
+team version changed since.
+
 ### Where installed: one grid for every place
 
 The grid is for maintenance. Rows are library assets, grouped by library, with each
 asset's description. Columns are places: this project, the folders above it inside
-your home folder, and Your user (installs into `~/.kiro`, `~/.claude` and
+your home folder, and Global (your home folder; installs into `~/.kiro`, `~/.claude` and
 `~/.agents` for every project). Click a circle to install an asset in that place or
 remove it. A folder shares its assets with every project inside it; a line from
 the folder's circle marks each project that gets the asset from it, and a dashed
-circle marks an asset already installed for your user, so each skill lives in one
+circle marks an asset already installed globally, so each skill lives in one
 place. Only the nearest folder is shown until another folder has selections;
 "+N folders above" shows the rest. A one-line key under the grid explains each state.
 
 Each column head names the agents that get links in that place (for example "Kiro,
-Copilot"); click it to switch Kiro, Claude, Codex or Copilot on or off there. Kiro powers install for your user
+Copilot"); click it to switch Kiro, Claude, Codex or Copilot on or off there. Kiro powers install globally
 only and show Kiro's install state.
 
-Changes wait in the bar at the bottom ("Add reviewer.json to your user"); status
+Changes wait in the bar at the bottom ("Add reviewer.json to Global"); status
 messages appear just above it and never cover it. Review
 and apply saves the choices and opens one review for every place they affect,
 including registered projects inside a changed folder. Apply changes creates the
@@ -380,7 +408,7 @@ for example "Found 39 skills, 3 prompts under ip/", fills the name from the fold
 name (editable), and detects the layout. Choosing a library's `ip/` folder selects
 the library itself. Add library is refused for folders without asset folders and for
 folders already added, with the reason shown. "Make it available to" chooses every
-project (your user) or this project only. Clone and add fills the library name from
+project (Global) or this project only. Clone and add fills the library name from
 the repository URL.
 
 ### Git, cloning, and folders

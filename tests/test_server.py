@@ -110,6 +110,27 @@ class ServerTests(SharingFixture):
             )
             run.assert_not_called()
 
+    def test_asset_preview_reads_main_file_and_stays_inside(self):
+        skill = self.lib / "ip/skills/hello"
+        (skill / "scripts").mkdir(exist_ok=True)
+        (skill / "scripts/run.sh").write_text("echo hi")
+        (skill / ".DS_Store").write_text("x")
+        outside = self.base / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("no")
+        (skill / "escape").symlink_to(outside)
+        code, view = self.request("/api/asset?source=team&kind=skills&name=hello")
+        self.assertEqual(code, 200)
+        self.assertEqual(view["main"], "SKILL.md")
+        self.assertIn("name: hello", view["text"])
+        paths = [f["path"] for f in view["files"]]
+        self.assertEqual(paths, ["SKILL.md", "scripts/run.sh"])
+        for bad in ("kind=skills&name=../x", "kind=nope&name=hello", "kind=skills&name=missing"):
+            self.assertEqual(self.request("/api/asset?source=team&" + bad)[0], 400)
+        self.assertEqual(
+            self.request("/api/asset?source=team&kind=skills&name=hello", token=False)[0], 403
+        )
+
     def test_api_requires_launch_token_and_same_origin(self):
         self.assertEqual(self.request("/api/state", token=False)[0], 403)
         self.assertEqual(self.request("/api/state", origin="https://outside.example")[0], 403)

@@ -127,6 +127,59 @@ def parser():
         action="store_true",
         help="Afterwards link this folder to the library original instead of its copy",
     )
+    dif = sub.add_parser("diff", help="Show how your copy differs from the library version")
+    dif.add_argument("kind", choices=list(c.KINDS))
+    dif.add_argument("name")
+    dif.add_argument("--source", required=True)
+    dif.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    pro = sub.add_parser(
+        "propose", help="Send your copy's changes to the library version (directly or for review)"
+    )
+    pro.add_argument("kind", choices=list(c.KINDS))
+    pro.add_argument("name")
+    pro.add_argument("--source", required=True)
+    pro.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    pro.add_argument("--review", action="store_true", help="Commit on a new review branch")
+    pro.add_argument("--note", help="Commit message (needed to apply)")
+    pro.add_argument("--push", action="store_true")
+    pro.add_argument("--apply", action="store_true")
+    keep = sub.add_parser("keep", help="Keep your copy as your own version under a new name")
+    keep.add_argument("kind", choices=list(c.KINDS))
+    keep.add_argument("name")
+    keep.add_argument("--source", required=True)
+    keep.add_argument("--as", dest="new_name", required=True, metavar="NEWNAME")
+    keep.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    keep.add_argument(
+        "--no-team", dest="link_team", action="store_false", help="Do not link the team version"
+    )
+    keep.add_argument("--apply", action="store_true")
+    sub.add_parser("versions", help="List your kept versions and whether the team's changed")
+    ins = sub.add_parser(
+        "install",
+        help="Add skills from a zip file or folder to your library (my-skills) and get them",
+    )
+    ins.add_argument("path", metavar="PATH", help="A zip file or a folder")
+    ins.add_argument(
+        "--here", action="store_true", help="Install into --target (or this folder) instead"
+    )
+    ins.add_argument("--apply", action="store_true", help="Add, commit locally and install")
+    prom = sub.add_parser("promote", help="Move an asset from my-skills to a team library")
+    prom.add_argument("kind", choices=list(c.KINDS))
+    prom.add_argument("name")
+    prom.add_argument("--to", dest="team", required=True, metavar="TEAM")
+    prom.add_argument("--note", help="Commit message in the team library (needed to apply)")
+    prom.add_argument("--push", action="store_true")
+    prom.add_argument("--apply", action="store_true")
+    st = sub.add_parser("starter", help="Show or change a library's starter set")
+    st.add_argument("source")
+    change = st.add_mutually_exclusive_group()
+    change.add_argument("--set", metavar="KIND/NAME,...", help="Replace the set")
+    change.add_argument("--add", metavar="KIND/NAME")
+    change.add_argument("--remove", metavar="KIND/NAME")
+    change.add_argument("--clear", action="store_true", help="Remove the starter set")
+    st.add_argument("--note", help="Commit message (needed to apply)")
+    st.add_argument("--push", action="store_true")
+    st.add_argument("--apply", action="store_true")
     adopt = sub.add_parser(
         "adopt", help="Replace local copies of a library asset with links to the original"
     )
@@ -413,6 +466,99 @@ def import_assets(args, target):
     return result
 
 
+def staged(path):
+    """(root, temporary folder or None) for a zip file or folder given on the command line."""
+    if path.is_file():
+        if not zipfile.is_zipfile(path):
+            raise c.ShareError(f"Not a zip file or folder: {path}")
+        temp = Path(tempfile.mkdtemp(prefix="captain-share-import-"))
+        return im.unzip_file(path, temp)[1], temp
+    return c.root(path), None
+
+
+def install(args, project):
+    """Add a zip's or folder's assets to the personal library (ADR 008), committing
+    locally, then get each one for the user (or --here for the project)."""
+    from . import personal as me
+
+    path = Path(args.path).expanduser().absolute()
+    home = c.global_dir().parent
+    target = project if args.here else home
+    root, temp = staged(path)
+    try:
+        rows = im.find(root, str(path) if temp else "")
+        items = import_items(rows, None, None, path)
+        report: dict = {"library": None, "added": [], "installed": [], "applied": False}
+        if not args.apply:
+            if not args.json:
+                print(f"Found in {path}:")
+                for row in rows:
+                    note = f"  (cannot add: {row['error']})" if row["error"] else ""
+                    print(f"  {row['kind']:10} {row['name']}{note}")
+                where = "this project" if args.here else "your user"
+                print(f"Run with --apply to add them to {me.SOURCE} and install them for {where}.")
+            report["candidates"] = rows
+            return report
+        report["library"] = me.ensure()
+        names = ", ".join(row["name"] for row in items)
+        planned = im.plan(target, me.SOURCE, root, items, label=str(path))
+        if not planned["can_apply"]:
+            report["plan"] = planned
+            if not args.json:
+                for error in planned["errors"]:
+                    print(f"  Blocked: {error}")
+            return {**report, "can_apply": False}
+        im.apply(planned, f"Add {names}", push=False)
+        report["added"] = [f"{row['kind']}/{row['name']}" for row in items]
+    finally:
+        if temp is not None:
+            shutil.rmtree(temp, ignore_errors=True)
+    for row in items:
+        if row["kind"] == "powers":
+            continue
+        c.select(target, "inbound", me.SOURCE, row["kind"], row["name"])
+    result = e.plan(target, "inbound")
+    report["plan"] = result
+    if not result["can_apply"]:
+        if not args.json:
+            output(result)
+            print(f"Added to {me.SOURCE}, but not installed; resolve the conflicts above.")
+        return {**report, "can_apply": False}
+    e.apply(result)
+    report.update(installed=report["added"], applied=True)
+    if not args.json:
+        print(
+            f"Added {names} to {me.SOURCE} and installed for "
+            + ("this project." if args.here else "your user.")
+        )
+    return report
+
+
+def promote(args, target):
+    from . import personal as me
+    from .server import places
+
+    planned = me.promote_plan(target, args.kind, args.name, args.team, places(target))
+    if not args.apply or not planned["can_apply"]:
+        if not args.json:
+            for row in planned["changes"]:
+                where = row.get("label") or row["path"]
+                print(f"  {row['op']:8} {where}")
+            for error in planned["errors"]:
+                print(f"  Blocked: {error}")
+        return planned
+    if not args.note:
+        raise c.ShareError("Add --note describing the asset; it is the team commit message")
+    result = me.promote_apply(planned, args.note, args.push)
+    if not args.json:
+        print(f"Committed {result['commit'][:12]} in {args.team}.")
+        if args.push:
+            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        for problem in result["errors"]:
+            print(f"  Not finished: {problem}")
+    return result
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -495,8 +641,14 @@ def main(argv=None):
                 raise c.ShareError("Saved plan targets a different folder than --target")
             # A saved plan owns its target; an explicit mismatch is rejected.
             result = e.apply(saved)
-        elif command in ("get", "share", "import"):
-            handler = {"get": get, "share": share, "import": import_assets}[command]
+        elif command in ("get", "share", "import", "install", "promote"):
+            handler = {
+                "get": get,
+                "share": share,
+                "import": import_assets,
+                "install": install,
+                "promote": promote,
+            }[command]
             result = handler(args, target)
             if args.json:
                 output(result, True)
@@ -504,8 +656,128 @@ def main(argv=None):
                 result.get("can_apply") is False
                 or result.get("push_error")
                 or result.get("adopt_error")
+                or result.get("errors")
             )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
+        elif command == "diff":
+            result = e.diff(target, args.source, args.kind, args.name, args.path)
+            if not args.json:
+                for row in result["files"]:
+                    if row["diff"]:
+                        print(row["diff"], end="")
+                    else:
+                        note = "binary" if row["binary"] else "too large to show"
+                        print(f"{row['status']}: {row['path']} ({note})")
+                if not result["files"]:
+                    print("Your copy matches the library version.")
+                if result["truncated"]:
+                    print("(Output shortened.)")
+                return 0
+        elif command == "propose":
+            mode = "review" if args.review else "direct"
+            planned = r.propose_plan(target, args.source, args.kind, args.name, args.path, mode)
+            if not args.apply or not planned["can_apply"]:
+                result = planned
+                if not args.json:
+                    output(planned)
+                    if planned["branch"]:
+                        print(f"Review branch: {planned['branch']}")
+                    return 0 if planned["can_apply"] else 1
+            else:
+                if not args.note:
+                    raise c.ShareError(
+                        "Add --note describing your change; it is the commit message"
+                    )
+                result = r.propose_apply(planned, args.note, args.push)
+                if not args.json:
+                    print(
+                        f"Committed {result['commit'][:12]}"
+                        + (f" on {result['branch']}" if result["branch"] else "")
+                        + "."
+                    )
+                    if args.push:
+                        print(
+                            "Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}"
+                        )
+                    if result["review_url"]:
+                        print(f"Open a review: {result['review_url']}")
+                    if result["adopt_error"]:
+                        print(f"Kept your copy: {result['adopt_error']}")
+                    return 1 if result["push_error"] or result["adopt_error"] else 0
+        elif command == "keep":
+            result = e.plan(
+                target,
+                action="keep",
+                kind=args.kind,
+                asset=args.name,
+                source=args.source,
+                path=args.path,
+                new_name=args.new_name,
+                link_team=args.link_team,
+            )
+            if args.apply:
+                result = e.apply(result)
+        elif command == "versions":
+            result = r.version_rows(target)
+            if not args.json:
+                for row in result:
+                    state = "team changed since" if row["team_changed"] else "up to date with"
+                    print(f"{row['key']:30} {state} {row['source']}/{row['kind']}/{row['of']}")
+                if not result:
+                    print("No kept versions here.")
+                return 0
+        elif command == "starter":
+            from .server import starter_view
+
+            view = starter_view(target, args.source)
+            if not (args.set or args.add or args.remove or args.clear):
+                result = view
+                if not args.json:
+                    if view["error"]:
+                        print(f"The starter set is invalid: {view['error']}")
+                    for ref in view["assets"]:
+                        print(ref)
+                    if not view["exists"]:
+                        print(f"{args.source} has no starter set.")
+                    return 1 if view["error"] else 0
+            else:
+                assets = list(view["assets"])
+                if view["error"] and (args.add or args.remove):
+                    raise c.ShareError(
+                        f"The current starter set is invalid ({view['error']}); use --set or --clear"
+                    )
+                if args.set:
+                    assets = [x.strip() for x in args.set.split(",") if x.strip()]
+                elif args.add and args.add not in assets:
+                    assets.append(args.add)
+                elif args.remove:
+                    if args.remove not in assets:
+                        raise c.ShareError(f"{args.remove} is not in the starter set")
+                    assets.remove(args.remove)
+                clear = bool(args.clear)
+                planned = r.starter_plan(target, args.source, [] if clear else assets, clear)
+                if not args.apply or not planned["can_apply"]:
+                    result = planned
+                    if not args.json:
+                        print(planned["diff"], end="")
+                        for error in planned["errors"]:
+                            print(f"  Blocked: {error}")
+                        return 0 if planned["can_apply"] else 1
+                else:
+                    if not args.note:
+                        raise c.ShareError(
+                            "Add --note describing the change; it is the commit message"
+                        )
+                    result = r.starter_apply(planned, args.note, args.push)
+                    if not args.json:
+                        print(f"Committed {result['commit'][:12]} in {args.source}.")
+                        if args.push:
+                            print(
+                                "Pushed."
+                                if result["pushed"]
+                                else f"Not pushed: {result['push_error']}"
+                            )
+                        return 1 if result["push_error"] else 0
         elif command == "adopt":
             result = e.plan(
                 target,

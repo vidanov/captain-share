@@ -15,6 +15,7 @@ ALLOWED_INTERNAL = {
     "integrations": {"config", "engine"},
     "repositories": {"config", "engine"},
     "imports": {"config", "engine", "repositories"},
+    "personal": {"config", "engine", "repositories"},
 }
 
 

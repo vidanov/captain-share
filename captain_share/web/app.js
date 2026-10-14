@@ -119,6 +119,11 @@ async function api(path, data) {
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
   const body = await res.json();
+  if (res.status === 403 && /Open the URL/.test(body.error || ""))
+    // The server restarted (new token) or this tab was opened without its link.
+    throw new Error(
+      "This window is no longer connected; Captain Share was restarted or this link is old. Open the new link from the terminal where captain-share serve runs, or run captain-share serve --open.",
+    );
   if (!res.ok) throw new Error(body.error || "Request failed");
   return body;
 }
@@ -157,7 +162,7 @@ function renderPlaces() {
       const option = el(
         "option",
         row.kind === "user"
-          ? "Your user only"
+          ? "Global"
           : row.label + (row.path === state.startup ? " (this window)" : ""),
       );
       option.value = row.path;
@@ -267,6 +272,7 @@ function render() {
   $("home-view").hidden = setup || view !== "home";
   $("share-view").hidden = setup || view !== "share";
   $("bay").hidden = setup || !(where || view === "libraries");
+  $("bay").classList.toggle("narrow", view === "libraries");
   $("routing").hidden = true;
   if (setup) return renderSetup();
   if (view === "home") return renderHome();
@@ -286,6 +292,7 @@ function render() {
   $("project-actions").hidden = view !== "projects";
   if (isPatch) return renderMatrix();
   if (view === "libraries") {
+    $("count").textContent = "";
     renderAgents();
     foundList($("settings-found"), "Found on this machine, not added yet:");
     return renderLibraries();
@@ -496,6 +503,7 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     );
     if (change.source)
       div.append(el("div", "From " + shortPath(change.source), "change-from"));
+    if (change.edit) div.append(el("div", change.edit, "change-from"));
     if (change.command)
       div.append(el("code", "Runs " + change.command.join(" "), "command"));
     $("changes").append(div);
@@ -580,7 +588,7 @@ async function switchPlace(path, nextView) {
   if (nextView) view = nextView;
   await refresh();
   message(
-    "Working on " + (here().kind === "user" ? "your user" : here().label) + ".",
+    "Working on " + (here().kind === "user" ? "Global" : here().label) + ".",
   );
 }
 async function previewMany(rows) {
@@ -944,7 +952,7 @@ async function loadRepository() {
     area.append(el("p", error.message));
     return;
   }
-  area.append(el("p", repository.path, "asset-path"));
+  area.append(el("p", shortPath(repository.path), "asset-path"));
   if (!repository.is_repo) {
     area.append(el("p", "This folder is not a Git repository."));
     return;
@@ -1050,7 +1058,7 @@ $("clone-source").onsubmit = (event) => {
     });
     view = "home";
     await refresh();
-    message("Cloned and added for every project. Get what you need from it.");
+    message("Cloned and added globally. Get what you need from it.");
   });
 };
 
@@ -1127,7 +1135,7 @@ function jackState(row, col) {
           lit: cell.power === "current",
           stale: cell.power === "differs",
         }
-      : { kind: "na", label: "Kiro powers install for your user" };
+      : { kind: "na", label: "Kiro powers install globally" };
   if (row.status !== "available")
     return { kind: "na", label: row.error || "invalid" };
   let from = cell.from;
@@ -1143,7 +1151,7 @@ function jackState(row, col) {
   }
   // A pending change at this place stays visible even when the user install covers it.
   if (coveredByUser && !on && pending === undefined)
-    return { kind: "covered", label: "installed for your user" };
+    return { kind: "covered", label: "installed globally" };
   const folderName = from ? from.split("/").pop() : "";
   return {
     kind: "jack",
@@ -1194,8 +1202,7 @@ function toggleJack(row, col) {
     );
   if (s.kind === "covered") {
     message(
-      row.name +
-        " is already installed for your user, so every project has it.",
+      row.name + " is already installed globally, so every project has it.",
     );
     return;
   }
@@ -1228,12 +1235,12 @@ $("kind-filter").onchange = () => {
   renderMatrix();
 };
 function placeName(col) {
-  return col?.kind === "user" ? "your user" : col?.label || "";
+  return col?.kind === "user" ? "Global" : col?.label || "";
 }
 function columnHead(col) {
   const head = el("div", undefined, "col-head col-" + col.kind);
   head.setAttribute("role", "columnheader");
-  const title = el("strong", col.kind === "user" ? "Your user" : col.label);
+  const title = el("strong", col.kind === "user" ? "Global" : col.label);
   title.title = col.path;
   head.append(
     title,
@@ -1243,7 +1250,7 @@ function columnHead(col) {
         ? "this project"
         : col.kind === "folder"
           ? "folder · shared below"
-          : "every project",
+          : "all projects",
       "col-kind",
     ),
   );
@@ -1427,7 +1434,7 @@ function renderMatrix() {
           "aria-label",
           row.name +
             " · " +
-            (col.kind === "user" ? "your user" : col.label) +
+            (col.kind === "user" ? "Global" : col.label) +
             ": " +
             s.label,
         );
@@ -1568,7 +1575,7 @@ async function saveAndReview() {
   const project = bay.columns.find((c) => c.kind === "project");
   const targets = [];
   if (user && changed.has(user.path))
-    targets.push({ path: user.path, label: "Your user" });
+    targets.push({ path: user.path, label: "Global" });
   const folders = [...changed].filter(
     (p) => bay.columns.find((c) => c.path === p)?.kind === "folder",
   );
@@ -1604,8 +1611,6 @@ function renderLibraries() {
   const list = $("library-list");
   list.replaceChildren();
   const sources = Object.entries(state.config.sources);
-  $("count").textContent =
-    sources.length + (sources.length === 1 ? " library" : " libraries");
   if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
   for (const [name, spec] of sources) {
     const row = el("div", undefined, "library-row");
@@ -1622,11 +1627,137 @@ function renderLibraries() {
     if (spec.path)
       row.append(revealButton(spec.path, "Show in " + state.file_manager));
     list.append(row);
+    if (spec.path) list.append(starterEditor(name));
   }
+}
+// Maintainers choose the starter set offered to new teammates (profiles/starter.manifest).
+function starterEditor(source) {
+  const box = el("details", undefined, "starter-editor");
+  const summary = el("summary", "Starter set");
+  box.append(summary);
+  box.ontoggle = () => {
+    if (!box.open || box.dataset.loaded) return;
+    box.dataset.loaded = "1";
+    task(async () => {
+      const current = await api("starter?" + query({ source }));
+      const chosen = new Set(current.assets);
+      const assets = bay.rows.filter(
+        (r) => r.source === source && r.status === "available",
+      );
+      const body = el("div", undefined, "starter-body");
+      body.append(
+        el(
+          "p",
+          current.error
+            ? "The current file has a problem: " + current.error
+            : "New teammates are offered these in first setup and on Library. Saving commits profiles/starter.manifest in the library.",
+          current.error ? "hint warn" : "hint",
+        ),
+      );
+      const picks = el("div", undefined, "starter-picks");
+      for (const asset of assets) {
+        const key = asset.kind + "/" + asset.name;
+        const label = el("label", undefined, "check");
+        const input = el("input");
+        input.type = "checkbox";
+        input.checked = chosen.has(source + "/" + key) || chosen.has(key);
+        input.dataset.key = key;
+        label.append(
+          input,
+          " " + asset.name,
+          el("span", KIND_LABELS[asset.kind] || asset.kind, "kind-tag"),
+        );
+        picks.append(label);
+      }
+      body.append(picks);
+      const note = el("input");
+      note.value = "Update the starter set";
+      const noteLabel = el("label", "Note for the commit");
+      noteLabel.append(note);
+      body.append(noteLabel);
+      const changes = el("div", undefined, "share-changes");
+      body.append(changes);
+      const actions = el("div", undefined, "actions");
+      const review = el("button", "Review", "quiet");
+      review.type = "button";
+      const save = el("button", "Save and push");
+      save.type = "button";
+      save.disabled = true;
+      actions.append(review, save);
+      body.append(actions);
+      let plan = null;
+      picks.onchange = () => {
+        plan = null;
+        save.disabled = true;
+        changes.replaceChildren();
+      };
+      review.onclick = () =>
+        task(async () => {
+          const keys = [...picks.querySelectorAll("input:checked")].map(
+            (input) => input.dataset.key,
+          );
+          plan = await api("starter-plan", {
+            source,
+            assets: keys,
+            clear: !keys.length,
+          });
+          const lines = [];
+          if (plan.diff) {
+            const pre = el("pre", undefined, "diff-text");
+            for (const line of plan.diff.split("\n"))
+              pre.append(
+                el(
+                  "span",
+                  line + "\n",
+                  line.startsWith("+") && !line.startsWith("+++")
+                    ? "diff-add"
+                    : line.startsWith("-") && !line.startsWith("---")
+                      ? "diff-del"
+                      : "diff-meta",
+                ),
+              );
+            lines.push(pre);
+          }
+          for (const conflict of plan.conflicts)
+            lines.push(el("p", conflict.message, "hint warn"));
+          if (!plan.changes.length)
+            lines.push(
+              el("p", "The starter set is already like this.", "hint"),
+            );
+          changes.replaceChildren(...lines);
+          save.disabled = !plan.can_apply || !plan.changes.length;
+        });
+      save.onclick = () =>
+        task(async () => {
+          if (!note.value.trim()) throw new Error("Add a short note.");
+          const result = await api("starter-apply", {
+            fingerprint: plan.fingerprint,
+            note: note.value.trim(),
+            push: true,
+          });
+          plan = null;
+          save.disabled = true;
+          changes.replaceChildren(
+            el(
+              "p",
+              result.pushed
+                ? "Saved and pushed. Teammates see it after Update library."
+                : "Saved in the library, not pushed: " +
+                    (result.push_error || ""),
+              result.pushed ? "hint" : "hint warn",
+            ),
+          );
+          home = await api("home").catch(() => home);
+        });
+      box.append(body);
+    });
+  };
+  return box;
 }
 // ---------------------------------------------------------------- library home (ADR 005)
 const WHERE_VIEWS = ["patch", "projects", "installed", "archive", "outbound"];
-let showAllAssets = false,
+let previewOpen = null,
+  showAllAssets = false,
   shareData = null,
   shareOpen = null,
   setupAgents = null;
@@ -1659,6 +1790,20 @@ function owned(a) {
   return a.have.user || a.have.project;
 }
 function libraryStrip(lib) {
+  if (lib.personal) {
+    const strip = el("div", undefined, "strip");
+    const count = home.assets.filter((a) => a.source === lib.source).length;
+    const text = el("p");
+    text.append(
+      "Your own library · " + count + (count === 1 ? " asset" : " assets"),
+      el(
+        "small",
+        "Only on this machine. Share an asset from Share when it is ready.",
+      ),
+    );
+    strip.append(el("span", undefined, "strip-dot ok"), text);
+    return strip;
+  }
   const strip = el("div", undefined, "strip");
   const waiting = lib.behind || lib.new || lib.updated;
   strip.append(el("span", undefined, "strip-dot" + (waiting ? "" : " ok")));
@@ -1753,8 +1898,8 @@ function starterBanner() {
           source: lib.source,
           profile: "starter",
         });
-        applyNote = "Starter set ready everywhere for you.";
-        await previewMany([{ path: home.user, label: "Everywhere for you" }]);
+        applyNote = "Starter set ready globally, in all your projects.";
+        await previewMany([{ path: home.user, label: "Global" }]);
       });
     box.append(el("span", undefined, "strip-dot"), text, button);
     return box;
@@ -1782,6 +1927,12 @@ function assetRow(a) {
         (a.shared_at ? " · " + ago(a.shared_at) : ""),
     );
   if (home.libraries.length > 1) meta.push(a.source);
+  for (const version of a.versions || [])
+    meta.push(
+      "Your version: " +
+        version.name +
+        (version.team_changed ? " (team changed since)" : ""),
+    );
   if (meta.length) row.append(el("p", meta.join(" · "), "lib-meta"));
   const act = el("div", undefined, "lib-act");
   const have = (text) => {
@@ -1800,7 +1951,7 @@ function assetRow(a) {
     act.title = a.error || "";
   } else if (a.kind === "powers") {
     if (a.power === "current") {
-      have("For you");
+      have("Global");
       link("Remove", () => task(() => powerAction(a, "uninstall")));
     } else if (a.power === "unavailable" || !a.power) {
       act.append(el("span", "Needs Kiro CLI", "lib-meta"));
@@ -1815,18 +1966,16 @@ function assetRow(a) {
       act.append(button);
     }
   } else if (a.have.user) {
-    have(a.linked.user ? "For you" : "For you, not linked yet");
+    have(a.linked.user ? "Global" : "Global, not linked yet");
     if (!a.linked.user)
       link("Finish", () =>
-        task(() =>
-          previewMany([{ path: home.user, label: "Everywhere for you" }]),
-        ),
+        task(() => previewMany([{ path: home.user, label: "Global" }])),
       );
     link("Remove", () => task(() => removeAsset(a, home.user)));
   } else if (a.have.project && a.have.from) {
-    have("From " + a.have.from.split("/").pop());
+    have("Via folder " + a.have.from.split("/").pop());
   } else if (a.have.project) {
-    have("In " + projectName());
+    have("Only in " + projectName());
     link("Remove", () => task(() => removeAsset(a, home.project)));
   } else {
     const button = el("button", "Get", a.new || a.updated ? "" : "quiet");
@@ -1836,15 +1985,75 @@ function assetRow(a) {
   }
   if (a.status === "available")
     link("Copy get command", () => copyCommand(a), "copy-get");
+  link(previewOpen === a.key ? "Hide preview" : "Preview", () => {
+    previewOpen = previewOpen === a.key ? null : a.key;
+    renderHome();
+  });
   row.append(act);
+  if (previewOpen === a.key) {
+    row.classList.add("open");
+    row.append(assetPreview(a));
+  }
   return row;
 }
-function homeSection(title, rows, limit) {
-  const section = el("section", undefined, "lib-section");
-  section.append(el("h2", title, "lib-heading"));
-  const list = el("div", undefined, "lib-list");
+// Read-only look inside an asset, with a way to open its folder.
+function assetPreview(a) {
+  const panel = el("div", undefined, "share-panel asset-preview");
+  panel.append(el("p", "Loading…", "hint"));
+  api(
+    "asset?" +
+      query({
+        target: home.project,
+        source: a.source,
+        kind: a.kind,
+        name: a.name,
+      }),
+  )
+    .then((view) => {
+      const head = el("div", undefined, "preview-head");
+      head.append(
+        el(
+          "p",
+          view.files.length +
+            (view.files.length === 1 ? " file" : " files") +
+            (view.more_files ? " (+" + view.more_files + " more)" : "") +
+            " · " +
+            shortPath(view.path),
+          "lib-meta",
+        ),
+        revealButton(view.path, "Show in " + (state.file_manager || "folder")),
+      );
+      panel.replaceChildren(head);
+      if (view.files.length > 1) {
+        const list = el("ul", undefined, "preview-files");
+        for (const file of view.files)
+          list.append(el("li", file.path + " · " + bytes(file.size)));
+        panel.append(list);
+      }
+      if (view.text !== null) {
+        panel.append(el("p", view.main, "diff-file"));
+        panel.append(el("pre", view.text, "diff-text preview-text"));
+        if (view.truncated)
+          panel.append(el("p", "Showing the beginning of the file.", "hint"));
+      } else if (view.main)
+        panel.append(el("p", view.main + " is not a text file.", "hint"));
+    })
+    .catch((error) =>
+      panel.replaceChildren(el("p", error.message, "hint warn")),
+    );
+  return panel;
+}
+function bytes(size) {
+  return size < 1024
+    ? size + " B"
+    : size < 1048576
+      ? Math.round(size / 1024) + " KB"
+      : (size / 1048576).toFixed(1) + " MB";
+}
+function homeSection(title, rows, limit, id, closed = false) {
+  const searching = !!$("home-search").value.trim();
   const shown = limit && rows.length > limit ? rows.slice(0, limit) : rows;
-  list.append(...shown.map(assetRow));
+  const items = shown.map(assetRow);
   if (shown.length < rows.length) {
     const more = el("button", "Show all " + rows.length, "link lib-more");
     more.type = "button";
@@ -1852,10 +2061,33 @@ function homeSection(title, rows, limit) {
       showAllAssets = true;
       renderHome();
     };
-    list.append(more);
+    items.push(more);
   }
+  return listSection(title + " · " + rows.length, items, id, closed, searching);
+}
+// A section is an expander; its open or closed state is remembered per browser.
+function listSection(title, items, id, closed = false, force = false) {
+  const section = el("details", undefined, "lib-section");
+  const remembered = prefs("section-" + id);
+  section.open = force || (remembered ? remembered === "open" : !closed);
+  section.ontoggle = () => {
+    if (!force) prefs("section-" + id, section.open ? "open" : "closed");
+  };
+  section.append(el("summary", title, "lib-heading"));
+  const list = el("div", undefined, "lib-list");
+  list.append(...items);
   section.append(list);
   return section;
+}
+function prefs(key, value) {
+  try {
+    if (value === undefined)
+      return localStorage.getItem("captain-share-" + key);
+    localStorage.setItem("captain-share-" + key, value);
+  } catch {
+    // Without storage, sections use their defaults.
+  }
+  return null;
 }
 function renderHome() {
   if (!home) {
@@ -1864,8 +2096,9 @@ function renderHome() {
     );
     return;
   }
+  const teams = home.libraries.filter((lib) => !lib.personal);
   $("home-title").textContent =
-    home.libraries.length === 1
+    teams.length === 1 && home.libraries.length === 1
       ? home.libraries[0].source.charAt(0).toUpperCase() +
         home.libraries[0].source.slice(1) +
         " library"
@@ -1882,16 +2115,18 @@ function renderHome() {
   const mine = assets.filter((a) => !fresh.includes(a) && owned(a));
   const rest = assets.filter((a) => !fresh.includes(a) && !owned(a));
   const lists = [];
-  if (fresh.length) lists.push(homeSection("New from your team", fresh));
-  if (mine.length) lists.push(homeSection("You have", mine));
+  if (fresh.length)
+    lists.push(homeSection("New from your team", fresh, 0, "home-new"));
+  if (mine.length) lists.push(homeSection("You have", mine, 0, "home-mine"));
   if (rest.length)
     lists.push(
       homeSection(
-        (mine.length || fresh.length ? "Everything else" : "In the library") +
-          " · " +
-          rest.length,
+        mine.length || fresh.length ? "Everything else" : "In the library",
         rest,
         query || showAllAssets ? 0 : 12,
+        "home-rest",
+        // Once you have assets, the rest of the library waits behind its heading.
+        !query && (mine.length > 0 || fresh.length > 0),
       ),
     );
   if (!assets.length)
@@ -1899,6 +2134,7 @@ function renderHome() {
       el("p", query ? "Nothing matches." : "This library is empty.", "hint"),
     );
   $("home-lists").replaceChildren(...lists);
+  $("home-lists").querySelectorAll(".lib-row").forEach(expandable);
 }
 $("home-search").oninput = () => renderHome();
 async function getAsset(a, where) {
@@ -1919,13 +2155,13 @@ async function getAsset(a, where) {
   applyNote =
     a.name +
     (where === "user"
-      ? " is ready in every project."
+      ? " is ready globally, in all your projects."
       : " is ready in " + projectName() + ".") +
     " Start a new agent session to load it.";
   await previewMany([
     {
       path: target,
-      label: where === "user" ? "Everywhere for you" : projectName(),
+      label: where === "user" ? "Global" : projectName(),
     },
   ]);
   $("where-project").textContent = "Only in " + projectName();
@@ -1972,24 +2208,48 @@ async function renderShare() {
   }
   const lists = [];
   const project = projectName();
-  if (shareData.local.length) {
-    const section = el("section", undefined, "lib-section");
-    section.append(
-      el("h2", "In " + project + " · not in a library", "lib-heading"),
+  const fresh = shareData.local.filter((row) => !row.exists_in);
+  const copies = shareData.local.filter((row) => row.exists_in);
+  if (fresh.length)
+    lists.push(
+      listSection(
+        "In " + project + " · not in a library",
+        fresh.map((row) => shareRow(row, "local")),
+        "share-fresh",
+      ),
     );
-    const list = el("div", undefined, "lib-list");
-    for (const row of shareData.local) list.append(shareRow(row, "local"));
-    section.append(list);
-    lists.push(section);
-  }
-  if (shareData.edited.length) {
-    const section = el("section", undefined, "lib-section");
-    section.append(el("h2", "Library assets you edited", "lib-heading"));
-    const list = el("div", undefined, "lib-list");
-    for (const row of shareData.edited) list.append(shareRow(row, "edited"));
-    section.append(list);
-    lists.push(section);
-  }
+  if ((shareData.personal || []).length)
+    lists.push(
+      listSection(
+        "In your own library",
+        shareData.personal.map(personalRow),
+        "share-personal",
+      ),
+    );
+  if (copies.length)
+    lists.push(
+      listSection(
+        "Your copies of team assets",
+        copies.map((row) => shareRow(row, "local")),
+        "share-copies",
+      ),
+    );
+  if ((shareData.versions || []).length)
+    lists.push(
+      listSection(
+        "Your versions",
+        shareData.versions.map(versionRow),
+        "share-versions",
+      ),
+    );
+  if (shareData.edited.length)
+    lists.push(
+      listSection(
+        "Library assets you edited",
+        shareData.edited.map((row) => shareRow(row, "edited")),
+        "share-edited",
+      ),
+    );
   if (!lists.length)
     lists.push(
       el(
@@ -2001,8 +2261,10 @@ async function renderShare() {
       ),
     );
   box.replaceChildren(...lists);
+  box.querySelectorAll(".lib-row").forEach(expandable);
 }
 function shareRow(row, type) {
+  if (type === "local" && row.exists_in && row.differs) return extendedRow(row);
   const id = type + "/" + (row.source || "") + "/" + row.kind + "/" + row.name;
   const wrap = el("div", undefined, "lib-row");
   const name = el("div", undefined, "lib-name");
@@ -2304,7 +2566,7 @@ function renderAgents() {
       home = await api("home");
       renderAgents();
       applyNote = "Your agents are updated.";
-      await previewMany([{ path: home.user, label: "Everywhere for you" }]);
+      await previewMany([{ path: home.user, label: "Global" }]);
     }),
   );
 }
@@ -2419,10 +2681,10 @@ function renderImport() {
     pick.type = "checkbox";
     pick.checked = !candidate.error;
     pick.disabled = !!candidate.error;
-    pick.setAttribute("aria-label", "Add " + candidate.name);
+    pick.setAttribute("aria-label", "Install " + candidate.name);
     const name = el("input");
     name.value = candidate.name;
-    name.setAttribute("aria-label", "Name in the library");
+    name.setAttribute("aria-label", "Name");
     let kind = null;
     if ((candidate.kinds || []).length > 1) {
       kind = el("select");
@@ -2459,65 +2721,54 @@ function renderImport() {
       ),
     );
   panel.append(list);
-  const libraries = importLibraries();
-  let library = null;
-  if (libraries.length > 1) {
-    library = el("select");
-    for (const lib of libraries) {
-      const option = el("option", lib.source);
-      option.value = lib.source;
-      library.append(option);
-    }
-    const label = el("label", "Library");
-    label.append(library);
-    panel.append(label);
-  }
-  const note = el("textarea");
-  note.rows = 2;
-  note.value =
-    "Add " +
-    importStage.candidates
-      .filter((c) => !c.error)
-      .map((c) => c.name)
-      .join(", ");
-  const noteLabel = el("label", "What is it good for? Teammates see this.");
-  noteLabel.append(note);
-  panel.append(noteLabel);
-  const pushBox = el("label", undefined, "check");
-  const push = el("input");
-  push.type = "checkbox";
-  push.checked = true;
-  pushBox.append(push, " Push to the team now");
-  panel.append(pushBox);
-  const changes = el("div", undefined, "share-changes");
-  panel.append(changes);
+  // Where the tried skill should work; it lives in your own library either way.
+  const modes = el("fieldset", undefined, "where");
+  modes.append(el("legend", "Where should it work?"));
+  const option = (value, title, text, checked) => {
+    const label = el("label", undefined, "where-option");
+    const input = el("input");
+    input.type = "radio";
+    input.name = "install-where";
+    input.value = value;
+    input.checked = checked;
+    const span = el("span");
+    span.append(el("strong", title), " " + text);
+    label.append(input, span);
+    modes.append(label);
+    return input;
+  };
+  const global = option(
+    "user",
+    "Global",
+    "All your projects on this machine.",
+    true,
+  );
+  option(
+    "project",
+    "Only in " + projectName(),
+    "The project this window opened on.",
+    false,
+  );
+  panel.append(modes);
+  panel.append(
+    el(
+      "p",
+      "It is kept in your own library (~/Libraries/my-skills, only on this machine). Share it with the team later from Share.",
+      "hint",
+    ),
+  );
   const actions = el("div", undefined, "actions");
-  const check = el("button", "Review", "quiet");
-  check.type = "button";
-  const go = el("button", "Add to library");
+  const go = el("button", "Install…");
   go.type = "button";
-  go.disabled = true;
   const cancel = el("button", "Cancel", "link");
   cancel.type = "button";
   cancel.onclick = () => {
     importStage = null;
     renderImport();
   };
-  actions.append(check, go, cancel);
+  actions.append(go, cancel);
   panel.append(actions);
-  let plan = null;
-  const invalidatePlan = () => {
-    plan = null;
-    go.disabled = true;
-    changes.replaceChildren();
-  };
-  for (const item of items) {
-    item.pick.onchange = invalidatePlan;
-    item.name.oninput = invalidatePlan;
-    if (item.kind) item.kind.onchange = invalidatePlan;
-  }
-  if (library) library.onchange = invalidatePlan;
-  check.onclick = () =>
+  go.onclick = () =>
     task(async () => {
       const chosen = items
         .filter((item) => item.pick.checked)
@@ -2526,80 +2777,53 @@ function renderImport() {
           kind: item.kind ? item.kind.value : item.candidate.kind,
           name: item.name.value.trim(),
         }));
-      if (!chosen.length) throw new Error("Choose at least one asset to add.");
-      if (!libraries.length)
-        throw new Error("Add a Git library first; assets are committed there.");
-      plan = await api("import-plan", {
+      if (!chosen.length) throw new Error("Choose at least one to install.");
+      const personal = await api("personal-library", {});
+      const plan = await api("import-plan", {
         stage: importStage.stage,
         items: chosen,
-        source: library?.value || libraries[0].source,
+        source: personal.source,
       });
-      const lines = plan.changes.map((change) => {
-        const line = el("div", undefined, "change");
-        line.append(
-          el("strong", change.op),
-          " ",
-          el("code", shortPath(change.path)),
+      if (!plan.can_apply)
+        throw new Error(
+          plan.conflicts.map((c) => c.message).join(" ") ||
+            "These cannot be installed.",
         );
-        return line;
-      });
-      for (const path of plan.commit_paths || []) {
-        const line = el("div", undefined, "change");
-        line.append(el("strong", "Commit"), " ", el("code", path));
-        lines.push(line);
-      }
-      for (const conflict of plan.conflicts)
-        lines.push(el("p", conflict.message, "hint warn"));
-      changes.replaceChildren(...lines);
-      go.disabled = !plan.can_apply;
-    });
-  go.onclick = () =>
-    task(async () => {
-      if (!plan) return;
-      if (!note.value.trim())
-        throw new Error("Say in a few words what it is good for.");
-      const result = await api("import-apply", {
+      await api("import-apply", {
         fingerprint: plan.fingerprint,
-        note: note.value.trim(),
-        push: push.checked,
+        note: "Add " + chosen.map((c) => c.name).join(", "),
+        push: false,
       });
-      home = await api("home").catch(() => home);
-      const done = el("div", undefined, "share-done");
-      done.append(
-        el(
-          "strong",
-          result.pushed
-            ? "Added to the library and shared."
-            : "Added to the library. Not pushed yet.",
-        ),
-      );
-      if (result.push_error)
-        done.append(el("p", "Push failed: " + result.push_error, "hint warn"));
-      done.append(el("p", "It is in Library now. Teammates can run:", "hint"));
-      for (const command of result.get_commands || []) {
-        const line = el("div", undefined, "copy-line");
-        const code = el("code", command);
-        const copy = el("button", "Copy", "quiet");
-        copy.type = "button";
-        copy.onclick = () =>
-          navigator.clipboard
-            .writeText(command)
-            .then(() => message("Copied. Paste it in chat."))
-            .catch(() => message(command));
-        line.append(code, copy);
-        done.append(line);
-      }
-      const open = el("button", "Open Library");
-      open.type = "button";
-      open.onclick = () => {
-        importStage = null;
-        renderImport();
-        view = "home";
-        render();
-        window.scrollTo(0, 0);
+      importStage = null;
+      renderImport();
+      // Link them like any library asset: one review for the chosen place.
+      const target = global.checked ? home.user : home.project;
+      await cancelReview();
+      const result = await api("selections", {
+        target,
+        source: personal.source,
+        direction: "inbound",
+        selections: chosen.map((c) => ({ kind: c.kind, name: c.name })),
+      });
+      undo = {
+        steps: [{ target, direction: "inbound", previous: result.previous }],
+        patches: new Map(),
+        touched: [],
       };
-      done.append(open);
-      panel.replaceChildren(done);
+      applyNote =
+        chosen.map((c) => c.name).join(", ") +
+        (global.checked
+          ? " installed globally. Try it in a new agent session."
+          : " installed in " +
+            projectName() +
+            ". Try it in a new agent session.");
+      await refresh(true);
+      await previewMany([
+        {
+          path: target,
+          label: global.checked ? "Global" : projectName(),
+        },
+      ]);
     });
   box.replaceChildren(panel);
 }
@@ -2661,7 +2885,7 @@ function foundList(box, intro) {
           message(
             "Library " +
               lib.name +
-              " added for every project. Get what you need from it.",
+              " added globally. Get what you need from it.",
           );
         });
       act.append(add);
@@ -2678,6 +2902,596 @@ function foundList(box, intro) {
         ),
       );
   });
+}
+
+// ---------------------------------------------------------------- extended copies (ADR 007)
+function diffView(result) {
+  const box = el("div", undefined, "diff");
+  if (!result.files.length) {
+    box.append(el("p", "No differences.", "hint"));
+    return box;
+  }
+  for (const file of result.files) {
+    const head = el("p", undefined, "diff-file");
+    head.append(
+      el(
+        "strong",
+        { added: "Added", removed: "Removed", changed: "Changed" }[
+          file.status
+        ] || file.status,
+        file.status === "removed" ? "op-remove" : "",
+      ),
+      " ",
+      el("code", file.path),
+    );
+    box.append(head);
+    if (file.binary) {
+      box.append(el("p", "Binary file; contents not shown.", "hint"));
+      continue;
+    }
+    if (!file.diff) continue;
+    const pre = el("pre", undefined, "diff-text");
+    for (const line of file.diff.split("\n")) {
+      const cls =
+        line.startsWith("+++") || line.startsWith("---")
+          ? "diff-meta"
+          : line.startsWith("@@")
+            ? "diff-hunk"
+            : line.startsWith("+")
+              ? "diff-add"
+              : line.startsWith("-")
+                ? "diff-del"
+                : "";
+      pre.append(el("span", line + "\n", cls));
+    }
+    box.append(pre);
+  }
+  if (result.truncated)
+    box.append(el("p", "Showing the first part of the changes.", "hint"));
+  return box;
+}
+function query(params) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => key + "=" + encodeURIComponent(value))
+    .join("&");
+}
+// One open panel per row, keyed by row id and kind of panel.
+let versionPanel = null;
+function toggleVersionPanel(id) {
+  versionPanel = versionPanel === id ? null : id;
+  renderShare();
+}
+function extendedRow(row) {
+  // A local copy of a library asset that differs from it: three explicit choices.
+  const id = "x/" + row.exists_in + "/" + row.kind + "/" + row.name;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", row.name),
+    el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+    el("span", "Your copy differs", "badge-edit"),
+  );
+  wrap.append(name);
+  if (row.description) wrap.append(el("p", row.description, "lib-desc"));
+  wrap.append(
+    el(
+      "p",
+      row.path + " · the team version is in " + row.exists_in,
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  const button = (label, panel, cls = "quiet") => {
+    const b = el(
+      "button",
+      label,
+      cls + (versionPanel === id + panel ? " on" : ""),
+    );
+    b.type = "button";
+    b.onclick = () => toggleVersionPanel(id + panel);
+    act.append(b);
+  };
+  button("Send my changes…", "/propose");
+  button("Keep as my version…", "/keep");
+  const use = el("button", "Use team version…", "link");
+  use.type = "button";
+  use.onclick = () =>
+    task(() => adoptAsset({ ...row, source: row.exists_in }, false));
+  act.append(use);
+  const show = el("button", "Show changes", "link");
+  show.type = "button";
+  show.onclick = () => toggleVersionPanel(id + "/diff");
+  act.append(show);
+  wrap.append(act);
+  const spec = {
+    target: home.project,
+    source: row.exists_in,
+    kind: row.kind,
+    name: row.name,
+    path: row.path,
+  };
+  if (versionPanel === id + "/diff") wrap.append(diffPanel("diff", spec));
+  if (versionPanel === id + "/propose") wrap.append(proposePanel(row, spec));
+  if (versionPanel === id + "/keep") wrap.append(keepPanel(row, spec));
+  return wrap;
+}
+function diffPanel(endpoint, params) {
+  const panel = el("div", undefined, "share-panel");
+  panel.append(el("p", "Loading changes…", "hint"));
+  task(async () => {
+    const result = await api(endpoint + "?" + query(params));
+    panel.replaceChildren(diffView(result));
+  });
+  return panel;
+}
+function proposePanel(row, spec) {
+  const panel = el("div", undefined, "share-panel");
+  const note = el("textarea");
+  note.rows = 2;
+  note.value = "Improve " + row.name;
+  const noteLabel = el(
+    "label",
+    "What did you change, and why? Teammates see this.",
+  );
+  noteLabel.append(note);
+  panel.append(noteLabel);
+  const modes = el("fieldset", undefined, "where");
+  modes.append(el("legend", "How should it reach the team?"));
+  const option = (value, title, text, checked) => {
+    const label = el("label", undefined, "where-option");
+    const input = el("input");
+    input.type = "radio";
+    input.name = "propose-mode-" + row.name;
+    input.value = value;
+    input.checked = checked;
+    const span = el("span");
+    span.append(el("strong", title), " " + text);
+    label.append(input, span);
+    modes.append(label);
+    return input;
+  };
+  const direct = option(
+    "direct",
+    "Update the team version now",
+    "Commit and push to the library; this project then links to it.",
+    true,
+  );
+  option(
+    "review",
+    "Ask for review",
+    "Push your version to a new branch and open a pull or merge request. Your library checkout is not changed.",
+    false,
+  );
+  panel.append(modes);
+  const changes = el("div", undefined, "share-changes");
+  panel.append(changes);
+  const actions = el("div", undefined, "actions");
+  const go = el("button", "Send my changes");
+  go.type = "button";
+  go.disabled = true;
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => toggleVersionPanel(versionPanel);
+  actions.append(go, cancel);
+  panel.append(actions);
+  let plan = null;
+  const load = () =>
+    task(async () => {
+      go.disabled = true;
+      changes.replaceChildren(el("p", "Preparing…", "hint"));
+      plan = await api("propose-plan", {
+        ...spec,
+        mode: direct.checked ? "direct" : "review",
+      });
+      const lines = plan.changes.map((change) => {
+        const line = el("div", undefined, "change");
+        line.append(
+          el("strong", change.op),
+          " ",
+          el("code", shortPath(change.path)),
+        );
+        return line;
+      });
+      for (const path of plan.commit_paths || []) {
+        const line = el("div", undefined, "change");
+        line.append(
+          el("strong", plan.branch ? "Commit on " + plan.branch : "Commit"),
+          " ",
+          el("code", path),
+        );
+        lines.push(line);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      changes.replaceChildren(...lines);
+      go.disabled = !plan.can_apply;
+    });
+  modes.onchange = load;
+  go.onclick = () =>
+    task(async () => {
+      if (!note.value.trim())
+        throw new Error("Say in a few words what you changed.");
+      const result = await api("propose-apply", {
+        fingerprint: plan.fingerprint,
+        note: note.value.trim(),
+        push: true,
+      });
+      const done = el("div", undefined, "share-done");
+      if (result.branch) {
+        done.append(
+          el(
+            "strong",
+            result.pushed
+              ? "Your version is on branch " + result.branch + "."
+              : "Your version is committed on branch " +
+                  result.branch +
+                  " but not pushed.",
+          ),
+        );
+        if (result.review_url) {
+          const link = el("a", "Open the review request", "about-tour");
+          link.href = result.review_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          done.append(el("p", "Ask a teammate to review it:", "hint"), link);
+        } else if (result.pushed)
+          done.append(
+            el(
+              "p",
+              "Open a pull or merge request for that branch in your Git host.",
+              "hint",
+            ),
+          );
+        done.append(
+          el(
+            "p",
+            "Your copy stays here until the change is merged; then use the team version.",
+            "hint",
+          ),
+        );
+      } else {
+        done.append(
+          el(
+            "strong",
+            result.pushed
+              ? "The team version now has your changes."
+              : "Your changes are committed in the library but not pushed.",
+          ),
+        );
+        if (result.adopted)
+          done.append(
+            el(
+              "p",
+              projectName() +
+                " now links to the team version; your copy is in the Archive.",
+              "hint",
+            ),
+          );
+      }
+      if (result.push_error)
+        done.append(el("p", "Push failed: " + result.push_error, "hint warn"));
+      if (result.adopt_error)
+        done.append(
+          el(
+            "p",
+            "Your copy is still here: " + result.adopt_error,
+            "hint warn",
+          ),
+        );
+      panel.replaceChildren(done);
+      shareData = null;
+      home = await api("home").catch(() => home);
+    });
+  setTimeout(load);
+  return panel;
+}
+function keepPanel(row, spec) {
+  const panel = el("div", undefined, "share-panel");
+  const base = row.name.replace(/\.(md|json)$/, "");
+  const ext = row.name.slice(base.length);
+  const input = el("input");
+  input.value = base + "-" + suggestName(projectName()) + ext;
+  const label = el("label", "Name for your version");
+  label.append(input);
+  panel.append(label);
+  panel.append(
+    el(
+      "p",
+      "Agents then see two different names. Your current copy is archived and a renamed copy is written; the name inside it is updated too.",
+      "hint",
+    ),
+  );
+  const teamBox = el("label", undefined, "check");
+  const team = el("input");
+  team.type = "checkbox";
+  team.checked = true;
+  teamBox.append(team, " Also use the team version as " + row.name);
+  panel.append(teamBox);
+  const actions = el("div", undefined, "actions");
+  const go = el("button", "Review…");
+  go.type = "button";
+  go.onclick = () =>
+    task(async () => {
+      await cancelReview();
+      applyNote =
+        "Kept as " +
+        input.value.trim() +
+        ". You will see here when the team version changes.";
+      shareData = null;
+      versionPanel = null;
+      await preview(
+        { ...spec, new_name: input.value.trim(), link_team: team.checked },
+        "keep-plan",
+      );
+    });
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => toggleVersionPanel(versionPanel);
+  actions.append(go, cancel);
+  panel.append(actions);
+  return panel;
+}
+function versionRow(version) {
+  const id = "v/" + version.key;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", version.name),
+    el("span", KIND_LABELS[version.kind] || version.kind, "kind-tag"),
+  );
+  if (version.team_changed)
+    name.append(el("span", "Team changed", "badge-new"));
+  wrap.append(name);
+  wrap.append(
+    el(
+      "p",
+      "Your version of " +
+        version.of +
+        " (" +
+        version.source +
+        ")" +
+        (version.team_changed
+          ? " · the team version changed since you made yours"
+          : " · up to date with the team version it came from"),
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  if (version.team_changed) {
+    const show = el("button", "Show team changes", "quiet");
+    show.type = "button";
+    show.onclick = () => toggleVersionPanel(id);
+    act.append(show);
+  }
+  wrap.append(act);
+  if (versionPanel === id)
+    wrap.append(
+      diffPanel("version-diff", { target: home.project, key: version.key }),
+    );
+  return wrap;
+}
+
+// ---------------------------------------------------------------- compact lists
+// Compact: one line per item; the expander shows its description and other actions.
+function applyDensity() {
+  const compact = prefs("density") === "compact";
+  document.body.classList.toggle("compact", compact);
+  document.querySelectorAll(".density").forEach((button) => {
+    button.textContent = compact ? "Detailed view" : "Compact view";
+    button.setAttribute("aria-pressed", String(compact));
+  });
+}
+document.querySelectorAll(".density").forEach(
+  (button) =>
+    (button.onclick = () => {
+      prefs(
+        "density",
+        document.body.classList.contains("compact") ? "detailed" : "compact",
+      );
+      applyDensity();
+    }),
+);
+applyDensity();
+function expandable(row) {
+  const name = row.querySelector(".lib-name");
+  if (!name || name.querySelector(".row-toggle")) return;
+  const toggle = el("button", undefined, "row-toggle");
+  toggle.type = "button";
+  toggle.setAttribute("aria-expanded", String(row.classList.contains("open")));
+  toggle.setAttribute("aria-label", "Show details");
+  toggle.onclick = () => {
+    const open = row.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  name.prepend(toggle);
+  // Panels opened from a row keep it expanded.
+  if (row.querySelector(".share-panel")) {
+    row.classList.add("open");
+    toggle.setAttribute("aria-expanded", "true");
+  }
+}
+
+// ---------------------------------------------------------------- own library → team (ADR 008)
+function personalRow(row) {
+  const id = "p/" + row.kind + "/" + row.name;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", row.name),
+    el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+  );
+  wrap.append(name);
+  if (row.description) wrap.append(el("p", row.description, "lib-desc"));
+  wrap.append(
+    el(
+      "p",
+      "In your own library" +
+        (row.exists_in ? " · the team also has one with this name" : ""),
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  const open = el(
+    "button",
+    "Share with team…",
+    versionPanel === id ? "quiet on" : "",
+  );
+  open.type = "button";
+  open.onclick = () => toggleVersionPanel(id);
+  act.append(open);
+  wrap.append(act);
+  if (versionPanel === id) wrap.append(promotePanel(row));
+  return wrap;
+}
+function promotePanel(row) {
+  const panel = el("div", undefined, "share-panel");
+  const teams = (home?.libraries || []).filter(
+    (lib) => !lib.personal && lib.is_repo,
+  );
+  if (!teams.length) {
+    panel.append(
+      el("p", "Add your team library first (Settings).", "hint warn"),
+    );
+    return panel;
+  }
+  const note = el("textarea");
+  note.rows = 2;
+  note.value = row.description || "Add " + row.name;
+  const noteLabel = el("label", "What is it good for? Teammates see this.");
+  noteLabel.append(note);
+  panel.append(noteLabel);
+  let team = null;
+  if (teams.length > 1) {
+    team = el("select");
+    for (const lib of teams) {
+      const option = el("option", lib.source);
+      option.value = lib.source;
+      team.append(option);
+    }
+    const label = el("label", "Team library");
+    label.append(team);
+    panel.append(label);
+  }
+  const pushBox = el("label", undefined, "check");
+  const push = el("input");
+  push.type = "checkbox";
+  push.checked = true;
+  pushBox.append(push, " Push to the team now");
+  panel.append(pushBox);
+  const changes = el("div", undefined, "share-changes");
+  panel.append(changes);
+  const actions = el("div", undefined, "actions");
+  const go = el("button", "Share with team");
+  go.type = "button";
+  go.disabled = true;
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => toggleVersionPanel(versionPanel);
+  actions.append(go, cancel);
+  panel.append(actions);
+  let plan = null;
+  const load = () =>
+    task(async () => {
+      go.disabled = true;
+      changes.replaceChildren(el("p", "Preparing…", "hint"));
+      plan = await api("promote-plan", {
+        kind: row.kind,
+        name: row.name,
+        team: team?.value || teams[0].source,
+        target: home.project,
+      });
+      const lines = plan.changes.map((change) => {
+        const line = el("div", undefined, "change");
+        if (change.op === "relink") {
+          // Places, in this window's words: Global or the project's name.
+          const place =
+            change.path === home.user
+              ? "Global"
+              : (change.path || "").split("/").pop();
+          line.append(
+            el("strong", "Switch to the team version"),
+            " · " + place,
+          );
+          return line;
+        }
+        line.append(
+          el(
+            "strong",
+            change.op,
+            /archive|remove/.test(change.op) ? "op-remove" : "",
+          ),
+          " ",
+          el("code", shortPath(change.path || "")),
+        );
+        return line;
+      });
+      for (const path of plan.commit_paths || []) {
+        const line = el("div", undefined, "change");
+        line.append(el("strong", "Commit"), " ", el("code", path));
+        lines.push(line);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      changes.replaceChildren(...lines);
+      go.disabled = !plan.can_apply;
+    });
+  if (team) team.onchange = load;
+  go.onclick = () =>
+    task(async () => {
+      if (!note.value.trim())
+        throw new Error("Say in a few words what it is good for.");
+      const result = await api("promote-apply", {
+        fingerprint: plan.fingerprint,
+        note: note.value.trim(),
+        push: push.checked,
+      });
+      const done = el("div", undefined, "share-done");
+      done.append(
+        el(
+          "strong",
+          result.pushed
+            ? row.name + " is shared with the team."
+            : row.name + " is in the team library but not pushed yet.",
+        ),
+      );
+      if ((result.relinked || []).length)
+        done.append(
+          el(
+            "p",
+            "Your agents now use the team version (" +
+              result.relinked
+                .map((path) =>
+                  path === home.user ? "Global" : path.split("/").pop(),
+                )
+                .join(", ") +
+              ").",
+            "hint",
+          ),
+        );
+      for (const problem of [
+        result.push_error,
+        ...(result.errors || []),
+      ].filter(Boolean))
+        done.append(el("p", problem, "hint warn"));
+      const command = "captain-share get " + row.name;
+      const copy = el("div", undefined, "copy-line");
+      const code = el("code", "Try " + row.name + ": " + command);
+      const button = el("button", "Copy", "quiet");
+      button.type = "button";
+      button.onclick = () =>
+        navigator.clipboard
+          .writeText(code.textContent)
+          .then(() => message("Copied. Paste it in chat."))
+          .catch(() => message(code.textContent));
+      copy.append(code, button);
+      done.append(el("p", "Tell your team. Paste this in chat:", "hint"), copy);
+      panel.replaceChildren(done);
+      shareData = null;
+      home = await api("home").catch(() => home);
+    });
+  setTimeout(load);
+  return panel;
 }
 
 task(refresh);

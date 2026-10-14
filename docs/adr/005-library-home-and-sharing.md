@@ -39,7 +39,9 @@ grid stays available as "Where installed".
   shows the preview, and applies after confirmation or `--apply`.
 - **Starter set**: a library may provide `profiles/starter.manifest` (the existing
   profile format). First setup offers it; choosing it saves those selections for the
-  user and opens the normal review.
+  user and opens the normal review. Library maintainers edit it through a previewed
+  plan that writes or removes only that file and commits it with their note, like a
+  share.
 - First setup asks once which agents the user uses and stores them as the user
   layer's `tools` (ADR 002).
 

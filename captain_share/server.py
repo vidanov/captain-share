@@ -21,6 +21,7 @@ from . import config as c
 from . import engine as e
 from . import imports as im
 from . import integrations as i
+from . import personal as me
 from . import repositories as r
 
 WEB = Path(__file__).parent / "web"
@@ -213,6 +214,58 @@ def discover(startup):
         )
     libraries.sort(key=lambda x: (x["connected"] is not None, -x["total"], x["path"]))
     return {"libraries": libraries, "searched": [str(home)], "truncated": truncated}
+
+
+PREVIEW_BYTES = 60_000
+PREVIEW_FILES = 200
+MAIN_FILES = ("SKILL.md", "POWER.md", "README.md")
+
+
+def asset_preview(target, source, kind, name):
+    """Read-only look inside one library asset: its files and its main text."""
+    if kind not in c.KINDS:
+        raise c.ShareError("Unknown asset kind")
+    c.asset_name(kind, name)
+    path = e.source_path(c.effective(target), source, kind, name)
+    if not os.path.lexists(path):
+        raise c.ShareError(f"{source} has no {kind} named {name}")
+    if path.is_dir():
+        inside = path.resolve()
+
+        def contained(item):
+            # Never list through a link that leads out of the asset folder.
+            try:
+                item.resolve().relative_to(inside)
+            except ValueError:
+                return False
+            return True
+
+        files = sorted(
+            p
+            for p in path.rglob("*")
+            if p.is_file() and not p.is_symlink() and contained(p) and not e.ignored(p, path)
+        )
+        main = next((path / m for m in MAIN_FILES if (path / m).is_file()), None)
+    else:
+        files, main = [path], path
+    text, truncated = None, False
+    if main is not None:
+        raw = main.read_bytes()[: PREVIEW_BYTES + 1]
+        truncated = len(raw) > PREVIEW_BYTES
+        if b"\0" not in raw[:PREVIEW_BYTES]:
+            text = raw[:PREVIEW_BYTES].decode("utf-8", errors="replace")
+    base = path if path.is_dir() else path.parent
+    return {
+        "path": str(path),
+        "files": [
+            {"path": f.relative_to(base).as_posix(), "size": f.stat().st_size}
+            for f in files[:PREVIEW_FILES]
+        ],
+        "more_files": max(0, len(files) - PREVIEW_FILES),
+        "main": main.relative_to(base).as_posix() if main is not None else None,
+        "text": text,
+        "truncated": truncated,
+    }
 
 
 def reveal_path(target, value):
@@ -436,6 +489,24 @@ def library_home(startup, baseline):
         "project": {row.get("key") for row in e.state(startup)["inbound"].values()},
     }
     libraries, assets, seen = [], [], {}
+    # Kept versions (ADR 007) of library assets, at the project and for the user.
+    versions: dict[str, list[dict[str, Any]]] = {}
+    for where, folder in (("project", startup), ("user", home)):
+        if where == "user" and folder == startup:
+            continue
+        try:
+            rows = r.version_rows(folder)
+        except (c.ShareError, OSError):
+            continue
+        for row in rows:
+            versions.setdefault(f"{row['source']}/{row['kind']}/{row['of']}", []).append(
+                {
+                    "key": row["key"],
+                    "name": row["name"],
+                    "place": where,
+                    "team_changed": row["team_changed"],
+                }
+            )
     for source in sorted(project_cfg["sources"]):
         spec = project_cfg["sources"][source]
         info: dict[str, Any] = {
@@ -451,6 +522,8 @@ def library_home(startup, baseline):
             "updated": 0,
             "starter": [],
             "error": None,
+            # The personal library (ADR 008) has no remote and is never marked new.
+            "personal": me.is_personal(source, spec.get("path")),
         }
         libraries.append(info)
         try:
@@ -476,9 +549,11 @@ def library_home(startup, baseline):
                 last_commit_at=r.last_commit_at(lib["repo"]),
             )
             info["url"] = info["url"] or git["remote_url"] or None
+            if info["personal"]:
+                info.update(behind=None, ahead=None, url=None)
             made = r.history(lib["repo"], lib["prefix"])
             edited = r.edits(lib["repo"], lib["prefix"], git["changes"])
-        before = baseline.get(source)
+        before = None if info["personal"] else baseline.get(source)
         if before is not None and lib["repo"] is not None:
             changed = r.changed_between(lib["repo"], lib["prefix"], before.get("head"), head)
         keys = []
@@ -522,6 +597,7 @@ def library_home(startup, baseline):
                     },
                     "power": power,
                     "edited": bool(edited.get((kind, name))),
+                    "versions": versions.get(key, []),
                 }
             )
         seen[source] = {"head": head, "assets": sorted(keys)}
@@ -533,6 +609,26 @@ def library_home(startup, baseline):
         "assets": assets,
     }
     return view, seen
+
+
+def starter_view(target, source):
+    """A library's current starter set (profiles/starter.manifest)."""
+    lib = r.library(target, source)
+    file = c.safe_path(lib["path"], r.STARTER)
+    view = {
+        "source": source,
+        "path": r.STARTER,
+        "exists": file.is_file(),
+        "assets": [],
+        "error": None,
+    }
+    if view["exists"]:
+        try:
+            rows = i.import_profile(target, source, "starter")["selections"]
+            view["assets"] = [f"{row['kind']}/{row['name']}" for row in rows]
+        except (c.ShareError, OSError) as exc:
+            view["error"] = str(exc)
+    return view
 
 
 def share_candidates(target):
@@ -562,6 +658,13 @@ def share_candidates(target):
         if row["status"] != "local":
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
+        differs = None
+        if found:
+            original = e.source_path(cfg, found[0][0], row["kind"], row["name"])
+            try:
+                differs = not e.same_content(target / row["path"], original)
+            except (c.ShareError, OSError):
+                differs = True
         local.append(
             {
                 "kind": row["kind"],
@@ -569,9 +672,40 @@ def share_candidates(target):
                 "path": row["path"],
                 "description": e.describe(target / row["path"], row["kind"]),
                 "exists_in": found[0][0] if found else None,
+                "differs": differs,
             }
         )
-    return {"local": local, "edited": edited, "libraries": names}
+    personal = []
+    if me.SOURCE in cfg["sources"]:
+        try:
+            base = r.library(target, me.SOURCE)["path"]
+            rows = e.catalog(target, me.SOURCE)
+        except (c.ShareError, OSError):
+            rows = []
+        for row in rows:
+            if row["status"] != "available":
+                continue
+            others = [
+                found
+                for found in e.locate(cfg, row["name"], kind=row["kind"])
+                if found[0] != me.SOURCE
+            ]
+            personal.append(
+                {
+                    "kind": row["kind"],
+                    "name": row["name"],
+                    "description": row.get("description", ""),
+                    "path": Path(row["path"]).relative_to(base).as_posix(),
+                    "exists_in": others[0][0] if others else None,
+                }
+            )
+    return {
+        "local": local,
+        "edited": edited,
+        "libraries": names,
+        "versions": r.version_rows(target),
+        "personal": personal,
+    }
 
 
 class Server(HTTPServer):
@@ -682,8 +816,35 @@ def make_server(target, port=0):
                         record_seen(fresh)
                         session["recorded"].update(fresh)
                     self.respond(view)
+                elif parsed.path == "/api/asset":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        asset_preview(
+                            target,
+                            query.get("source", [""])[0],
+                            query.get("kind", [""])[0],
+                            query.get("name", [""])[0],
+                        )
+                    )
                 elif parsed.path == "/api/share-candidates":
                     self.respond(share_candidates(target))
+                elif parsed.path == "/api/diff":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        e.diff(
+                            target,
+                            query.get("source", [""])[0],
+                            query.get("kind", [""])[0],
+                            query.get("name", [""])[0],
+                            query.get("path", [None])[0] or None,
+                        )
+                    )
+                elif parsed.path == "/api/starter":
+                    source = parse_qs(parsed.query).get("source", [""])[0]
+                    self.respond(starter_view(target, source))
+                elif parsed.path == "/api/version-diff":
+                    key = parse_qs(parsed.query).get("key", [""])[0]
+                    self.respond(r.version_diff(target, key))
                 elif parsed.path == "/api/matrix":
                     self.respond(matrix(startup, target))
                 elif parsed.path == "/api/projects":
@@ -818,6 +979,78 @@ def make_server(target, port=0):
                         data["name"],
                         data["path"],
                         adopt=data.get("adopt") is True,
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/personal-library":
+                    result = me.ensure()
+                    plans.clear()
+                elif path == "/api/promote-plan":
+                    result = me.promote_plan(
+                        target, data["kind"], data["name"], data["team"], places(startup)
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/promote-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "promote" not in saved:
+                        raise c.ShareError("Preview the move again before applying")
+                    plans.pop(fingerprint)
+                    result = me.promote_apply(saved, data["note"], data.get("push") is True)
+                elif path == "/api/starter-plan":
+                    result = r.starter_plan(
+                        target, data["source"], data.get("assets", []), data.get("clear", False)
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/starter-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "starter" not in saved:
+                        raise c.ShareError("Preview the starter set again before applying")
+                    plans.pop(fingerprint)
+                    result = r.starter_apply(saved, data["note"], data.get("push") is True)
+                elif path == "/api/propose-plan":
+                    result = r.propose_plan(
+                        target,
+                        data["source"],
+                        data["kind"],
+                        data["name"],
+                        data.get("path") or None,
+                        data.get("mode", "direct"),
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/propose-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "propose" not in saved:
+                        raise c.ShareError("Preview the proposal again before applying")
+                    plans.pop(fingerprint)
+                    result = r.propose_apply(saved, data["note"], data.get("push") is True)
+                elif path == "/api/keep-plan":
+                    link_team = data.get("link_team", True)
+                    if not isinstance(link_team, bool):
+                        raise c.ShareError("link_team must be true or false")
+                    result = e.plan(
+                        target,
+                        action="keep",
+                        kind=data["kind"],
+                        asset=data["name"],
+                        source=data["source"],
+                        path=data.get("path") or None,
+                        new_name=data["new_name"],
+                        link_team=link_team,
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -996,7 +1229,9 @@ def make_server(target, port=0):
                     saved = plans.get(fingerprint)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
-                    if "share" in saved or "import" in saved:
+                    if any(
+                        k in saved for k in ("share", "import", "propose", "starter", "promote")
+                    ):
                         # A share or import also commits; it is applied only with its note.
                         raise c.ShareError("Apply a share or import preview with its note")
                     plans.pop(fingerprint)
