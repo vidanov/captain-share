@@ -343,6 +343,14 @@ for the project). `captain-share promote KIND NAME --to TEAM --note TEXT --apply
 later moves one to a team library and relinks every place that used it
 ([ADR 008](docs/adr/008-personal-library.md)).
 
+Team libraries on protected or signed-only hosts work too
+([ADR 009](docs/adr/009-git-hosts.md)): add `--review` to `share`, `import`, `promote`
+or `starter` to commit on a new `share/NAME-USER` branch (the checkout is not
+touched) and, with `--push`, open a merge request. Git failures come with a hint
+and, where it helps, the exact command to run (for example switching an HTTPS
+remote to SSH). Signing follows your Git settings; a library can also opt in to
+signed commits in Settings.
+
 A library's starter set (`profiles/starter.manifest`, offered to new teammates) is
 edited with `captain-share starter SOURCE` (lists it) and `--set kind/name,…`,
 `--add kind/name`, `--remove kind/name` or `--clear`, previewed as a diff and, with

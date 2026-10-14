@@ -119,10 +119,14 @@ def relinks(asset_key, places, team=None):
     return rows
 
 
-def promote_plan(target, kind, name, team, places):
+def promote_plan(target, kind, name, team, places, mode="direct"):
     """Preview moving one asset from the personal library to a team library: copy and
-    commit there, switch every place's selection and links, then archive it here."""
+    commit there, switch every place's selection and links, then archive it here.
+    In review mode only the copy happens, on a review branch (ADR 009); the personal
+    copy and every link stay until the change is merged."""
     target = c.root(target)
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
     c.asset_name(kind, name)
     c.name(team)
     if team == SOURCE:
@@ -141,15 +145,20 @@ def promote_plan(target, kind, name, team, places):
     if os.path.lexists(dest):
         problems.append((f"{team} already has {kind}/{name}", "exists"))
     commit_paths, team_head, mine_rel, pending = [], None, None, []
+    branch = base = None
     if lib["repo"] is None:
         problems.append((f"Library {team} is not a Git repository", "repository"))
     else:
         commit_paths = [dest.relative_to(lib["repo"]).as_posix()]
-        problems += [(m, "repository") for m in r.commit_blockers(lib["repo"])]
         team_head = r.quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
         pending.append(r.quiet(lib["repo"], "status", "--porcelain=v1", "--", *commit_paths))
-        if pending[-1].strip():
-            problems.append((f"{team} has uncommitted changes at {commit_paths[0]}", "exists"))
+        if mode == "review":
+            branch, base, _, found = r.review_prepare(target, team, lib, r.asset_stem(kind, name))
+            problems += [(m, "branch" if m.startswith("Branch ") else "repository") for m in found]
+        else:
+            problems += [(m, "repository") for m in r.commit_blockers(lib["repo"])]
+            if pending[-1].strip():
+                problems.append((f"{team} has uncommitted changes at {commit_paths[0]}", "exists"))
     if mine["repo"] is not None:
         mine_rel = original.relative_to(mine["repo"]).as_posix()
         pending.append(r.quiet(mine["repo"], "status", "--porcelain=v1", "--", mine_rel))
@@ -158,16 +167,21 @@ def promote_plan(target, kind, name, team, places):
                 (f"{name} has uncommitted edits in {SOURCE}; commit them first", "edited")
             )
     key = f"{SOURCE}/{kind}/{name}"
-    switched = relinks(key, places, team)
+    switched = relinks(key, places, team) if mode == "direct" else []
     for row in switched:
         if not row["bound"]:
             # Archiving the personal copy would otherwise leave this place's links broken.
             problems.append(
                 (f"{team} is not connected for {row['label']}; connect it there first", "unbound")
             )
-    changes: list[dict[str, Any]] = [{"op": "copy", "path": str(dest), "source": str(original)}]
-    changes += switched
-    changes.append({"op": "archive", "path": str(original), "commit": f"Moved {name} to {team}"})
+    copy: dict[str, Any] = {"op": "copy", "path": str(dest), "source": str(original)}
+    if branch:
+        copy["branch"] = branch
+    changes: list[dict[str, Any]] = [copy, *switched]
+    if mode == "direct":
+        changes.append(
+            {"op": "archive", "path": str(original), "commit": f"Moved {name} to {team}"}
+        )
     places_seen = [
         [
             e.snapshot(Path(p["path"]) / f)
@@ -178,7 +192,16 @@ def promote_plan(target, kind, name, team, places):
     result: dict[str, Any] = {
         "version": 1,
         "spec": {"type": "promote", "target": str(target), "action": "promote"},
-        "promote": {"target": str(target), "kind": kind, "name": name, "team": team},
+        "promote": {
+            "target": str(target),
+            "kind": kind,
+            "name": name,
+            "team": team,
+            "mode": mode,
+        },
+        "mode": mode,
+        "branch": branch,
+        "base": base,
         "changes": changes,
         "errors": [m for m, _ in problems],
         "conflicts": [
@@ -204,14 +227,30 @@ def promote_apply(saved, note, push=False):
     if not isinstance(places, list):
         raise c.ShareError("Preview the move before applying it")
     target, kind, name, team = spec["target"], spec["kind"], spec["name"], spec["team"]
+    mode = spec.get("mode", "direct")
     lib = r.library(target, team)
     with c.locks([lib["path"]]):
-        current = promote_plan(target, kind, name, team, places)
+        current = promote_plan(target, kind, name, team, places, mode)
         if current["fingerprint"] != saved.get("fingerprint"):
             raise c.ShareError("Preview is stale: files or the libraries changed. Preview again.")
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
         copy = current["changes"][0]
+        if mode == "review":
+            result = r.review_send(
+                target,
+                team,
+                lib,
+                [(current["commit_paths"][0], Path(copy["source"]))],
+                note,
+                current["branch"],
+                current["base"],
+                current["observations"][1],
+                push,
+            )
+            # Personal copy and links stay until the review is merged.
+            return {**result, "relinked": [], "removed": False, "errors": []}
+        r.sign_check(lib)
         tx = e.Transaction()
         try:
             tx.copy(Path(copy["source"]), Path(copy["path"]))
@@ -222,13 +261,13 @@ def promote_apply(saved, note, push=False):
                 + (f"; recovery needed: {issues}" if issues else "")
             ) from exc
         try:
-            sha = r.commit(lib["repo"], current["commit_paths"], note)
+            sha = r.commit(lib["repo"], current["commit_paths"], note, lib["sign"])
         except c.ShareError as exc:
-            raise c.ShareError(
+            raise exc.wrap(
                 f"Copied into {team}, but the commit failed: {exc}. "
                 "The copy stays there; commit it in that library."
             ) from exc
-        pushed, push_error = r.publish(target, team, lib["path"], push)
+        pushed, failure = r.publish(target, team, lib["path"], push)
     errors: list[str] = []
     relinked = []
     for row in current["changes"]:
@@ -261,7 +300,8 @@ def promote_apply(saved, note, push=False):
     return {
         "commit": sha,
         "pushed": pushed,
-        "push_error": push_error,
+        **failure,
+        **r.direct_fields(),
         "relinked": relinked,
         "removed": removed,
         "errors": errors,
@@ -279,7 +319,7 @@ def archive_personal(target, kind, name, team):
         tx = e.Transaction()
         try:
             e.archive_into(tx, original, mine["path"])
-            r.commit(mine["repo"], [rel], f"Moved {name} to {team}")
+            r.commit(mine["repo"], [rel], f"Moved {name} to {team}", mine["sign"])
         except Exception as exc:
             issues = tx.rollback()
             e.git(mine["repo"], "reset", "-q", "--", rel, check=False)

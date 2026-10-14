@@ -2,7 +2,9 @@
 
 Captain Share commits only when a user shares one asset (ADR 005): it stages and
 commits exactly that asset's paths with the user's note, never forces a push, and
-keeps the commit when a push is refused."""
+keeps the commit when a push is refused. Review mode commits on a new branch built
+from a temporary index instead (ADR 007, ADR 009); Git failures are explained with
+a hint and, where one helps, an exact command (ADR 009)."""
 
 from __future__ import annotations
 
@@ -25,8 +27,9 @@ def run(path, *args):
     return run_with(path, args).strip()
 
 
-def run_with(path, args, env_extra=None, data=None, text=True):
-    """Git without inherited GIT_* variables (only `env_extra`), optionally with stdin."""
+def run_with(path, args, env_extra=None, data=None, text=True, combined=False):
+    """Git without inherited GIT_* variables (only `env_extra`), optionally with stdin.
+    `combined` returns stderr too (push progress and host messages are on stderr)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update(GIT_TERMINAL_PROMPT="0", GIT_SSH_COMMAND="ssh -oBatchMode=yes")
     env.update(env_extra or {})
@@ -44,8 +47,128 @@ def run_with(path, args, env_extra=None, data=None, text=True):
     if result.returncode:
         err = result.stderr if text else result.stderr.decode(errors="replace")
         out = result.stdout if text else ""
-        raise c.ShareError(err.strip() or out.strip() or "Git failed")
+        raise friendly(err.strip() or out.strip() or "Git failed", path)
+    if combined:
+        return (result.stdout or "") + (result.stderr or "")
     return result.stdout
+
+
+CREDENTIALS = re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^/@\s]+@", re.I)
+HTTPS_LOGIN = (
+    "could not read username",
+    "could not read password",
+    "authentication failed",
+    "http basic: access denied",
+    "terminal prompts disabled",
+)
+SIGNING_LOCAL = (
+    "gpg failed to sign",
+    "failed to sign the data",
+    "secret key not available",
+    "no secret key",
+    "cannot run gpg",
+    "couldn't load public key",
+    "signing failed",
+)
+SIGNING_REMOTE = ("must be signed", "signed commits", "unsigned", "not signed", "gpg", "signature")
+PROTECTED = ("protected branch", "not allowed to push", "pre-receive hook declined")
+BEHIND = ("fetch first", "non-fast-forward")
+
+
+def redact_text(text):
+    """Text with credentials removed from any URL in it."""
+    return CREDENTIALS.sub(r"\1", str(text))
+
+
+def ssh_address(url):
+    """git@HOST:PATH.git for an https remote (GitHub, GitLab and others alike)."""
+    parsed = urlparse(url or "")
+    parts = remote_parts(url) if parsed.scheme in ("http", "https") else None
+    return f"git@{parts[0]}:{parts[1]}.git" if parts else None
+
+
+def remote_of(path):
+    """(remote name, redacted URL) of a checkout's current branch, or (None, None)."""
+    try:
+        repo = e.git_root(path)
+    except (c.ShareError, OSError):
+        repo = None
+    if repo is None:
+        return None, None
+    branch = quiet(repo, "symbolic-ref", "--quiet", "--short", "HEAD").strip()
+    remote = quiet(repo, "config", "--get", f"branch.{branch}.remote").strip() or "origin"
+    url = quiet(repo, "remote", "get-url", remote).strip()
+    return remote, (redact(url) if url else None)
+
+
+def friendly(stderr, path=None):
+    """A ShareError explaining a Git failure: message, hint, command and the original
+    (redacted) Git text as detail."""
+    detail = redact_text(stderr).strip()
+    low = detail.lower()
+    where = str(path) if path else "LIBRARY"
+    remote, url = remote_of(path) if path else (None, None)
+    host = (remote_parts(url) or ("HOST", ""))[0] if url else "HOST"
+
+    def has(words):
+        return any(word in low for word in words)
+
+    if has(HTTPS_LOGIN):
+        ssh = ssh_address(url)
+        return c.ShareError(
+            "The library's HTTPS address needs a login, and Captain Share cannot type passwords.",
+            "Switch the library to its SSH address (with your SSH key added to your account), "
+            "or set up a Git credential helper or access token for HTTPS, then try again.",
+            f"git -C {where} remote set-url {remote or 'origin'} {ssh}" if ssh else None,
+            detail,
+        )
+    if "permission denied (publickey)" in low:
+        return c.ShareError(
+            "The Git host did not accept your SSH key.",
+            f"Add your public SSH key to your account on {host} and load it into ssh-agent; "
+            "the command below tests the connection.",
+            f"ssh -T git@{host}",
+            detail,
+        )
+    if "host key verification failed" in low:
+        return c.ShareError(
+            "This computer does not know the Git host's SSH key yet.",
+            "Connect once in a terminal and confirm the host key, then try again.",
+            f"ssh -T git@{host}",
+            detail,
+        )
+    if has(SIGNING_LOCAL):
+        return c.ShareError(
+            "Git could not sign the commit.",
+            "Check that your signing key is set (user.signingkey) and can sign without a "
+            "terminal prompt, or turn off signing for this library in Settings.",
+            f"git -C {where} config user.signingkey YOUR_KEY_ID",
+            detail,
+        )
+    if has(SIGNING_REMOTE) and ("remote" in low or "rejected" in low or "hook" in low):
+        return c.ShareError(
+            "The library only accepts signed commits.",
+            "Turn on Sign commits for this library in Settings (or run the command below, "
+            "with user.signingkey set), then share again. The unsigned commit was not pushed.",
+            f"git -C {where} config commit.gpgsign true",
+            detail,
+        )
+    if has(PROTECTED):
+        return c.ShareError(
+            "The library's branch is protected and only accepts changes through review.",
+            "Use Ask for review: Captain Share pushes a new branch and opens a merge request. "
+            "The commit made here stays in the library checkout, not pushed.",
+            None,
+            detail,
+        )
+    if has(BEHIND):
+        return c.ShareError(
+            "The library has newer commits on the server.",
+            "Update library first, then push or share again.",
+            None,
+            detail,
+        )
+    return c.ShareError(detail or "Git failed", detail=None)
 
 
 def checkout(target, source=""):
@@ -105,10 +228,16 @@ def status(target, source=""):
     return result
 
 
-def push_checked(path, before, branch=None):
+def push_checked(path, before, branch=None, options=()):
     """Push the current branch to its own upstream branch, or a new review branch to
-    the same remote: never forced, one push URL."""
-    if not before.get("head") or not before.get("remote_url"):
+    the same remote: never forced, one push URL. Returns Git's output, host
+    messages included."""
+    if not before.get("remote_url"):
+        raise c.ShareError(
+            "This library has no remote to push to; it lives only on this machine",
+            hint="Add a remote with git remote add origin URL, or share to a team library.",
+        )
+    if not before.get("head"):
         raise c.ShareError("A commit and a remote are required")
     if branch is None and not before.get("branch"):
         raise c.ShareError("A branch, commit and remote are required")
@@ -120,7 +249,12 @@ def push_checked(path, before, branch=None):
     if "\n" in before["push_url"]:
         raise c.ShareError("Multiple push destinations require your Git client")
     source = "HEAD" if branch is None else ref
-    return run(path, "push", "--no-force", "--no-mirror", "--", remote, f"{source}:{ref}")
+    flags = [arg for option in options for arg in ("-o", option)]
+    return run_with(
+        path,
+        ["push", "--no-force", "--no-mirror", *flags, "--", remote, f"{source}:{ref}"],
+        combined=True,
+    ).strip()
 
 
 def operate(target, source, action, fingerprint):
@@ -142,10 +276,10 @@ def operate(target, source, action, fingerprint):
             output = run(path, "pull", "--ff-only", "--no-rebase", remote, ref)
         else:
             output = push_checked(path, before)
-        return {
-            "output": output or f"{action.capitalize()} completed",
-            "repository": status(target, source),
-        }
+        after = status(target, source)
+        if action == "pull":
+            remember(source, after)
+        return {"output": output or f"{action.capitalize()} completed", "repository": after}
 
 
 def clone(target, name, url, destination, layout=None, create_parent=False):
@@ -202,7 +336,8 @@ def library(target, source):
         except ValueError as exc:
             raise c.ShareError(f"Library assets are outside its repository: {base}") from exc
         prefix = "" if prefix == "." else prefix
-    return {"cfg": cfg, "path": path, "base": base, "repo": repo, "prefix": prefix}
+    sign = bool(cfg["sources"].get(source, {}).get("sign"))
+    return {"cfg": cfg, "path": path, "base": base, "repo": repo, "prefix": prefix, "sign": sign}
 
 
 def asset_of(prefix, rel):
@@ -288,7 +423,54 @@ def fetch(target, source):
         if before["remote"].startswith("-"):
             raise c.ShareError("Unsupported remote")
         run(path, "fetch", "--", before["remote"])
-    return status(target, source)
+        after = status(target, source)
+        remember(source, after)
+    return after
+
+
+FRESH_SECONDS = 6 * 3600
+
+
+def status_path():
+    # Machine-local: when each library was last fetched or pulled (ADR 009).
+    return c.config_dir(scope="global") / "library-status.json"
+
+
+def remembered():
+    try:
+        data = c.read_json(status_path(), {})
+    except c.ShareError:
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
+
+
+def remember(source, st):
+    """Record a successful fetch or pull: when, how far behind/ahead, at which head."""
+    target = status_path()
+    with c.locks([target]):
+        data = remembered()
+        data[source] = {
+            "checked_at": now(),
+            "behind": st.get("behind"),
+            "ahead": st.get("ahead"),
+            "head": st.get("head") or None,
+        }
+        c.atomic_json(target, data)
+
+
+def freshness(source, head, at=None):
+    """(checked_at, fresh, row): fresh means checked within six hours at this head."""
+    row = remembered().get(source)
+    if not row or not isinstance(row.get("checked_at"), str):
+        return None, False, None
+    try:
+        checked = datetime.fromisoformat(row["checked_at"])
+    except ValueError:
+        return None, False, None
+    moment = at or datetime.now(timezone.utc)
+    age = (moment - checked).total_seconds()
+    fresh = 0 <= age <= FRESH_SECONDS and bool(head) and row.get("head") == head
+    return row["checked_at"], fresh, row
 
 
 def commit_blockers(repo):
@@ -311,25 +493,60 @@ def note_text(note):
     return note.strip()
 
 
-def commit(repo, paths, note):
-    """Commit exactly `paths` with `note`; other staged changes stay staged."""
+def commit(repo, paths, note, sign=False):
+    """Commit exactly `paths` with `note`; other staged changes stay staged. Git applies
+    the user's own commit.gpgsign; `sign` (the library opt-in) adds -S."""
     run(repo, "add", "--all", "--", *paths)
     if e.git(repo, "diff", "--cached", "--quiet", "--", *paths, check=False).returncode == 0:
         raise c.ShareError("Nothing to commit: the library already has this version")
-    run(repo, "commit", "--quiet", "-m", note, "--", *paths)
+    run(repo, "commit", "--quiet", *(["-S"] if sign else []), "-m", note, "--", *paths)
     return run(repo, "rev-parse", "HEAD")
 
 
+def signs(lib):
+    """Whether review commits (commit-tree) must be signed: the library opt-in, or
+    the user's commit.gpgsign, which commit-tree does not apply by itself."""
+    if lib["sign"]:
+        return True
+    return quiet(lib["repo"], "config", "--bool", "commit.gpgsign").strip() == "true"
+
+
+def sign_check(lib):
+    """Before changing anything, prove the signing key works (an unreferenced commit
+    object is the only trace). Raises the friendly signing error otherwise."""
+    if lib["repo"] is None or not lib["sign"]:
+        return
+    if not quiet(lib["repo"], "rev-parse", "--verify", "HEAD").strip():
+        return
+    run_with(
+        lib["repo"],
+        ["commit-tree", "-S", "HEAD^{tree}", "-m", "Captain Share signing check"],
+    )
+
+
+def push_failure(exc=None):
+    """The push_error fields of a result (all None when the push worked)."""
+    return {
+        "push_error": str(exc) if exc else None,
+        "push_error_hint": getattr(exc, "hint", None) if exc else None,
+        "push_error_command": getattr(exc, "command", None) if exc else None,
+    }
+
+
 def publish(target, source, path, push):
-    pushed, error = False, None
-    if push:
-        try:
-            push_checked(path, status(target, source))
-            pushed = True
-        except c.ShareError as exc:
-            # The commit stays; the user can push later or resolve the remote.
-            error = str(exc)
-    return pushed, error
+    """(pushed, push_error fields). A refused push keeps the commit."""
+    if not push:
+        return False, push_failure()
+    try:
+        push_checked(path, status(target, source))
+    except c.ShareError as exc:
+        return False, push_failure(exc)
+    return True, push_failure()
+
+
+def direct_fields():
+    """Keys every apply result has, for a commit on the checkout's own branch."""
+    return {"branch": None, "review_url": None, "waiting_for_review": False}
 
 
 def get_command(target, source, kind, name):
@@ -350,12 +567,15 @@ def get_command(target, source, kind, name):
     return f"captain-share get {ref}"
 
 
-def share_plan(target, source, kind, name, path, adopt=False):
+def share_plan(target, source, kind, name, path, adopt=False, mode="direct"):
     """Preview copying one project asset into a library and committing only it.
-    With `adopt`, also predict swapping the local copies for library links."""
+    With `adopt`, also predict swapping the local copies for library links. In
+    review mode the commit goes to a new branch and nothing local changes."""
     target = c.root(target)
     c.name(source)
     c.asset_name(kind, name)
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
     if not isinstance(path, str):
         raise c.ShareError("Choose the asset's path in this folder")
     c.safe_path(target, path)
@@ -363,14 +583,19 @@ def share_plan(target, source, kind, name, path, adopt=False):
     row = {"source": source, "kind": kind, "name": name, "path": path}
     result = e.plan(target, "outbound", selections={c.selection_key(row): row})
     problems, commit_paths, head, pending = [], [], None, ""
+    branch = base = None
     if lib["repo"] is None:
         problems.append(f"Library {source} is not a Git repository, so it cannot record a share")
     else:
         dest = e.source_path(lib["cfg"], source, kind, name)
         commit_paths = [dest.relative_to(lib["repo"]).as_posix()]
-        problems += commit_blockers(lib["repo"])
         head = quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
         pending = quiet(lib["repo"], "status", "--porcelain=v1", "--", *commit_paths)
+        if mode == "direct":
+            problems += commit_blockers(lib["repo"])
+        else:
+            branch, base, _, found = review_prepare(target, source, lib, asset_stem(kind, name))
+            problems += found
         if not result["changes"] and not pending.strip():
             problems.append(f"The library already has this version of {name}")
     for message in problems:
@@ -381,21 +606,27 @@ def share_plan(target, source, kind, name, path, adopt=False):
     result["can_apply"] = not result["errors"]
     result["plan_fingerprint"] = result["fingerprint"]
     result["commit_paths"] = commit_paths
+    result["mode"], result["branch"], result["base"] = mode, branch, base
     result["share"] = {
         "target": str(target),
         "source": source,
         "kind": kind,
         "name": name,
         "path": path,
+        "mode": mode,
         "repository": str(lib["repo"]) if lib["repo"] else None,
         "head": head,
+        "branch": branch,
     }
     result["fingerprint"] = e.digest(
         [result["plan_fingerprint"], result["share"], commit_paths, pending, problems]
     )
-    if adopt:
+    if adopt and mode == "direct":
         # A prediction only: the adopt is planned afresh after the commit.
         result["adopt_changes"] = e.adopt_preview(target, kind, name, path)
+    elif adopt:
+        # Under review the project keeps its copy until the change is merged.
+        result["adopt_changes"] = []
     return result
 
 
@@ -419,33 +650,51 @@ def share_apply(saved, note, push=False, adopt=False):
     spec = saved.get("share") if isinstance(saved, dict) else None
     if not isinstance(spec, dict):
         raise c.ShareError("Preview the share before applying it")
-    args = {k: spec[k] for k in ("target", "source", "kind", "name", "path")}
+    keys = ("target", "source", "kind", "name", "path")
+    args = {k: spec[k] for k in keys}
+    mode = spec.get("mode", "direct")
     path = checkout(args["target"], args["source"])
     with c.locks([path]):
-        current = share_plan(**args)
+        current = share_plan(**args, mode=mode)
         if current["fingerprint"] != saved.get("fingerprint"):
             raise c.ShareError(
                 "Share preview is stale: files or the library changed. Preview again."
             )
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
-        e.apply({**current, "fingerprint": current["plan_fingerprint"]})
-        repo = Path(current["share"]["repository"])
-        try:
-            sha = commit(repo, current["commit_paths"], note)
-        except c.ShareError as exc:
-            raise c.ShareError(
-                f"Copied into the library, but the commit failed: {exc}. "
-                "The copy stays in the library; commit it there or share again."
-            ) from exc
-        pushed, error = publish(args["target"], args["source"], path, push)
-    adopt_error = adopt_after_share(**args) if adopt else None
+        lib = library(args["target"], args["source"])
+        if mode == "review":
+            local = c.safe_path(c.root(args["target"]), args["path"])
+            result = review_send(
+                args["target"],
+                args["source"],
+                lib,
+                [(current["commit_paths"][0], local)],
+                note,
+                current["branch"],
+                current["base"],
+                current["share"]["head"],
+                push,
+            )
+        else:
+            sign_check(lib)
+            e.apply({**current, "fingerprint": current["plan_fingerprint"]})
+            repo = Path(current["share"]["repository"])
+            try:
+                sha = commit(repo, current["commit_paths"], note, lib["sign"])
+            except c.ShareError as exc:
+                raise exc.wrap(
+                    f"Copied into the library, but the commit failed: {exc}. "
+                    "The copy stays in the library; commit it there or share again."
+                ) from exc
+            pushed, failure = publish(args["target"], args["source"], path, push)
+            result = {"commit": sha, "pushed": pushed, **failure, **direct_fields()}
+    # Under review the project keeps its copy until the change is merged.
+    adopt_error = adopt_after_share(**args) if adopt and mode == "direct" else None
     return {
-        "commit": sha,
-        "pushed": pushed,
-        "push_error": error,
+        **result,
         "get_command": get_command(args["target"], args["source"], args["kind"], args["name"]),
-        "adopted": bool(adopt) and adopt_error is None,
+        "adopted": bool(adopt) and mode == "direct" and adopt_error is None,
         "adopt_error": adopt_error,
     }
 
@@ -466,12 +715,12 @@ def commit_edits(target, source, kind, name, note, push, fingerprint):
         if problems:
             raise c.ShareError("; ".join(problems))
         dest = e.source_path(lib["cfg"], source, kind, name)
-        sha = commit(lib["repo"], [dest.relative_to(lib["repo"]).as_posix()], note)
-        pushed, error = publish(target, source, lib["path"], push)
+        sha = commit(lib["repo"], [dest.relative_to(lib["repo"]).as_posix()], note, lib["sign"])
+        pushed, failure = publish(target, source, lib["path"], push)
     return {
         "commit": sha,
         "pushed": pushed,
-        "push_error": error,
+        **failure,
         "get_command": get_command(target, source, kind, name),
     }
 
@@ -533,15 +782,18 @@ def slug(value):
     return re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
 
 
-def review_branch(repo, kind, name):
-    """share/NAME-USER, with USER from Git's user.name or the operating-system user."""
+def asset_stem(kind, name):
+    return name[: -len(c.SUFFIXES[kind])] if kind in c.SUFFIXES else name
+
+
+def review_branch(repo, stem):
+    """share/STEM-USER, with USER from Git's user.name or the operating-system user."""
     user = quiet(repo, "config", "user.name").strip()
     if not user:
         try:
             user = getpass.getuser()
         except (KeyError, OSError):
             user = ""
-    stem = name[: -len(c.SUFFIXES[kind])] if kind in c.SUFFIXES else name
     branch = f"share/{slug(stem) or 'asset'}-{slug(user) or 'me'}"
     if e.git(repo, "check-ref-format", f"refs/heads/{branch}", check=False).returncode:
         raise c.ShareError(f"Cannot name a review branch {branch}")
@@ -686,23 +938,8 @@ def propose_plan(target, source, kind, name, path=None, mode="direct"):
                     (f"The library has uncommitted edits of {name}; commit them first", "edited")
                 )
         else:
-            if e.git(repo, "var", "GIT_COMMITTER_IDENT", check=False).returncode:
-                problems.append(
-                    (
-                        "Git needs your name and email (git config user.name/user.email)",
-                        "repository",
-                    )
-                )
-            if not head:
-                problems.append(("The library has no commits yet", "repository"))
-            branch = review_branch(repo, kind, name)
-            if (
-                e.git(
-                    repo, "rev-parse", "-q", "--verify", f"refs/heads/{branch}", check=False
-                ).returncode
-                == 0
-            ):
-                problems.append((f"Branch {branch} already exists in the library", "branch"))
+            branch, _, _, found = review_prepare(target, source, lib, asset_stem(kind, name))
+            problems += [(m, "branch" if m.startswith("Branch ") else "repository") for m in found]
     changes = []
     if exists:
         change = {"op": "update", "path": str(original), "source": str(local)}
@@ -743,37 +980,131 @@ def propose_plan(target, source, kind, name, path=None, mode="direct"):
     return result
 
 
-def review_commit(repo, rel, local, note, branch, head):
-    """Commit local as `rel` on a new branch from head, via a temporary index: the
-    working tree, the real index and the current branch are not touched."""
-    files = [(rel, local)] if local.is_file() else []
-    if local.is_dir():
-        for p in sorted(local.rglob("*")):
-            if e.ignored(p, local) or not p.is_file() or p.is_symlink():
-                continue
-            files.append((f"{rel}/{p.relative_to(local).as_posix()}", p))
-    if any(ch in str(p) for _, p in files for ch in "\n\r"):
-        raise c.ShareError("File names with line breaks cannot be proposed")
+def review_commit(repo, entries, note, branch, head, sign=False):
+    """Commit `entries` on a new branch from head via a temporary index: the working
+    tree, the real index and the current branch are not touched. Each entry is
+    (repository path, source) where source is a file or folder Path, bytes for a
+    file's content, or None to remove the path."""
+    files: list[tuple[str, Any]] = []
+    removed = []
+    for rel, source in entries:
+        removed.append(rel)
+        if isinstance(source, (bytes, str)):
+            files.append((rel, source.encode() if isinstance(source, str) else source))
+        elif isinstance(source, Path) and source.is_file():
+            files.append((rel, source))
+        elif isinstance(source, Path) and source.is_dir():
+            for item in sorted(source.rglob("*")):
+                if e.ignored(item, source) or not item.is_file() or item.is_symlink():
+                    continue
+                files.append((f"{rel}/{item.relative_to(source).as_posix()}", item))
+    if any(ch in str(src) for _, src in files if isinstance(src, Path) for ch in "\n\r"):
+        raise c.ShareError("File names with line breaks cannot be committed for review")
     with tempfile.TemporaryDirectory(prefix="captain-share-index-") as temporary:
         env = {"GIT_INDEX_FILE": str(Path(temporary) / "index")}
         run_with(repo, ["read-tree", head], env)
-        run_with(repo, ["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", rel], env)
-        shas = run_with(
-            repo,
-            ["hash-object", "-w", "--no-filters", "--stdin-paths"],
-            env,
-            data="".join(f"{p}\n" for _, p in files),
-        ).split()
-        info = "".join(
-            f"{'100755' if os.access(p, os.X_OK) else '100644'} {sha}\t{path}\0"
-            for (path, p), sha in zip(files, shas)
+        run_with(repo, ["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", *removed], env)
+        on_disk = [(rel, src) for rel, src in files if isinstance(src, Path)]
+        shas = dict(
+            zip(
+                [rel for rel, _ in on_disk],
+                run_with(
+                    repo,
+                    ["hash-object", "-w", "--no-filters", "--stdin-paths"],
+                    env,
+                    data="".join(f"{src}\n" for _, src in on_disk),
+                ).split()
+                if on_disk
+                else [],
+            )
         )
-        run_with(repo, ["update-index", "-z", "--add", "--index-info"], env, data=info)
+        info = ""
+        for rel, src in files:
+            if isinstance(src, Path):
+                mode = "100755" if os.access(src, os.X_OK) else "100644"
+                sha = shas[rel]
+            else:
+                mode = "100644"
+                sha = run_with(repo, ["hash-object", "-w", "--stdin"], env, data=src, text=False)
+                sha = sha.decode().strip()
+            info += f"{mode} {sha}\t{rel}\0"
+        if info:
+            run_with(repo, ["update-index", "-z", "--add", "--index-info"], env, data=info)
         tree = run_with(repo, ["write-tree"], env).strip()
-    commit_id = run_with(repo, ["commit-tree", tree, "-p", head, "-m", note]).strip()
+    signed = ["-S"] if sign else []
+    commit_id = run_with(repo, ["commit-tree", *signed, tree, "-p", head, "-m", note]).strip()
     # The empty old value refuses to replace an existing branch.
     run_with(repo, ["update-ref", f"refs/heads/{branch}", commit_id, ""])
     return commit_id
+
+
+def review_prepare(target, source, lib, stem):
+    """(branch, base, head, problems) for a review commit: a new share/STEM-USER branch
+    from the checkout's HEAD, aimed at the upstream (or current) branch."""
+    repo, problems = lib["repo"], []
+    if e.git(repo, "var", "GIT_COMMITTER_IDENT", check=False).returncode:
+        problems.append("Git needs your name and email (git config user.name/user.email)")
+    st = status(target, source)
+    head = st["head"] or None
+    if not head:
+        problems.append("The library has no commits yet")
+    base = st["remote_ref"][len("refs/heads/") :] if st["upstream"] else st["branch"]
+    branch = review_branch(repo, stem)
+    ref = f"refs/heads/{branch}"
+    if e.git(repo, "rev-parse", "-q", "--verify", ref, check=False).returncode == 0:
+        problems.append(f"Branch {branch} already exists in the library")
+    return branch, base or None, head, problems
+
+
+REVIEW_LINK = re.compile(
+    r"https?://\S*?(?:/-/merge_requests/\S+|/merge_requests/\S+|/pull/new/\S+)"
+)
+
+
+def pushed_review_url(output):
+    """The merge or pull request link a host printed while receiving a push."""
+    for line in output.splitlines():
+        found = REVIEW_LINK.search(line)
+        if found:
+            return redact_text(found.group(0))
+    return None
+
+
+def review_options(remote_url, base, note):
+    """GitLab push options that open the merge request while pushing."""
+    parts = remote_parts(remote_url)
+    if not parts or not parts[0].startswith("gitlab.") or not base:
+        return []
+    title = note.strip().splitlines()[0][:255]
+    return [
+        "merge_request.create",
+        f"merge_request.target={base}",
+        f"merge_request.title={title}",
+    ]
+
+
+def review_send(target, source, lib, entries, note, branch, base, head, push):
+    """Commit entries on the review branch, push it when asked, and find its link."""
+    sha = review_commit(lib["repo"], entries, note, branch, head, signs(lib))
+    pushed, failure, url = False, push_failure(), None
+    if push:
+        before = status(target, source)
+        try:
+            output = push_checked(
+                lib["path"], before, branch, review_options(before["remote_url"], base, note)
+            )
+            pushed = True
+            url = pushed_review_url(output) or review_url(before["remote_url"], base, branch)
+        except c.ShareError as exc:
+            failure = push_failure(exc)
+    return {
+        "commit": sha,
+        "pushed": pushed,
+        **failure,
+        "branch": branch,
+        "review_url": url,
+        "waiting_for_review": True,
+    }
 
 
 def propose_apply(saved, note, push=False):
@@ -785,7 +1116,7 @@ def propose_apply(saved, note, push=False):
         raise c.ShareError("Preview the proposal before applying it")
     args = {k: spec[k] for k in ("target", "source", "kind", "name", "path", "mode")}
     lib = library(args["target"], args["source"])
-    adopted, adopt_error, url = False, None, None
+    adopted, adopt_error = False, None
     with c.locks([lib["path"]]):
         current = propose_plan(**args)
         if current["fingerprint"] != saved.get("fingerprint"):
@@ -796,51 +1127,37 @@ def propose_apply(saved, note, push=False):
         local = c.safe_path(c.root(args["target"]), args["path"], leaf_link=True)
         original = e.source_path(lib["cfg"], args["source"], args["kind"], args["name"])
         if args["mode"] == "direct":
+            sign_check(lib)
             with c.locks([lib["path"] / ".captain"]):
                 e.replace_original(local, original, lib["path"])
             try:
-                sha = commit(repo, current["commit_paths"], note)
+                sha = commit(repo, current["commit_paths"], note, lib["sign"])
             except c.ShareError as exc:
-                raise c.ShareError(
+                raise exc.wrap(
                     f"Updated the library, but the commit failed: {exc}. The previous "
                     "version is archived in the library; commit there or restore it."
                 ) from exc
-            pushed, error = publish(args["target"], args["source"], lib["path"], push)
+            pushed, failure = publish(args["target"], args["source"], lib["path"], push)
+            result = {"commit": sha, "pushed": pushed, **failure, **direct_fields()}
         else:
-            sha = review_commit(
-                repo,
-                current["commit_paths"][0],
-                local,
+            entries = [(current["commit_paths"][0], local)]
+            result = review_send(
+                args["target"],
+                args["source"],
+                lib,
+                entries,
                 note,
                 current["branch"],
+                current["base"],
                 current["observations"][2],
+                push,
             )
-            pushed, error = False, None
-            if push:
-                try:
-                    push_checked(
-                        lib["path"], status(args["target"], args["source"]), current["branch"]
-                    )
-                    pushed = True
-                except c.ShareError as exc:
-                    error = str(exc)
-            if pushed:
-                before = status(args["target"], args["source"])
-                url = review_url(before["remote_url"], current["base"], current["branch"])
     if args["mode"] == "direct":
         adopt_error = adopt_after_share(
             args["target"], args["source"], args["kind"], args["name"], args["path"]
         )
         adopted = adopt_error is None
-    return {
-        "commit": sha,
-        "pushed": pushed,
-        "push_error": error,
-        "adopted": adopted,
-        "adopt_error": adopt_error,
-        "branch": current["branch"],
-        "review_url": url,
-    }
+    return {**result, "adopted": adopted, "adopt_error": adopt_error}
 
 
 STARTER = "profiles/starter.manifest"
@@ -857,10 +1174,13 @@ def starter_text(assets):
     return STARTER_HEADER + "".join(lines)
 
 
-def starter_plan(target, source, assets, clear=False):
-    """Preview writing (or with `clear`, removing) a library's starter set."""
+def starter_plan(target, source, assets, clear=False, mode="direct"):
+    """Preview writing (or with `clear`, removing) a library's starter set, directly
+    or on a review branch."""
     target = c.root(target)
     c.name(source)
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
     if not isinstance(assets, list) or len(assets) > 500:
         raise c.ShareError("Expected a list of at most 500 kind/name assets")
     if not isinstance(clear, bool):
@@ -886,6 +1206,7 @@ def starter_plan(target, source, assets, clear=False):
     current = file.read_text(errors="replace") if exists else ""
     wanted = None if clear else starter_text(assets)
     problems, commit_paths, pending, head = [], [], "", None
+    branch = base = None
     if clear and not exists:
         problems.append(("This library has no starter set to clear", "same"))
     elif wanted == current:
@@ -894,10 +1215,14 @@ def starter_plan(target, source, assets, clear=False):
         problems.append((f"Library {source} is not a Git repository", "repository"))
     else:
         commit_paths = [file.relative_to(lib["repo"]).as_posix()]
-        problems += [(m, "repository") for m in commit_blockers(lib["repo"])]
         head = quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
         pending = quiet(lib["repo"], "status", "--porcelain=v1", "--", *commit_paths)
-        if pending.strip():
+        if mode == "review":
+            branch, base, _, found = review_prepare(target, source, lib, "starter-set")
+            problems += [(m, "branch" if m.startswith("Branch ") else "repository") for m in found]
+        else:
+            problems += [(m, "repository") for m in commit_blockers(lib["repo"])]
+        if pending.strip() and mode == "direct":
             problems.append(
                 (
                     "The starter set has uncommitted changes in the library; commit them first",
@@ -915,7 +1240,16 @@ def starter_plan(target, source, assets, clear=False):
     result: dict[str, Any] = {
         "version": 1,
         "spec": {"type": "starter", "target": str(target), "action": "starter"},
-        "starter": {"target": str(target), "source": source, "assets": assets, "clear": clear},
+        "starter": {
+            "target": str(target),
+            "source": source,
+            "assets": assets,
+            "clear": clear,
+            "mode": mode,
+        },
+        "mode": mode,
+        "branch": branch,
+        "base": base,
         "changes": [{"op": "remove" if clear else "write", "path": STARTER}],
         "diff": diff,
         "content": wanted,
@@ -938,6 +1272,7 @@ def starter_apply(saved, note, push=False):
     if not isinstance(spec, dict):
         raise c.ShareError("Preview the starter set before applying it")
     args = {k: spec[k] for k in ("target", "source", "assets", "clear")}
+    args["mode"] = spec.get("mode", "direct")
     lib = library(args["target"], args["source"])
     with c.locks([lib["path"], lib["path"] / ".captain"]):
         current = starter_plan(**args)
@@ -945,6 +1280,20 @@ def starter_apply(saved, note, push=False):
             raise c.ShareError("Preview is stale: the starter set changed. Preview again.")
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
+        if args["mode"] == "review":
+            content = None if args["clear"] else current["content"]
+            return review_send(
+                args["target"],
+                args["source"],
+                lib,
+                [(current["commit_paths"][0], content)],
+                note,
+                current["branch"],
+                current["base"],
+                current["observations"][1],
+                push,
+            )
+        sign_check(lib)
         file = c.safe_path(lib["path"], STARTER)
         tx = e.Transaction()
         try:
@@ -953,14 +1302,16 @@ def starter_apply(saved, note, push=False):
                 e.archive_into(tx, file, lib["path"])
             else:
                 tx.write(file, current["content"])
-            sha = commit(lib["repo"], current["commit_paths"], note)
+            sha = commit(lib["repo"], current["commit_paths"], note, lib["sign"])
         except Exception as exc:
             issues = tx.rollback()
             # The file had no uncommitted changes, so its index entry returns to HEAD.
             e.git(lib["repo"], "reset", "-q", "--", *current["commit_paths"], check=False)
-            raise c.ShareError(
-                f"Saving the starter set failed and was rolled back: {exc}"
-                + (f"; recovery needed: {issues}" if issues else "")
-            ) from exc
-        pushed, error = publish(args["target"], args["source"], lib["path"], push)
-    return {"commit": sha, "pushed": pushed, "push_error": error}
+            message = f"Saving the starter set failed and was rolled back: {exc}" + (
+                f"; recovery needed: {issues}" if issues else ""
+            )
+            if isinstance(exc, c.ShareError):
+                raise exc.wrap(message) from exc
+            raise c.ShareError(message) from exc
+        pushed, failure = publish(args["target"], args["source"], lib["path"], push)
+    return {"commit": sha, "pushed": pushed, **failure, **direct_fields()}

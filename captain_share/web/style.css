@@ -938,6 +938,26 @@ button.link:hover {
   max-height: 18rem;
 }
 
+.message-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-2);
+}
+#message .copy-line {
+  margin-top: 8px;
+  cursor: default;
+}
+.compact-where .where-option {
+  padding: 6px 10px;
+}
+.sign-option {
+  margin: 4px 0 10px;
+  padding: 0 4px;
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
 /* Starter set editor (Settings) */
 .starter-editor {
   margin: 0 0 12px;

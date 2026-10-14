@@ -274,7 +274,8 @@ class ShareApiTests(LibraryFixture):
         self.assertEqual(code, 200, result)
         self.assertEqual(
             set(result),
-            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error"},
+            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
+            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"},
         )
         self.assertEqual((result["adopted"], result["adopt_error"]), (False, None))
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
@@ -610,7 +611,8 @@ class AdoptTests(LibraryFixture):
         self.assertEqual(code, 200, result)
         self.assertEqual(
             set(result),
-            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error"},
+            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
+            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"},
         )
         self.assertEqual(
             (result["pushed"], result["adopted"], result["adopt_error"]), (True, True, None)

@@ -340,18 +340,23 @@ def too_broad(root):
             )
 
 
-def plan(target, source, root, items, stage="", label=""):
+def plan(target, source, root, items, stage="", label="", mode="direct"):
     """Preview copying chosen candidates of a staged folder into a library and
-    committing only their paths. Existing library assets are never overwritten."""
+    committing only their paths, directly or on a review branch (ADR 009). Existing
+    library assets are never overwritten."""
     try:
-        return planned(target, source, root, items, stage, label)
-    except (c.ShareError, OSError) as exc:
+        return planned(target, source, root, items, stage, label, mode)
+    except c.ShareError as exc:
+        raise exc.wrap(mask(exc, root, label)) from exc
+    except OSError as exc:
         raise c.ShareError(mask(exc, root, label)) from exc
 
 
-def planned(target, source, root, items, stage, label):
+def planned(target, source, root, items, stage, label, mode="direct"):
     target = c.root(target)
     c.name(source)
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
     root = c.root(root)
     if not isinstance(items, list) or not items or len(items) > MAX_ITEMS:
         raise c.ShareError(f"Choose between 1 and {MAX_ITEMS} assets to add")
@@ -414,10 +419,15 @@ def planned(target, source, root, items, stage, label):
             changes.append({"op": "copy", "path": str(dest), "source": str(src)})
         except (c.ShareError, OSError) as exc:
             conflict(str(exc), rel, key)
-    head = None
+    head = branch = base = None
     problems = []
     if lib["repo"] is None:
         problems.append(f"Library {source} is not a Git repository, so it cannot record an import")
+    elif mode == "review":
+        stem = chosen[0]["name"] if chosen else "import"
+        stem = r.asset_stem(chosen[0]["kind"], stem) if chosen else stem
+        branch, base, head, found = r.review_prepare(target, source, lib, stem)
+        problems += found
     else:
         problems += r.commit_blockers(lib["repo"])
         head = r.quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
@@ -430,6 +440,7 @@ def planned(target, source, root, items, stage, label):
         "items": chosen,
         "stage": stage,
         "label": label,
+        "mode": mode,
     }
     result: dict[str, Any] = {
         "version": 1,
@@ -438,6 +449,9 @@ def planned(target, source, root, items, stage, label):
         "conflicts": conflicts,
         "can_apply": not errors,
         "commit_paths": commit_paths,
+        "mode": mode,
+        "branch": branch,
+        "base": base,
         "import": {
             **spec,
             "repository": str(lib["repo"]) if lib["repo"] else None,
@@ -455,7 +469,12 @@ def apply(saved, note, push=False):
     if not isinstance(spec, dict):
         raise c.ShareError("Preview the import before applying it")
     args = {k: spec[k] for k in ("target", "source", "root", "items", "stage", "label")}
+    args["mode"] = spec.get("mode", "direct")
     path = r.checkout(args["target"], args["source"])
+    get_commands = [
+        r.get_command(args["target"], args["source"], row["kind"], row["name"])
+        for row in args["items"]
+    ]
     with c.locks([path]):
         current = plan(**args)
         if current["fingerprint"] != saved.get("fingerprint"):
@@ -464,6 +483,25 @@ def apply(saved, note, push=False):
             )
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
+        lib = r.library(args["target"], args["source"])
+        if args["mode"] == "review":
+            entries = [
+                (rel, Path(change["source"]))
+                for rel, change in zip(current["commit_paths"], current["changes"])
+            ]
+            result = r.review_send(
+                args["target"],
+                args["source"],
+                lib,
+                entries,
+                note,
+                current["branch"],
+                current["base"],
+                current["import"]["head"],
+                push,
+            )
+            return {**result, "get_commands": get_commands}
+        r.sign_check(lib)
         tx = e.Transaction()
         try:
             for change in current["changes"]:
@@ -480,19 +518,17 @@ def apply(saved, note, push=False):
             ) from exc
         repo = Path(current["import"]["repository"])
         try:
-            sha = r.commit(repo, current["commit_paths"], note)
+            sha = r.commit(repo, current["commit_paths"], note, lib["sign"])
         except c.ShareError as exc:
-            raise c.ShareError(
+            raise exc.wrap(
                 f"Copied into the library, but the commit failed: {exc}. "
                 "The copies stay in the library; commit them there."
             ) from exc
-        pushed, error = r.publish(args["target"], args["source"], path, push)
+        pushed, failure = r.publish(args["target"], args["source"], path, push)
     return {
         "commit": sha,
         "pushed": pushed,
-        "push_error": error,
-        "get_commands": [
-            r.get_command(args["target"], args["source"], row["kind"], row["name"])
-            for row in args["items"]
-        ],
+        **failure,
+        **r.direct_fields(),
+        "get_commands": get_commands,
     }

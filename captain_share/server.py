@@ -444,6 +444,22 @@ def matrix(startup, target):
     return {"columns": [col["column"] for col in info], "rows": rows}
 
 
+def error_body(exc):
+    """JSON for a failure: the message plus, for explained Git failures (ADR 009),
+    `hint`, `command` and the original Git text as `detail`."""
+    body = {"error": str(exc)}
+    if isinstance(exc, c.ShareError):
+        body.update(exc.fields())
+    return body
+
+
+def mode_of(data):
+    mode = data.get("mode", "direct")
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
+    return mode
+
+
 def seen_path():
     # Machine-local record of what the user last saw per library (ADR 005).
     return c.config_dir(scope="global") / "seen.json"
@@ -524,6 +540,9 @@ def library_home(startup, baseline):
             "error": None,
             # The personal library (ADR 008) has no remote and is never marked new.
             "personal": me.is_personal(source, spec.get("path")),
+            "sign": bool(spec.get("sign")),
+            "checked_at": None,
+            "checked_fresh": False,
         }
         libraries.append(info)
         try:
@@ -551,6 +570,12 @@ def library_home(startup, baseline):
             info["url"] = info["url"] or git["remote_url"] or None
             if info["personal"]:
                 info.update(behind=None, ahead=None, url=None)
+            else:
+                # A fetch or pull in the last six hours at this head is still current.
+                at, fresh, kept = r.freshness(source, head)
+                info.update(checked_at=at, checked_fresh=fresh)
+                if fresh and kept:
+                    info.update(behind=kept.get("behind"), ahead=kept.get("ahead"))
             made = r.history(lib["repo"], lib["prefix"])
             edited = r.edits(lib["repo"], lib["prefix"], git["changes"])
         before = None if info["personal"] else baseline.get(source)
@@ -897,7 +922,7 @@ def make_server(target, port=0):
                 else:
                     self.respond({"error": "Not found"}, 404)
             except (c.ShareError, OSError, ValueError) as exc:
-                self.respond({"error": str(exc)}, 400)
+                self.respond(error_body(exc), 400)
 
         def static(self, path, mime):
             if path.is_symlink() or not path.is_file():
@@ -930,7 +955,7 @@ def make_server(target, port=0):
                 name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
                 self.respond(stages.upload(data, name))
             except (c.ShareError, OSError, ValueError) as exc:
-                self.respond({"error": str(exc)}, 400)
+                self.respond(error_body(exc), 400)
 
         def do_POST(self):
             if not self.authorized():
@@ -969,6 +994,9 @@ def make_server(target, port=0):
                         target, data.get("source", ""), data["action"], data["fingerprint"]
                     )
                     plans.clear()
+                elif path == "/api/library-settings":
+                    result = c.set_sign(target, data["source"], data["sign"])
+                    plans.clear()
                 elif path == "/api/fetch":
                     result = r.fetch(target, data["source"])
                 elif path == "/api/share-plan":
@@ -979,6 +1007,7 @@ def make_server(target, port=0):
                         data["name"],
                         data["path"],
                         adopt=data.get("adopt") is True,
+                        mode=mode_of(data),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -987,7 +1016,12 @@ def make_server(target, port=0):
                     plans.clear()
                 elif path == "/api/promote-plan":
                     result = me.promote_plan(
-                        target, data["kind"], data["name"], data["team"], places(startup)
+                        target,
+                        data["kind"],
+                        data["name"],
+                        data["team"],
+                        places(startup),
+                        mode_of(data),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -1003,7 +1037,11 @@ def make_server(target, port=0):
                     result = me.promote_apply(saved, data["note"], data.get("push") is True)
                 elif path == "/api/starter-plan":
                     result = r.starter_plan(
-                        target, data["source"], data.get("assets", []), data.get("clear", False)
+                        target,
+                        data["source"],
+                        data.get("assets", []),
+                        data.get("clear", False),
+                        mode_of(data),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -1095,6 +1133,7 @@ def make_server(target, port=0):
                         data["items"],
                         stage=data["stage"],
                         label=stage["label"],
+                        mode=mode_of(data),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -1242,7 +1281,7 @@ def make_server(target, port=0):
                     return
                 self.respond(result)
             except (c.ShareError, OSError, ValueError, KeyError, TypeError) as exc:
-                self.respond({"error": str(exc)}, 400)
+                self.respond(error_body(exc), 400)
 
     server = Server(("127.0.0.1", port), Handler)
     server.timeout = 1

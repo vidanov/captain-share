@@ -84,15 +84,33 @@ function el(tag, text, cls) {
   if (cls) node.className = cls;
   return node;
 }
-function message(text, error = false) {
+function message(text, error = false, extra = {}) {
   clearTimeout(messageTimer);
   // While the review sheet is open, speak inside it; otherwise in the dock.
   const box = $("message");
   if (!$("review").hidden) $("review-hint").after(box);
   else if (box.parentElement !== $("dock")) $("dock").prepend(box);
-  $("message").textContent = !text ? "" : error ? "Error: " + text : text;
-  $("message").className = error ? "error" : "";
+  box.replaceChildren();
+  if (text) box.append(error ? "Error: " + text : text);
+  if (text && extra.hint) box.append(el("span", extra.hint, "message-hint"));
+  if (text && extra.command) box.append(commandLine(extra.command));
+  box.className = error ? "error" : "";
   if (text && !error) messageTimer = setTimeout(() => message(""), 6000);
+}
+// A command the person can run to fix something, with Copy.
+function commandLine(command) {
+  const line = el("div", undefined, "copy-line");
+  const copy = el("button", "Copy", "quiet");
+  copy.type = "button";
+  copy.onclick = (event) => {
+    event.stopPropagation();
+    navigator.clipboard
+      .writeText(command)
+      .then(() => (copy.textContent = "Copied"))
+      .catch(() => (copy.textContent = "Select and copy"));
+  };
+  line.append(el("code", command), copy);
+  return line;
 }
 $("message").title = "Dismiss";
 $("message").onclick = () => message("");
@@ -124,7 +142,12 @@ async function api(path, data) {
     throw new Error(
       "This window is no longer connected; Captain Share was restarted or this link is old. Open the new link from the terminal where captain-share serve runs, or run captain-share serve --open.",
     );
-  if (!res.ok) throw new Error(body.error || "Request failed");
+  if (!res.ok) {
+    const error = new Error(body.error || "Request failed");
+    error.hint = body.hint;
+    error.command = body.command;
+    throw error;
+  }
   return body;
 }
 async function task(fn) {
@@ -136,7 +159,7 @@ async function task(fn) {
   try {
     await fn();
   } catch (e) {
-    message(e.message, true);
+    message(e.message, true, { hint: e.hint, command: e.command });
   } finally {
     busy = false;
   }
@@ -1627,7 +1650,31 @@ function renderLibraries() {
     if (spec.path)
       row.append(revealButton(spec.path, "Show in " + state.file_manager));
     list.append(row);
-    if (spec.path) list.append(starterEditor(name));
+    if (spec.path) {
+      const sign = el("label", undefined, "check sign-option");
+      const box = el("input");
+      box.type = "checkbox";
+      box.checked = !!spec.sign;
+      box.onchange = () =>
+        task(async () => {
+          await api("library-settings", { source: name, sign: box.checked });
+          state.config.sources[name].sign = box.checked;
+          message(
+            box.checked
+              ? "Commits to " + name + " are signed from now on."
+              : "Commits to " +
+                  name +
+                  " are no longer signed by Captain Share.",
+          );
+        });
+      sign.append(
+        box,
+        " Sign my commits to " +
+          name +
+          " (for libraries that require signed commits)",
+      );
+      list.append(sign, starterEditor(name));
+    }
   }
 }
 // Maintainers choose the starter set offered to new teammates (profiles/starter.manifest).
@@ -1677,6 +1724,12 @@ function starterEditor(source) {
       body.append(noteLabel);
       const changes = el("div", undefined, "share-changes");
       body.append(changes);
+      const reach = reviewChoice(source, () => {
+        plan = null;
+        save.disabled = true;
+        changes.replaceChildren();
+      });
+      body.append(reach.element);
       const actions = el("div", undefined, "actions");
       const review = el("button", "Review", "quiet");
       review.type = "button";
@@ -1700,6 +1753,7 @@ function starterEditor(source) {
             source,
             assets: keys,
             clear: !keys.length,
+            mode: reach.mode(),
           });
           const lines = [];
           if (plan.diff) {
@@ -1740,12 +1794,14 @@ function starterEditor(source) {
           changes.replaceChildren(
             el(
               "p",
-              result.pushed
-                ? "Saved and pushed. Teammates see it after Update library."
-                : "Saved in the library, not pushed: " +
-                    (result.push_error || ""),
-              result.pushed ? "hint" : "hint warn",
+              result.waiting_for_review
+                ? "Proposed for review."
+                : result.pushed
+                  ? "Saved and pushed. Teammates see it after Update library."
+                  : "Saved in the library, not pushed yet.",
+              "hint",
             ),
+            ...pushOutcome(result),
           );
           home = await api("home").catch(() => home);
         });
@@ -1769,6 +1825,15 @@ function ago(iso) {
   if (days < 14) return days + " days ago";
   if (days < 60) return Math.round(days / 7) + " weeks ago";
   return Math.round(days / 30) + " months ago";
+}
+// "12 min ago" for recent checks; days for older ones.
+function agoTime(iso) {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (Number.isNaN(minutes)) return "";
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return minutes + " min ago";
+  if (minutes < 24 * 60) return Math.floor(minutes / 60) + " h ago";
+  return ago(iso);
 }
 function projectName() {
   return (home?.project || "").split("/").pop() || "this project";
@@ -1821,10 +1886,13 @@ function libraryStrip(lib) {
           ]
             .filter(Boolean)
             .join(" and ") + " since you last looked"
-        : lib.source + " is up to date",
+        : lib.source +
+          " is up to date" +
+          (lib.checked_at ? " · checked " + agoTime(lib.checked_at) : ""),
     el(
       "small",
       lib.source +
+        (lib.checked_at ? " · checked " + agoTime(lib.checked_at) : "") +
         (lib.last_commit_at
           ? " · last change " + ago(lib.last_commit_at)
           : "") +
@@ -1835,7 +1903,11 @@ function libraryStrip(lib) {
   if (lib.is_repo) {
     const button = el(
       "button",
-      lib.behind ? "Update library" : "Check for updates",
+      lib.behind
+        ? "Update library"
+        : lib.checked_fresh
+          ? "Check again"
+          : "Check for updates",
       lib.behind ? "" : "quiet",
     );
     button.type = "button";
@@ -2315,7 +2387,19 @@ function shareRow(row, type) {
 }
 function sharePanel(row, type) {
   const panel = el("div", undefined, "share-panel");
-  const libraries = shareData.libraries;
+  // Sharing goes to a team library; your own library is for trying things.
+  const personal = new Set(
+    (home?.libraries || [])
+      .filter((lib) => lib.personal)
+      .map((lib) => lib.source),
+  );
+  const libraries = shareData.libraries.filter((name) => !personal.has(name));
+  if (type === "local" && !libraries.length) {
+    panel.append(
+      el("p", "Add your team library first (Settings).", "hint warn"),
+    );
+    return panel;
+  }
   const note = el("textarea");
   note.rows = 2;
   note.value = type === "local" ? row.description || "" : "Update " + row.name;
@@ -2351,6 +2435,10 @@ function sharePanel(row, type) {
       "Your copy goes to the Archive and is replaced by a link to the library original.";
     panel.append(adoptBox);
   }
+  const reach = reviewChoice(row.source || shareData.libraries[0] || "", () =>
+    loadPlan(),
+  );
+  if (type === "local") panel.append(reach.element);
   const changes = el("div", undefined, "share-changes");
   panel.append(changes);
   const actions = el("div", undefined, "actions");
@@ -2385,9 +2473,12 @@ function sharePanel(row, type) {
         kind: row.kind,
         name: row.name,
         path: row.path,
-        adopt: adopt.checked,
+        adopt: adopt.checked && reach.mode() === "direct",
+        mode: reach.mode(),
       });
-      const lines = plan.changes.map((change) => {
+      // For review, only a branch commit is made; the library folder is not touched.
+      const review = plan.mode === "review";
+      const lines = (review ? [] : plan.changes).map((change) => {
         const line = el("div", undefined, "change");
         line.append(
           el("strong", change.op),
@@ -2398,7 +2489,11 @@ function sharePanel(row, type) {
       });
       for (const path of plan.commit_paths || []) {
         const line = el("div", undefined, "change");
-        line.append(el("strong", "Commit"), " ", el("code", path));
+        line.append(
+          el("strong", review ? "Commit on " + plan.branch : "Commit"),
+          " ",
+          el("code", path),
+        );
         lines.push(line);
       }
       for (const change of plan.adopt_changes || []) {
@@ -2427,7 +2522,7 @@ function sharePanel(row, type) {
               fingerprint: plan.fingerprint,
               note: note.value.trim(),
               push: push.checked,
-              adopt: adopt.checked,
+              adopt: adopt.checked && reach.mode() === "direct",
             })
           : await api("commit-edits", {
               source: row.source,
@@ -2456,19 +2551,14 @@ function shareDone(row, result) {
   box.append(
     el(
       "strong",
-      result.pushed
-        ? row.name + " is shared."
-        : row.name + " is committed in the library but not pushed yet.",
+      result.waiting_for_review
+        ? row.name + " is proposed to the team."
+        : result.pushed
+          ? row.name + " is shared."
+          : row.name + " is committed in the library but not pushed yet.",
     ),
   );
-  if (result.push_error)
-    box.append(
-      el(
-        "p",
-        "Push failed: " + result.push_error + " Push it from Settings.",
-        "hint warn",
-      ),
-    );
+  box.append(...pushOutcome(result));
   if (result.adopted)
     box.append(
       el(
@@ -2486,6 +2576,18 @@ function shareDone(row, result) {
     retry.type = "button";
     retry.onclick = () => task(() => adoptAsset(row, false));
     box.append(retry);
+  }
+  if (result.waiting_for_review) {
+    box.append(
+      el(
+        "p",
+        "Once it is merged, teammates get it with captain-share get " +
+          row.name +
+          ".",
+        "hint",
+      ),
+    );
+    return box;
   }
   const command = result.get_command || "captain-share get " + row.name;
   box.append(el("p", "Tell your team. Paste this in chat:", "hint"));
@@ -3379,6 +3481,8 @@ function promotePanel(row) {
   push.checked = true;
   pushBox.append(push, " Push to the team now");
   panel.append(pushBox);
+  const reach = reviewChoice(teams[0].source, () => load());
+  panel.append(reach.element);
   const changes = el("div", undefined, "share-changes");
   panel.append(changes);
   const actions = el("div", undefined, "actions");
@@ -3400,8 +3504,10 @@ function promotePanel(row) {
         name: row.name,
         team: team?.value || teams[0].source,
         target: home.project,
+        mode: reach.mode(),
       });
-      const lines = plan.changes.map((change) => {
+      const review = plan.mode === "review";
+      const lines = (review ? [] : plan.changes).map((change) => {
         const line = el("div", undefined, "change");
         if (change.op === "relink") {
           // Places, in this window's words: Global or the project's name.
@@ -3428,9 +3534,21 @@ function promotePanel(row) {
       });
       for (const path of plan.commit_paths || []) {
         const line = el("div", undefined, "change");
-        line.append(el("strong", "Commit"), " ", el("code", path));
+        line.append(
+          el("strong", review ? "Commit on " + plan.branch : "Commit"),
+          " ",
+          el("code", path),
+        );
         lines.push(line);
       }
+      if (review)
+        lines.push(
+          el(
+            "p",
+            "Your own copy and your links stay as they are until the review is merged.",
+            "hint",
+          ),
+        );
       for (const conflict of plan.conflicts)
         lines.push(el("p", conflict.message, "hint warn"));
       changes.replaceChildren(...lines);
@@ -3450,11 +3568,15 @@ function promotePanel(row) {
       done.append(
         el(
           "strong",
-          result.pushed
-            ? row.name + " is shared with the team."
-            : row.name + " is in the team library but not pushed yet.",
+          result.waiting_for_review
+            ? row.name +
+                " is proposed to the team. Your links stay on your own copy until it is merged; then use Share with team again."
+            : result.pushed
+              ? row.name + " is shared with the team."
+              : row.name + " is in the team library but not pushed yet.",
         ),
       );
+      done.append(...pushOutcome(result));
       if ((result.relinked || []).length)
         done.append(
           el(
@@ -3469,11 +3591,13 @@ function promotePanel(row) {
             "hint",
           ),
         );
-      for (const problem of [
-        result.push_error,
-        ...(result.errors || []),
-      ].filter(Boolean))
+      for (const problem of (result.errors || []).filter(Boolean))
         done.append(el("p", problem, "hint warn"));
+      if (result.waiting_for_review) {
+        panel.replaceChildren(done);
+        shareData = null;
+        return;
+      }
       const command = "captain-share get " + row.name;
       const copy = el("div", undefined, "copy-line");
       const code = el("code", "Try " + row.name + ": " + command);
@@ -3492,6 +3616,67 @@ function promotePanel(row) {
     });
   setTimeout(load);
   return panel;
+}
+
+// ---------------------------------------------------------------- team Git hosts (ADR 009)
+// "How should it reach the team?" — remembered per library.
+function reviewChoice(source, onChange) {
+  const box = el("fieldset", undefined, "where compact-where");
+  box.append(el("legend", "How should it reach the team?"));
+  const remembered = prefs("mode-" + source) || "direct";
+  const inputs = {};
+  for (const [value, title, text] of [
+    ["direct", "Update directly", "Commit and push to the library's branch."],
+    [
+      "review",
+      "Ask for review",
+      "Push a new branch and open a pull or merge request. Use this when the main branch is protected.",
+    ],
+  ]) {
+    const label = el("label", undefined, "where-option");
+    const input = el("input");
+    input.type = "radio";
+    input.name = "mode-" + source + "-" + Math.random().toString(36).slice(2);
+    input.value = value;
+    input.checked = value === remembered;
+    input.onchange = () => {
+      prefs("mode-" + source, value);
+      if (onChange) onChange(value);
+    };
+    inputs[value] = input;
+    const span = el("span");
+    span.append(el("strong", title), " " + text);
+    label.append(input, span);
+    box.append(label);
+  }
+  return {
+    element: box,
+    mode: () => (inputs.review.checked ? "review" : "direct"),
+  };
+}
+// What happened after a commit: waiting for review, pushed, or why the push failed.
+function pushOutcome(result) {
+  const parts = [];
+  if (result.waiting_for_review) {
+    parts.push(
+      el("p", "Waiting for review on branch " + result.branch + ".", "hint"),
+    );
+    if (result.review_url) {
+      const link = el("a", "Open the review request", "about-tour");
+      link.href = result.review_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      parts.push(link);
+    }
+  }
+  if (result.push_error) {
+    parts.push(el("p", "Push failed: " + result.push_error, "hint warn"));
+    if (result.push_error_hint)
+      parts.push(el("p", result.push_error_hint, "hint"));
+    if (result.push_error_command)
+      parts.push(commandLine(result.push_error_command));
+  }
+  return parts;
 }
 
 task(refresh);

@@ -39,6 +39,10 @@ when they are explicitly synced, not automatically to every child repository.
   to the private `my-skills` library (local commits, never pushed) and installs it
   for the user (`--here` for the project). `promote KIND NAME --to TEAM --note TEXT
   --apply` moves it to a team library when the user wants to share it.
+- **Protected or signed-only libraries:** add `--review` to `share`, `import`,
+  `promote` or `starter` to commit on a `share/NAME-USER` branch and open a merge
+  request with `--push`. When Git fails, relay the printed hint and command to the
+  user; do not retry pushes, store credentials or change signing settings for them.
 - **Starter set:** `starter SOURCE` lists a library's starter set; `--set`,
   `--add`, `--remove` (each `kind/name`) or `--clear` preview the new manifest, and
   `--note TEXT --apply` commits only that file (`--push` to push).
