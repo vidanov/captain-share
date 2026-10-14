@@ -123,7 +123,7 @@ class ProposeTests(ExtendedCopyFixture):
             set(result),
             {"commit", "pushed", "push_error", "adopted", "adopt_error", "branch", "review_url"}
             | {"push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         self.assertEqual(
             (result["pushed"], result["adopted"], result["branch"], result["review_url"]),

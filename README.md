@@ -209,6 +209,17 @@ ownership. Deselecting outbound content stops sharing it; it does not delete the
 library copy. To make the library the only maintained original, archive the old
 local installation and receive the library version inbound.
 
+## Check a library before sharing
+
+```bash
+captain-share check team --set "python3 scripts/check_library.py --refresh"
+```
+
+When a library has its own checks (allowed file types, a catalog, CI rules), set the
+command once per machine (or in Settings). Sharing runs it after copying and before
+committing; if it fails, nothing is committed and the window shows its output and
+the command to run again. Files the check changes are committed with the asset.
+
 ## What is out of date?
 
 ```bash

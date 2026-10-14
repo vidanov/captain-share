@@ -32,6 +32,14 @@ people what to do, and a direct commit could never be pushed.
   sends the data to sign). Before pushing, Captain Share asks Git for the commit's
   signature status and keeps a commit with a bad signature local, with a hint and
   the `verify-commit` command.
+- **Library check.** A library can have a check command on this machine (`check`
+  beside the checkout path in `sharing.local.json`, set in Settings or with
+  `captain-share check SOURCE --set "…"`). Captain Share never runs a command the
+  library itself asks for. Direct commits run it in the repository after the files
+  are in place: when it fails, nothing is committed and the result carries its last
+  output, a hint and the command to run again; files it changed (a refreshed
+  catalog, for example) are committed with the asset. Review commits do not run it;
+  the host's CI checks the merge request.
 - **Where it landed.** Every result that commits names the library and branch
   (`library`, `landed_on`: the checkout's branch, or the review branch), so the
   window says "Commit abc1234 in team on main · pushed".

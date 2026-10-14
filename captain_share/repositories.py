@@ -377,8 +377,16 @@ def library(target, source):
         except ValueError as exc:
             raise c.ShareError(f"Library assets are outside its repository: {base}") from exc
         prefix = "" if prefix == "." else prefix
-    sign = bool(cfg["sources"].get(source, {}).get("sign"))
-    return {"cfg": cfg, "path": path, "base": base, "repo": repo, "prefix": prefix, "sign": sign}
+    spec = cfg["sources"].get(source, {})
+    return {
+        "cfg": cfg,
+        "path": path,
+        "base": base,
+        "repo": repo,
+        "prefix": prefix,
+        "sign": bool(spec.get("sign")),
+        "check": spec.get("check"),
+    }
 
 
 def asset_of(prefix, rel):
@@ -557,9 +565,54 @@ def note_text(note):
     return note.strip()
 
 
-def commit(repo, paths, note, sign=False):
+def dirty(repo):
+    """Uncommitted paths with the hash of their current content ("" when deleted)."""
+    found = {}
+    out = e.git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
+    for item in out.decode(errors="replace").split("\0"):
+        if len(item) > 3:
+            rel = item[3:]
+            full = repo / rel
+            found[rel] = quiet(repo, "hash-object", "--", rel).strip() if full.is_file() else ""
+    return found
+
+
+def run_check(repo, check):
+    """Run the library's check (the user's per-machine setting) in the repository.
+    Returns repository paths it changed, which belong in the commit; raises with its
+    output when it fails, before anything is committed."""
+    before = dirty(repo)
+    shown = " ".join(check)
+    try:
+        # Fixed argv chosen by the user; no shell.
+        proc = subprocess.run(check, cwd=repo, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise c.ShareError(
+            f"The library check could not run ({shown}): {exc}. Nothing was committed.",
+            "Fix the check command in Settings, or turn it off for this library.",
+            f"cd {repo} && {shown}",
+            final=True,
+        ) from exc
+    if proc.returncode:
+        output = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-30:])
+        raise c.ShareError(
+            f"The library check failed ({shown}). Nothing was committed.",
+            "The files stay in the library folder. Fix what the check reports there, "
+            "then use Share again (or Send changes).",
+            f"cd {repo} && {shown}",
+            output,
+            final=True,
+        )
+    after = dirty(repo)
+    return sorted(rel for rel, digest in after.items() if before.get(rel) != digest)
+
+
+def commit(repo, paths, note, sign=False, check=None):
     """Commit exactly `paths` with `note`; other staged changes stay staged. Git applies
-    the user's own commit.gpgsign; `sign` (the library opt-in) adds -S."""
+    the user's own commit.gpgsign; `sign` (the library opt-in) adds -S. With `check`,
+    the library's check runs first and the files it changed are committed too."""
+    if check:
+        paths = list(paths) + [p for p in run_check(repo, check) if p not in paths]
     run(repo, "add", "--all", "--", *paths)
     if e.git(repo, "diff", "--cached", "--quiet", "--", *paths, check=False).returncode == 0:
         raise c.ShareError("Nothing to commit: the library already has this version")
@@ -627,15 +680,16 @@ def publish(target, source, path, push):
     return True, push_failure()
 
 
-def direct_fields(source, repo):
+def direct_fields(source, repo, check=None):
     """Keys every apply result has, for a commit on the checkout's own branch:
-    which library and branch the commit landed on."""
+    which library and branch the commit landed on, and the check that ran first."""
     return {
         "branch": None,
         "review_url": None,
         "waiting_for_review": False,
         "library": source,
         "landed_on": quiet(repo, "symbolic-ref", "--quiet", "--short", "HEAD").strip() or None,
+        "checked": " ".join(check) if check else None,
     }
 
 
@@ -771,7 +825,7 @@ def share_apply(saved, note, push=False, adopt=False):
             e.apply({**current, "fingerprint": current["plan_fingerprint"]})
             repo = Path(current["share"]["repository"])
             try:
-                sha = commit(repo, current["commit_paths"], note, lib["sign"])
+                sha = commit(repo, current["commit_paths"], note, lib["sign"], lib["check"])
             except c.ShareError as exc:
                 raise exc.wrap(
                     f"Copied into the library, but the commit failed: {exc}. "
@@ -782,7 +836,7 @@ def share_apply(saved, note, push=False, adopt=False):
                 "commit": sha,
                 "pushed": pushed,
                 **failure,
-                **direct_fields(args["source"], repo),
+                **direct_fields(args["source"], repo, lib["check"]),
             }
     # Under review the project keeps its copy until the change is merged.
     adopt_error = adopt_after_share(**args) if adopt and mode == "direct" else None
@@ -810,13 +864,19 @@ def commit_edits(target, source, kind, name, note, push, fingerprint):
         if problems:
             raise c.ShareError("; ".join(problems))
         dest = e.source_path(lib["cfg"], source, kind, name)
-        sha = commit(lib["repo"], [dest.relative_to(lib["repo"]).as_posix()], note, lib["sign"])
+        sha = commit(
+            lib["repo"],
+            [dest.relative_to(lib["repo"]).as_posix()],
+            note,
+            lib["sign"],
+            lib["check"],
+        )
         pushed, failure = publish(target, source, lib["path"], push)
     return {
         "commit": sha,
         "pushed": pushed,
         **failure,
-        **direct_fields(source, lib["repo"]),
+        **direct_fields(source, lib["repo"], lib["check"]),
         "get_command": get_command(target, source, kind, name),
     }
 
@@ -1232,7 +1292,7 @@ def propose_apply(saved, note, push=False):
             with c.locks([lib["path"] / ".captain"]):
                 e.replace_original(local, original, lib["path"])
             try:
-                sha = commit(repo, current["commit_paths"], note, lib["sign"])
+                sha = commit(repo, current["commit_paths"], note, lib["sign"], lib["check"])
             except c.ShareError as exc:
                 raise exc.wrap(
                     f"Updated the library, but the commit failed: {exc}. The previous "
@@ -1243,7 +1303,7 @@ def propose_apply(saved, note, push=False):
                 "commit": sha,
                 "pushed": pushed,
                 **failure,
-                **direct_fields(args["source"], repo),
+                **direct_fields(args["source"], repo, lib["check"]),
             }
         else:
             entries = [(current["commit_paths"][0], local)]
@@ -1408,7 +1468,7 @@ def starter_apply(saved, note, push=False):
                 e.archive_into(tx, file, lib["path"])
             else:
                 tx.write(file, current["content"])
-            sha = commit(lib["repo"], current["commit_paths"], note, lib["sign"])
+            sha = commit(lib["repo"], current["commit_paths"], note, lib["sign"], lib["check"])
         except Exception as exc:
             issues = tx.rollback()
             # The file had no uncommitted changes, so its index entry returns to HEAD.
@@ -1424,7 +1484,7 @@ def starter_apply(saved, note, push=False):
         "commit": sha,
         "pushed": pushed,
         **failure,
-        **direct_fields(args["source"], lib["repo"]),
+        **direct_fields(args["source"], lib["repo"], lib["check"]),
     }
 
 

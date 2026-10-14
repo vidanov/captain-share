@@ -17,9 +17,12 @@ class ShareError(Exception):
     """A refusal or failure to show the user. `hint` says what to do next, `command`
     is an exact command that helps, and `detail` keeps the original tool output."""
 
-    def __init__(self, message="", hint=None, command=None, detail=None):
+    def __init__(self, message="", hint=None, command=None, detail=None, final=False):
         super().__init__(message)
         self.hint, self.command, self.detail = hint, command, detail
+        # A final error already says what happened and what was kept; callers that
+        # add context through wrap() leave it as it is.
+        self.final = final
 
     def fields(self):
         """The extra JSON fields of this error, when present."""
@@ -35,6 +38,8 @@ class ShareError(Exception):
 
     def wrap(self, message):
         """A new error with another message that keeps this one's hint and command."""
+        if self.final:
+            return self
         return ShareError(message, self.hint, self.command, self.detail)
 
 
@@ -211,12 +216,18 @@ def validate(data, path, local=False):
             raise ShareError(f"{field} must be an object at {path}")
     for sid, spec in data.get("sources", {}).items():
         name(sid)
-        keys = {"path", "layout", "enabled", "sign"} if local else {"url", "description", "enabled"}
+        keys = (
+            {"path", "layout", "enabled", "sign", "check"}
+            if local
+            else {"url", "description", "enabled"}
+        )
         if not isinstance(spec, dict) or set(spec) - keys:
             raise ShareError(f"Invalid source {sid} at {path}")
         for flag in ("enabled", "sign"):
             if flag in spec and not isinstance(spec[flag], bool):
                 raise ShareError(f"Source {flag} must be boolean at {path}")
+        if "check" in spec:
+            check_command(spec["check"], path)
         if local and spec.get("enabled", True):
             if not isinstance(spec.get("path"), str) or not spec["path"]:
                 raise ShareError(f"Source {sid} needs a local path at {path}")
@@ -395,7 +406,7 @@ def add_source(target, sid, path, layout=None, scope="repo", url=None):
     with locks([d]):
         local = read_json(d / "sharing.local.json", {"version": 1, "sources": {}})
         validate(local, d / "sharing.local.json", True)
-        kept = {k: v for k, v in local["sources"].get(sid, {}).items() if k == "sign"}
+        kept = {k: v for k, v in local["sources"].get(sid, {}).items() if k in ("sign", "check")}
         local["sources"][sid] = {"path": str(location), "layout": layout, "enabled": True, **kept}
         portable = read_json(d / "sharing.json")
         validate(portable, d / "sharing.json")
@@ -418,6 +429,41 @@ def remove_source(target, sid, scope="repo"):
         atomic_json(d / "sharing.json", cfg)
         atomic_json(d / "sharing.local.json", local)
     return {"source": sid, "disabled": True}
+
+
+def check_command(value, path="check"):
+    """A library check is an argument list run without a shell: ["python3", "x.py"]."""
+    if (
+        not isinstance(value, list)
+        or not 1 <= len(value) <= 20
+        or not all(isinstance(x, str) and x for x in value)
+    ):
+        raise ShareError(f"check must be a non-empty list of arguments at {path}")
+    return value
+
+
+def set_check(target, sid, command):
+    """The command that checks a library before Captain Share commits to it, or None.
+    Machine-local beside the checkout path, like signing: Captain Share runs only
+    what the user set here, never a command the library itself asks for."""
+    name(sid)
+    if command is not None:
+        check_command(command)
+    bound = None
+    for p, data, local in layers(target):
+        if local and data.get("sources", {}).get(sid, {}).get("path"):
+            bound = p
+    if bound is None:
+        raise ShareError(f"Library {sid} is not connected on this machine")
+    with locks([bound.parent]):
+        data = read_json(bound)
+        validate(data, bound, True)
+        if command is None:
+            data["sources"][sid].pop("check", None)
+        else:
+            data["sources"][sid]["check"] = command
+        atomic_json(bound, data)
+    return {"source": sid, "check": command}
 
 
 def set_sign(target, sid, sign):
