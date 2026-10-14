@@ -8,6 +8,7 @@ management skill and fictional fixtures are public product code.
 
 - `captain_share/config.py`: layered `.captain` settings, paths and locks.
 - `captain_share/engine.py`: preview/apply, ownership, links/copies and archives.
+- `captain_share/formats.py`: text conversion into another tool's format (ADR 012).
 - `captain_share/cli.py`, `server.py`, `web/`: interfaces to the same engine.
 - `captain_share/integrations.py`: Captain connection import and explicit Kiro handoff.
 - `captain_share/repositories.py`, `imports.py`, `personal.py`, `disconnect.py`: library Git
@@ -28,7 +29,8 @@ Python/web files; `make lint-fix` fixes imports and supported lint issues. Use
 Read [ADR 001](docs/adr/001-sharing-engine.md) before changing module boundaries and
 [ADR 002](docs/adr/002-agent-tool-destinations.md) before changing tool destinations, and
 [ADR 003](docs/adr/003-kiro-powers.md) before changing Kiro power handling, and
-[ADR 004](docs/adr/004-web-places.md) before changing which folders a web window may change.
+[ADR 004](docs/adr/004-web-places.md) before changing which folders a web window may change,
+and [ADR 012](docs/adr/012-claude-rules-and-commands.md) before changing format conversion.
 Preserve preview freshness, ownership checks, path containment, rollback on handled
 failure, and recoverable archives. Existing hooks and other installers' ledgers
 remain owned by their original tools.

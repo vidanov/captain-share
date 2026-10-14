@@ -600,12 +600,110 @@ class SharingTests(SharingFixture):
         )
 
     def test_kind_without_enabled_tool_is_a_conflict(self):
-        (self.lib / "ip/steering/guide.md").write_text("Guidance")
+        (self.lib / "ip/agents").mkdir(exist_ok=True)
+        (self.lib / "ip/agents/helper.json").write_text('{"name": "helper"}')
         c.set_tools(self.repo, ["claude"])
-        c.select(self.repo, "inbound", "team", "steering", "guide.md")
+        c.select(self.repo, "inbound", "team", "agents", "helper.json")
         planned = e.plan(self.repo)
         self.assertFalse(planned["can_apply"])
-        self.assertIn("No enabled tool reads steering", planned["errors"][0])
+        self.assertIn("No enabled tool reads agents", planned["errors"][0])
+
+    def test_steering_and_prompts_reach_claude_as_generated_files(self):
+        steering = self.lib / "ip/steering"
+        steering.mkdir(exist_ok=True)
+        (steering / "always.md").write_text("---\ninclusion: always\n---\n\nUse tabs.\n")
+        (steering / "api.md").write_text(
+            '---\ninclusion: fileMatch\nfileMatchPattern: ["src/api/**/*.ts", "*.sql"]\n'
+            "name: api\n---\nValidate input. See #[[file:docs/api.md]]\n"
+        )
+        (steering / "manual.md").write_text("---\ninclusion: manual\n---\nOnly on request.\n")
+        (self.lib / "ip/prompts").mkdir(exist_ok=True)
+        (self.lib / "ip/prompts/fix.md").write_text("Fix issue ${1} on ${2}; all: ${@}\n")
+        c.set_tools(self.repo, ["kiro", "claude"])
+        for kind, name in (
+            ("steering", "always.md"),
+            ("steering", "api.md"),
+            ("steering", "manual.md"),
+            ("prompts", "fix.md"),
+        ):
+            c.select(self.repo, "inbound", "team", kind, name)
+        planned = e.plan(self.repo)
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        self.assertEqual(sum(1 for x in planned["changes"] if x["op"] == "render"), 3)
+        notes = " ".join(planned["notes"])
+        self.assertIn("manual steering has no Claude rule equivalent", notes)
+        self.assertIn("dropped name", notes)
+        self.assertIn("#[[file:", notes)
+        e.apply(planned)
+        rules = self.repo / ".claude/rules"
+        self.assertEqual((rules / "always.md").read_text(), "Use tabs.\n")
+        self.assertEqual(
+            (rules / "api.md").read_text(),
+            '---\npaths:\n  - "src/api/**/*.ts"\n  - "*.sql"\n---\n'
+            "Validate input. See #[[file:docs/api.md]]\n",
+        )
+        self.assertFalse(os.path.lexists(rules / "manual.md"))
+        self.assertTrue((self.repo / ".kiro/steering/manual.md").is_symlink())
+        command = self.repo / ".claude/commands/fix.md"
+        self.assertEqual(
+            command.read_text(), "Fix issue $ARGUMENTS[0] on $ARGUMENTS[1]; all: $ARGUMENTS\n"
+        )
+        # Claude's files are links to generated copies owned by Captain Share.
+        generated = Path(os.readlink(rules / "api.md"))
+        self.assertTrue(str(generated).startswith(str(c.global_dir() / "rendered/claude/team")))
+        self.assertTrue(e.status(self.repo)["ok"])
+        self.assertEqual(e.plan(self.repo)["changes"], [])
+        found = e.why(rules / "api.md")
+        self.assertEqual((found["source"], found["library_name"]), ("team", "api.md"))
+        self.assertIn("generated copy", found["note"])
+        # A Claude rule is not shared back as Kiro steering.
+        own = self.repo / ".claude/rules/own.md"
+        own.write_text("My rule")
+        c.select(self.repo, "outbound", "team", "steering", "own.md", path=".claude/rules/own.md")
+        self.assertIn("in Claude's format", " ".join(e.plan(self.repo, "outbound")["errors"]))
+        c.select(
+            self.repo,
+            "outbound",
+            "team",
+            "steering",
+            "own.md",
+            path=".claude/rules/own.md",
+            enabled=False,
+        )
+        own.unlink()
+        # A library change regenerates the file; an edit to it is archived first.
+        (steering / "always.md").write_text("Use spaces.\n")
+        (generated.parent / "always.md").write_text("edited by hand")
+        planned = e.plan(self.repo)
+        self.assertEqual([x["op"] for x in planned["changes"]], ["archive", "render"])
+        e.apply(planned)
+        self.assertEqual((rules / "always.md").read_text(), "Use spaces.\n")
+        # Steering that turns manual stops reaching Claude; Kiro keeps its link.
+        (steering / "always.md").write_text("---\ninclusion: manual\n---\nx\n")
+        e.apply(e.plan(self.repo))
+        self.assertFalse(os.path.lexists(rules / "always.md"))
+        self.assertTrue((self.repo / ".kiro/steering/always.md").is_symlink())
+        # Removing the selection removes both tools' links.
+        e.apply(e.plan(self.repo, action="remove", kind="steering", asset="api.md"))
+        self.assertFalse(os.path.lexists(rules / "api.md"))
+
+    def test_format_conversion_edge_cases(self):
+        from captain_share import formats
+
+        rule, notes = formats.steering_to_rule("No frontmatter at all.\n")
+        self.assertEqual((rule, notes), ("No frontmatter at all.\n", []))
+        rule, _ = formats.steering_to_rule(
+            "---\ninclusion: fileMatch\nfileMatchPattern:\n  - '**/*.py'\n---\nPython.\n"
+        )
+        self.assertEqual(rule, '---\npaths:\n  - "**/*.py"\n---\nPython.\n')
+        rule, _ = formats.steering_to_rule(
+            '---\ninclusion: fileMatch\nfileMatchPattern: "components/**/*.tsx"\n---\nUI\n'
+        )
+        self.assertIn('  - "components/**/*.tsx"', rule)
+        self.assertIsNone(formats.steering_to_rule("---\ninclusion: fileMatch\n---\nx")[0])
+        self.assertIsNone(formats.steering_to_rule("---\ninclusion: auto\nname: a\n---\nx")[0])
+        text, _ = formats.prompt_to_command("${10} $ARGUMENTS ${11}")
+        self.assertEqual(text, "$ARGUMENTS[9] $ARGUMENTS ${11}")
 
     def test_tools_are_validated_and_deepest_layer_wins(self):
         c.set_tools(self.repo, ["kiro", "claude"], scope="global")

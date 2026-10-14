@@ -43,8 +43,9 @@ DESTINATIONS = {
     # Codex reads the shared Agent Skills folder (.agents/skills) and follows symlinks.
     "skills": {"kiro": ".kiro/skills", "claude": ".claude/skills", "codex": ".agents/skills"},
     "agents": {"kiro": ".kiro/agents"},
-    "prompts": {"kiro": ".kiro/prompts"},
-    "steering": {"kiro": ".kiro/steering"},
+    # Claude reads prompts as commands and steering as rules: generated files (ADR 012).
+    "prompts": {"kiro": ".kiro/prompts", "claude": ".claude/commands"},
+    "steering": {"kiro": ".kiro/steering", "claude": ".claude/rules"},
     "copilot": {"copilot": ".github"},
     "copilot-instructions": {"copilot": ".github/instructions"},
     "copilot-prompts": {"copilot": ".github/prompts"},

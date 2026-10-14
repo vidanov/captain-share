@@ -110,15 +110,24 @@ captain-share --target /path/to/project sync --apply
 | Kind | Kiro | Claude Code | Codex | Copilot |
 | --- | --- | --- | --- | --- |
 | `skills` | `.kiro/skills/` | `.claude/skills/` | `.agents/skills/` | |
-| `agents`, `prompts`, `steering` | `.kiro/…` | | | |
+| `steering` | `.kiro/steering/` | `.claude/rules/` (generated) | | |
+| `prompts` | `.kiro/prompts/` | `.claude/commands/` (generated) | | |
+| `agents` | `.kiro/agents/` | | | |
 | `copilot*` | | | | `.github/…` |
 
 Each enabled tool gets its own live link to the same original; nothing is copied
 between tool folders. Turning a tool off archives its links at the next apply.
 `scan` also finds skills in `.claude/skills/`, so a Claude-only skill can be
-contributed to a library and then received for every tool. Steering, agents, and
-prompts use different formats in Claude Code and are not converted.
+contributed to a library and then received for every tool.
 See [ADR 002](docs/adr/002-agent-tool-destinations.md).
+
+Steering and prompts stay in Kiro's format in the library. For Claude Code they are
+converted: always-included steering becomes a rule, `fileMatch` steering a rule with
+`paths:` for the same globs, and prompt arguments are renumbered for commands.
+Claude's folders link to these generated files, which every preview checks and
+regenerates when the library changes. Manual and auto steering have no Claude
+equivalent and stay Kiro-only; the preview lists what a conversion leaves out. See
+[ADR 012](docs/adr/012-claude-rules-and-commands.md).
 
 ### Kiro powers
 

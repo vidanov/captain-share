@@ -691,7 +691,8 @@ def share_candidates(target):
                     files.append(rel)
             edited.append({"source": source, "kind": kind, "name": name, "files": files})
     for row in e.scan(target):
-        if row["status"] != "local":
+        # Claude rules and commands are generated from Kiro originals (ADR 012).
+        if row["status"] != "local" or e.converted_folder(row["path"]):
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
         differs, older = None, None
@@ -727,6 +728,29 @@ def share_candidates(target):
                 "older": older,
             }
         )
+    # Assets installed for every project (~/.kiro, ~/.claude) that no library has yet,
+    # shared from the home folder; only when this window is not already there.
+    home = c.global_dir().parent
+    shared_from_home = []
+    if c.root(target) != home:
+        try:
+            home_cfg = c.effective(home)
+            for row in e.scan(home):
+                if row["status"] != "local" or e.converted_folder(row["path"]):
+                    continue
+                if e.locate(home_cfg, row["name"], kind=row["kind"]):
+                    continue
+                shared_from_home.append(
+                    {
+                        "kind": row["kind"],
+                        "name": row["name"],
+                        "path": row["path"],
+                        "description": e.describe(home / row["path"], row["kind"]),
+                        "target": str(home),
+                    }
+                )
+        except c.ShareError:
+            shared_from_home = []
     personal = []
     if me.SOURCE in cfg["sources"]:
         try:
@@ -757,6 +781,7 @@ def share_candidates(target):
         "libraries": names,
         "versions": r.version_rows(target),
         "personal": personal,
+        "global": shared_from_home,
     }
 
 

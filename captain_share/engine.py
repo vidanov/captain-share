@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config as c
+from . import formats
 
 MAX_ASSET_BYTES = 64 * 1024 * 1024
 # Regenerable local files: never listed, compared, or copied, and never blocking.
@@ -563,6 +564,50 @@ def plan(
     def archive(p, row=None):
         changes.append({"op": "archive", "path": str(p), "selection": row})
 
+    renders: dict[str, str] = {}
+    notes: list[str] = []
+
+    def link_source(src, kind, tool, sid, name, key):
+        """What one tool's destination links to: the original, or a generated file
+        for a tool that reads another format (ADR 012); None when that tool has no
+        equivalent. A generated file that differs is archived, then rewritten."""
+        if tool is None or (kind, tool) not in formats.CONVERTERS:
+            return src
+        content, found = formats.convert(kind, tool, src.read_text(encoding="utf-8"))
+        notes.extend(f"{key} for {tool}: {note}" for note in found if note not in notes)
+        if content is None:
+            return None
+        out = rendered_path(tool, sid, kind, name)
+        if str(out) in renders:
+            return out
+        renders[str(out)] = content
+        existing = observe(out)
+        if existing is not None and (out.is_symlink() or not out.is_file()):
+            raise c.ShareError(f"Generated file was replaced by something else: {out}")
+        if existing is None or out.read_text(encoding="utf-8") != content:
+            if existing is not None:
+                changes.append(
+                    {
+                        "op": "archive",
+                        "path": str(out),
+                        "selection": None,
+                        "archive_root": str(c.global_dir().parent),
+                    }
+                )
+            changes.append(
+                {"op": "render", "path": str(out), "source": str(src), "content": content}
+            )
+        return out
+
+    def same_as(dest, src, linked):
+        """Whether a local copy equals what the destination would show."""
+        if linked == src:
+            return same_content(dest, src)
+        try:
+            return dest.is_file() and dest.read_text(encoding="utf-8") == renders[str(linked)]
+        except (OSError, UnicodeDecodeError):
+            return False
+
     def link_original(freed=()):
         """Adopt: archive local copies of the asset and link the library original into
         every enabled tool folder. Paths in `freed` are being archived by this plan."""
@@ -594,6 +639,9 @@ def plan(
                 dest = c.safe_path(target, rel, leaf_link=True)
                 if src == dest or src in dest.parents or dest in src.parents:
                     raise c.ShareError("The local copy and the library original overlap")
+                linked = link_source(src, kind, tool, source, asset, key)
+                if linked is None:
+                    continue
                 existing = None if rel in freed else observe(dest)
                 previous = old["inbound"].get(rel)
                 if existing is not None and tracked(target, dest):
@@ -610,7 +658,7 @@ def plan(
                         "target": previous["source_path"],
                     }:
                         raise c.ShareError(f"Managed link changed: {rel}; restore it first")
-                    if previous["source_path"] != str(src):
+                    if previous["source_path"] != str(linked):
                         conflict(
                             f"{rel} is linked to {previous.get('key')}; remove it first",
                             rel,
@@ -619,7 +667,7 @@ def plan(
                         )
                         continue
                 elif existing is not None:
-                    if not same_content(dest, src) and not replace:
+                    if not same_as(dest, src, linked) and not replace:
                         conflict(
                             f"Your copy of {asset} differs from the library version. "
                             "Share your changes, or replace yours (it is archived).",
@@ -631,11 +679,11 @@ def plan(
                     archive(dest, None)
                 if tool is None:
                     continue  # The original the share came from is archived, not linked.
-                if existing != {"type": "link", "target": str(src)}:
-                    changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                if existing != {"type": "link", "target": str(linked)}:
+                    changes.append({"op": "link", "path": str(dest), "source": str(linked)})
                 next_state["inbound"][rel] = {
                     **row,
-                    "source_path": str(src),
+                    "source_path": str(linked),
                     "key": key,
                     "tool": tool,
                 }
@@ -669,6 +717,11 @@ def plan(
                 for tool, folder in targets:
                     rel = f"{folder}/{alias}"
                     try:
+                        linked = link_source(
+                            src, row["kind"], tool, row["source"], row["name"], key
+                        )
+                        if linked is None:
+                            continue
                         if rel in desired:
                             raise c.ShareError(f"Two selections target {rel}")
                         dest = c.safe_path(target, rel, leaf_link=True)
@@ -701,11 +754,11 @@ def plan(
                             raise c.ShareError(
                                 f"Managed link changed or disappeared: {rel}; restore it before syncing"
                             )
-                        if existing != {"type": "link", "target": str(src)}:
+                        if existing != {"type": "link", "target": str(linked)}:
                             if existing:
                                 archive(dest, previous)
-                            changes.append({"op": "link", "path": str(dest), "source": str(src)})
-                        desired[rel] = {**row, "source_path": str(src), "key": key, "tool": tool}
+                            changes.append({"op": "link", "path": str(dest), "source": str(linked)})
+                        desired[rel] = {**row, "source_path": str(linked), "key": key, "tool": tool}
                     except (c.ShareError, OSError) as exc:
                         conflict(str(exc), rel, key)
             for rel, previous in old["inbound"].items():
@@ -730,6 +783,11 @@ def plan(
             for key, row in outbound.items():
                 try:
                     src = c.safe_path(target, row["path"])
+                    if converted_folder(row["path"]):
+                        raise c.ShareError(
+                            f"{row['path']} is in Claude's format; libraries keep the Kiro "
+                            "format. Share the Kiro original instead (ADR 012)."
+                        )
                     validate_asset(src, row["kind"], outbound=True)
                     dest = source_path(cfg, row["source"], row["kind"], row["name"])
                     if dest in destinations:
@@ -846,14 +904,18 @@ def plan(
                     if existing != {"type": "link", "target": previous["source_path"]}:
                         raise c.ShareError(f"Managed link changed: {rel}; restore it first")
                     archive(dest, previous)
-                changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                linked = link_source(src, kind, previous.get("tool"), source, asset, key)
+                if linked is None:
+                    next_state["inbound"].pop(rel, None)
+                    continue
+                changes.append({"op": "link", "path": str(dest), "source": str(linked)})
                 kept_fields = {
                     k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
                 }
                 next_state["inbound"][rel] = {
                     **kept_fields,
                     "source": source,
-                    "source_path": str(src),
+                    "source_path": str(linked),
                     "key": key,
                     "tool": previous.get("tool"),
                 }
@@ -1053,6 +1115,7 @@ def plan(
         "can_apply": not errors,
         "observations": observations,
         "next_state": next_state,
+        "notes": notes,
         "config_update": config_update,
         "exclusion": exclusion,
         "sources": cfg["sources"],
@@ -1063,6 +1126,18 @@ def plan(
         result["local_update"] = local_update
     result["fingerprint"] = digest(result)
     return result
+
+
+def converted_folder(rel):
+    """Whether a target-relative path lies in a folder whose tool reads another format."""
+    return any(
+        rel.startswith(c.DESTINATIONS[kind][tool] + "/") for kind, tool in formats.CONVERTERS
+    )
+
+
+def rendered_path(tool, source, kind, name):
+    """Where the generated file for one asset in another tool's format lives."""
+    return c.safe_path(c.global_dir(), f"rendered/{c.name(tool)}/{c.name(source)}/{kind}/{name}")
 
 
 def archive_into(tx, dest, owner, selection=None):
@@ -1375,7 +1450,8 @@ def apply_roots(target):
     """Lock keys for applying a plan at target: its .captain, every bound library's
     .captain (archives), and a shared Git exclude file."""
     cfg = c.effective(target)
-    roots = [target / ".captain"]
+    # Generated files for other tools' formats live in the global folder (ADR 012).
+    roots = [target / ".captain", c.global_dir()]
     roots += [
         Path(s["path"]).expanduser().resolve() / ".captain"
         for s in cfg["sources"].values()
@@ -1399,6 +1475,8 @@ def perform(tx, current, target, archives):
             archives.append({"id": archive_id, "root": str(owner)})
         elif change["op"] == "link":
             tx.link(change["source"], dest)
+        elif change["op"] == "render":
+            tx.write(dest, change["content"])
         elif change["op"] == "copy":
             tx.copy(Path(change["source"]), dest)
         elif change["op"] == "rename":
@@ -1577,6 +1655,16 @@ def why_asset(path, place, kind, tool, rel):
                 saved = cfg["origins"]["inbound"].get(key)
                 if saved:
                     result["selected_in"] = saved
+        rendered = c.global_dir() / "rendered"
+        if rendered in original.parents:
+            # A generated file for this tool's format (ADR 012): name its library asset.
+            parts = original.relative_to(rendered).parts
+            if len(parts) == 4:
+                _, sid, _, name = parts
+                result.update(source=sid, library_name=name, generated=True)
+                saved = cfg["origins"]["inbound"].get(f"{sid}/{kind}/{name}")
+                if saved:
+                    result["selected_in"] = saved
         try:
             row = state(place)["inbound"].get(rel)
         except c.ShareError:
@@ -1586,6 +1674,10 @@ def why_asset(path, place, kind, tool, rel):
             result["note"] = "The link is broken: its original is gone."
         elif "source" not in result:
             result["note"] = "Links to a folder that is not a connected library."
+        elif result.get("generated"):
+            result["note"] = (
+                "A generated copy in this tool's format; edit the library original instead."
+            )
         return result
     result["status"] = "local"
     result["managed"] = False

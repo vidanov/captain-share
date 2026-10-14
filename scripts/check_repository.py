@@ -11,7 +11,8 @@ from pathlib import Path
 # Only the low-level engine/config separation is constrained. UI/CLI can evolve.
 ALLOWED_INTERNAL = {
     "config": set(),
-    "engine": {"config"},
+    "formats": set(),
+    "engine": {"config", "formats"},
     "integrations": {"config", "engine"},
     "repositories": {"config", "engine"},
     "imports": {"config", "engine", "repositories"},
