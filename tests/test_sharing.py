@@ -600,13 +600,13 @@ class SharingTests(SharingFixture):
         )
 
     def test_kind_without_enabled_tool_is_a_conflict(self):
-        (self.lib / "ip/agents").mkdir(exist_ok=True)
-        (self.lib / "ip/agents/helper.json").write_text('{"name": "helper"}')
+        (self.lib / "ip/copilot-prompts").mkdir(exist_ok=True)
+        (self.lib / "ip/copilot-prompts/fix.prompt.md").write_text("Fix it")
         c.set_tools(self.repo, ["claude"])
-        c.select(self.repo, "inbound", "team", "agents", "helper.json")
+        c.select(self.repo, "inbound", "team", "copilot-prompts", "fix.prompt.md")
         planned = e.plan(self.repo)
         self.assertFalse(planned["can_apply"])
-        self.assertIn("No enabled tool reads agents", planned["errors"][0])
+        self.assertIn("No enabled tool reads copilot-prompts", planned["errors"][0])
 
     def test_steering_and_prompts_reach_claude_as_generated_files(self):
         steering = self.lib / "ip/steering"
@@ -629,9 +629,9 @@ class SharingTests(SharingFixture):
             c.select(self.repo, "inbound", "team", kind, name)
         planned = e.plan(self.repo)
         self.assertTrue(planned["can_apply"], planned["errors"])
-        self.assertEqual(sum(1 for x in planned["changes"] if x["op"] == "render"), 3)
+        self.assertEqual(sum(1 for x in planned["changes"] if x["op"] == "render"), 4)
         notes = " ".join(planned["notes"])
-        self.assertIn("manual steering has no Claude rule equivalent", notes)
+        self.assertIn("manual steering becomes the Claude skill /manual", notes)
         self.assertIn("dropped name", notes)
         self.assertIn("#[[file:", notes)
         e.apply(planned)
@@ -644,6 +644,12 @@ class SharingTests(SharingFixture):
         )
         self.assertFalse(os.path.lexists(rules / "manual.md"))
         self.assertTrue((self.repo / ".kiro/steering/manual.md").is_symlink())
+        skill = self.repo / ".claude/skills/manual/SKILL.md"
+        self.assertEqual(
+            skill.read_text(),
+            '---\nname: manual\ndescription: "Team guidance: manual. Use when asked for it."\n'
+            "disable-model-invocation: true\n---\nOnly on request.\n",
+        )
         command = self.repo / ".claude/commands/fix.md"
         self.assertEqual(
             command.read_text(), "Fix issue $ARGUMENTS[0] on $ARGUMENTS[1]; all: $ARGUMENTS\n"
@@ -678,14 +684,58 @@ class SharingTests(SharingFixture):
         self.assertEqual([x["op"] for x in planned["changes"]], ["archive", "render"])
         e.apply(planned)
         self.assertEqual((rules / "always.md").read_text(), "Use spaces.\n")
-        # Steering that turns manual stops reaching Claude; Kiro keeps its link.
+        # Steering that turns manual moves from Claude's rules to its skills.
         (steering / "always.md").write_text("---\ninclusion: manual\n---\nx\n")
         e.apply(e.plan(self.repo))
         self.assertFalse(os.path.lexists(rules / "always.md"))
+        self.assertTrue((self.repo / ".claude/skills/always/SKILL.md").is_file())
         self.assertTrue((self.repo / ".kiro/steering/always.md").is_symlink())
+        self.assertTrue(e.status(self.repo)["ok"])
+        # Removing it by its library name removes the skill folder too.
+        e.apply(e.plan(self.repo, action="remove", kind="steering", asset="always.md"))
+        self.assertFalse(os.path.lexists(self.repo / ".claude/skills/always"))
         # Removing the selection removes both tools' links.
         e.apply(e.plan(self.repo, action="remove", kind="steering", asset="api.md"))
         self.assertFalse(os.path.lexists(rules / "api.md"))
+
+    def test_agents_reach_claude_as_subagents(self):
+        agents = self.lib / "ip/agents"
+        agents.mkdir(exist_ok=True)
+        (agents / "reviewer.json").write_text(
+            json.dumps(
+                {
+                    "name": "reviewer",
+                    "description": "Read-only review",
+                    "prompt": "file://./reviewer-prompt.md",
+                    "tools": ["read", "shell", "@git"],
+                    "mcpServers": {"git": {"command": "git-mcp"}},
+                }
+            )
+        )
+        (agents / "reviewer-prompt.md").write_text("Review the diff. Never edit files.")
+        (agents / "open.json").write_text(json.dumps({"prompt": "Do anything."}))
+        c.set_tools(self.repo, ["kiro", "claude"])
+        for name in ("reviewer.json", "open.json"):
+            c.select(self.repo, "inbound", "team", "agents", name)
+        planned = e.plan(self.repo)
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        notes = " ".join(planned["notes"])
+        self.assertIn("tools without a Claude match dropped: @git", notes)
+        self.assertIn("Kiro-only fields dropped: mcpServers", notes)
+        self.assertIn("lists no tools", notes)
+        e.apply(planned)
+        sub = self.repo / ".claude/agents/reviewer.md"
+        self.assertEqual(
+            sub.read_text(),
+            '---\nname: reviewer\ndescription: "Read-only review"\n'
+            "tools: Read, Grep, Glob, Bash\n---\nReview the diff. Never edit files.\n",
+        )
+        self.assertFalse(os.path.lexists(self.repo / ".claude/agents/open.md"))
+        self.assertTrue((self.repo / ".kiro/agents/open.json").is_symlink())
+        found = e.why(sub)
+        self.assertEqual((found["source"], found["library_name"]), ("team", "reviewer.json"))
+        e.apply(e.plan(self.repo, action="remove", kind="agents", asset="reviewer.json"))
+        self.assertFalse(os.path.lexists(sub))
 
     def test_format_conversion_edge_cases(self):
         from captain_share import formats

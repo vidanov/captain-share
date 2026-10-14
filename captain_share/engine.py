@@ -421,10 +421,10 @@ def state(target):
             raise c.ShareError("Invalid installation state")
     for rel, row in data["inbound"].items():
         c.asset_name(row["kind"], row["name"])
-        if not any(
-            rel == f"{dest}/{row.get('alias', row.get('name', ''))}"
-            for dest in c.folders(row["kind"])
-        ):
+        alias = row.get("alias", row.get("name", ""))
+        allowed = [f"{dest}/{alias}" for dest in c.folders(row["kind"])]
+        allowed += formats.destinations(row["kind"], alias)
+        if rel not in allowed:
             raise c.ShareError(f"Invalid managed destination: {rel}")
         if not isinstance(row.get("source_path"), str):
             raise c.ShareError("Invalid managed source path")
@@ -567,24 +567,41 @@ def plan(
     renders: dict[str, str] = {}
     notes: list[str] = []
 
-    def link_source(src, kind, tool, sid, name, key):
-        """What one tool's destination links to: the original, or a generated file
-        for a tool that reads another format (ADR 012); None when that tool has no
-        equivalent. A generated file that differs is archived, then rewritten."""
+    def link_source(src, kind, tool, sid, name, key, rel):
+        """(what one tool's destination links to, the destination). The original at
+        `rel`, or a generated file for a tool that reads another format (ADR 012),
+        which may land in another folder or under another name (ADR 013); (None,
+        None) when that tool has no equivalent. A generated file that differs is
+        archived, then rewritten."""
         if tool is None or (kind, tool) not in formats.CONVERTERS:
-            return src
-        content, found = formats.convert(kind, tool, src.read_text(encoding="utf-8"))
-        notes.extend(f"{key} for {tool}: {note}" for note in found if note not in notes)
-        if content is None:
-            return None
+            return src, rel
+
+        def beside(ref):
+            # Files an asset refers to (an agent's prompt file) from its own folder.
+            try:
+                found = c.safe_path(src.parent, ref)
+                return found.read_text(encoding="utf-8") if found.is_file() else None
+            except (c.ShareError, OSError, UnicodeDecodeError):
+                return None
+
+        result = formats.convert(kind, tool, src.read_text(encoding="utf-8"), name, beside)
+        notes.extend(f"{key} for {tool}: {note}" for note in result.notes if note not in notes)
+        if result.content is None:
+            return None, None
+        folder, _, leaf = rel.rpartition("/")
+        rel = f"{result.folder or folder}/{result.leaf or leaf}"
         out = rendered_path(tool, sid, kind, name)
+        link = out
+        if result.directory:
+            link = out.parent / (out.name + ".skill")
+            out = link / "SKILL.md"
         if str(out) in renders:
-            return out
-        renders[str(out)] = content
+            return link, rel
+        renders[str(out)] = result.content
         existing = observe(out)
         if existing is not None and (out.is_symlink() or not out.is_file()):
             raise c.ShareError(f"Generated file was replaced by something else: {out}")
-        if existing is None or out.read_text(encoding="utf-8") != content:
+        if existing is None or out.read_text(encoding="utf-8") != result.content:
             if existing is not None:
                 changes.append(
                     {
@@ -595,17 +612,21 @@ def plan(
                     }
                 )
             changes.append(
-                {"op": "render", "path": str(out), "source": str(src), "content": content}
+                {"op": "render", "path": str(out), "source": str(src), "content": result.content}
             )
-        return out
+        return link, rel
 
     def same_as(dest, src, linked):
         """Whether a local copy equals what the destination would show."""
         if linked == src:
             return same_content(dest, src)
         try:
-            return dest.is_file() and dest.read_text(encoding="utf-8") == renders[str(linked)]
-        except (OSError, UnicodeDecodeError):
+            if linked.name.endswith(".skill"):
+                want, dest = renders[str(linked / "SKILL.md")], dest / "SKILL.md"
+            else:
+                want = renders[str(linked)]
+            return dest.is_file() and dest.read_text(encoding="utf-8") == want
+        except (KeyError, OSError, UnicodeDecodeError):
             return False
 
     def link_original(freed=()):
@@ -636,12 +657,15 @@ def plan(
             if src is None:
                 break
             try:
+                linked, moved = link_source(src, kind, tool, source, asset, key, rel)
+                if linked is None:
+                    continue
+                if moved != rel and moved in [x for x, _ in targets]:
+                    continue  # Another target already covers that destination.
+                rel = moved
                 dest = c.safe_path(target, rel, leaf_link=True)
                 if src == dest or src in dest.parents or dest in src.parents:
                     raise c.ShareError("The local copy and the library original overlap")
-                linked = link_source(src, kind, tool, source, asset, key)
-                if linked is None:
-                    continue
                 existing = None if rel in freed else observe(dest)
                 previous = old["inbound"].get(rel)
                 if existing is not None and tracked(target, dest):
@@ -717,8 +741,8 @@ def plan(
                 for tool, folder in targets:
                     rel = f"{folder}/{alias}"
                     try:
-                        linked = link_source(
-                            src, row["kind"], tool, row["source"], row["name"], key
+                        linked, rel = link_source(
+                            src, row["kind"], tool, row["source"], row["name"], key, rel
                         )
                         if linked is None:
                             continue
@@ -904,8 +928,11 @@ def plan(
                     if existing != {"type": "link", "target": previous["source_path"]}:
                         raise c.ShareError(f"Managed link changed: {rel}; restore it first")
                     archive(dest, previous)
-                linked = link_source(src, kind, previous.get("tool"), source, asset, key)
-                if linked is None:
+                linked, moved = link_source(
+                    src, kind, previous.get("tool"), source, asset, key, rel
+                )
+                if linked is None or moved != rel:
+                    # The new library's version lands elsewhere; the next sync links it.
                     next_state["inbound"].pop(rel, None)
                     continue
                 changes.append({"op": "link", "path": str(dest), "source": str(linked)})
@@ -1015,6 +1042,13 @@ def plan(
         # A managed selection is removed from every tool it reaches; disabling it
         # would otherwise leave its other links to be archived on the next sync.
         keys = {old["inbound"][rel]["key"] for rel in candidates if rel in old["inbound"]}
+        if path is None:
+            # A converted destination can carry another name (ADR 013).
+            keys |= {
+                row["key"]
+                for row in old["inbound"].values()
+                if row.get("kind") == kind and row.get("alias", row.get("name")) == asset
+            }
         rels = list(candidates)
         rels += [rel for rel, row in old["inbound"].items() if row.get("key") in keys]
         found = False
@@ -1593,7 +1627,9 @@ def why(value):
             try:
                 c.asset_name(kind, asset.name)
             except c.ShareError:
-                continue
+                # A converted destination may use another suffix (ADR 013).
+                if (kind, tool) not in formats.CONVERTERS or not c.NAME.fullmatch(asset.name):
+                    continue
             place = Path(*parts[:-depth])
             return why_asset(path, place, kind, tool, f"{folder}/{asset.name}")
         library = library_of(asset)
@@ -1660,9 +1696,10 @@ def why_asset(path, place, kind, tool, rel):
             # A generated file for this tool's format (ADR 012): name its library asset.
             parts = original.relative_to(rendered).parts
             if len(parts) == 4:
-                _, sid, _, name = parts
-                result.update(source=sid, library_name=name, generated=True)
-                saved = cfg["origins"]["inbound"].get(f"{sid}/{kind}/{name}")
+                _, sid, from_kind, name = parts
+                name = name[: -len(".skill")] if name.endswith(".skill") else name
+                result.update(source=sid, library_name=name, generated=True, from_kind=from_kind)
+                saved = cfg["origins"]["inbound"].get(f"{sid}/{from_kind}/{name}")
                 if saved:
                     result["selected_in"] = saved
         try:
