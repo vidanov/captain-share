@@ -4,6 +4,7 @@ import json
 import os
 import threading
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from captain_share import cli
@@ -575,6 +576,25 @@ class AdoptTests(LibraryFixture):
     def adopt(self, **extra):
         args = {"action": "adopt", "kind": "skills", "asset": "hello", "source": "team"}
         return e.plan(self.repo, **{**args, **extra})
+
+    def test_adopt_keeps_a_link_another_tool_made_to_the_original(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        link = self.repo / ".kiro/skills/hello"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(self.lib / "ip/skills/hello")
+        planned = e.plan(self.repo, action="adopt", kind="skills", asset="hello", source="team")
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        self.assertEqual(
+            [
+                (x["op"], Path(x["path"]).relative_to(self.repo).as_posix())
+                for x in planned["changes"]
+            ],
+            [("link", ".claude/skills/hello")],
+        )
+        e.apply(planned)
+        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/hello"))
+        self.assertTrue(e.status(self.repo)["ok"])
+        self.assertIn(".kiro/skills/hello", e.state(self.repo)["inbound"])
 
     def test_equal_copies_in_two_tools_are_archived_linked_and_restorable(self):
         c.set_tools(self.repo, ["kiro", "claude"])
