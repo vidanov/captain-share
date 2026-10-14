@@ -62,20 +62,24 @@ checkout paths stay in the ignored `sharing.local.json`.
 
 ## In the web interface
 
-`captain-share --target /path/to/project serve --open` opens one window for all three
-places ([ADR 004](adr/004-web-places.md)):
+`captain-share --target /path/to/project serve --open` opens on **Library**
+([ADR 005](adr/005-library-home-and-sharing.md)):
 
-- **Assets** is a grid: rows are library assets, columns are this project, the
-  folders above it (shared with the projects inside), and Your user. Click a circle
-  to install an asset there. Each column head names the agents that get links there; click it to change them.
-- A line from a folder's circle marks projects that get an asset from that folder;
-  a dashed circle marks an asset installed for your user, so you install each skill
-  in one place.
-- **Review and apply** opens one review for every affected place, including the
-  registered projects inside a changed folder; Cancel puts your choices back.
-- **Projects** lists this project and registered ones with their sync state. Add
-  project… registers a folder; Preview sync for all previews every project for one
-  Apply.
+- **Library** shows what is new since you last looked, what you have, and the rest.
+  **Get** asks once where an asset should work: everywhere for you (all projects and
+  agents you use) or only in this project.
+- **Share** passes a skill you made or edited on to the team: copy into the library,
+  commit with a note, push, and a line to paste in chat.
+- **Settings** holds the agents you use and the libraries.
+- **Where installed** is the grid for several places at once
+  ([ADR 004](adr/004-web-places.md)): rows are assets, columns are this project, the
+  folders above it (shared with the projects inside), and Your user. A line from a
+  folder's circle marks projects that get an asset from it; a dashed circle marks an
+  asset installed for your user. **Projects** there lists registered projects with
+  their sync state; Preview sync for all previews every project for one Apply.
+
+From a terminal, `captain-share get NAME` installs one asset for your user;
+`--here` installs it in the current project instead.
 
 ## Connect libraries once
 

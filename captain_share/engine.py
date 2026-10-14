@@ -248,6 +248,34 @@ def source_path(cfg, sid, kind=None, asset=None):
     return c.safe_path(base, f"{kind}/{asset}") if kind else base
 
 
+def locate(cfg, asset, source=None, kind=None):
+    """Library assets named `asset` (a suffix such as .md may be omitted), as
+    (source, kind, name), across the bound sources of an effective configuration."""
+    found = []
+    for sid in sorted(cfg["sources"]):
+        if source is not None and sid != source:
+            continue
+        try:
+            base = source_path(cfg, sid)
+        except c.ShareError:
+            continue
+        for k in c.KINDS:
+            if kind is not None and k != kind:
+                continue
+            names = [asset]
+            if k in c.SUFFIXES and not asset.endswith(c.SUFFIXES[k]):
+                names.append(asset + c.SUFFIXES[k])
+            for value in names:
+                try:
+                    c.asset_name(k, value)
+                    item = c.safe_path(base, f"{k}/{value}")
+                except c.ShareError:
+                    continue
+                if candidate(item, k):
+                    found.append((sid, k, value))
+    return found
+
+
 def destination_state(target, rel, src, managed):
     """Read-only answer to: what would receiving src at rel find there now?"""
     p = c.safe_path(target, rel, leaf_link=True)
@@ -385,14 +413,37 @@ def exclude_change(target, destinations):
     }
 
 
+def one_off(selections):
+    """Validate explicit outbound selections that replace the saved ones for one plan."""
+    if not isinstance(selections, dict) or not selections:
+        raise c.ShareError("Expected at least one explicit outbound selection")
+    c.validate({"version": 1, "outbound": dict(selections)}, "explicit selection")
+    if any(row.get("enabled", True) is False for row in selections.values()):
+        raise c.ShareError("Explicit selections must be enabled")
+    return selections
+
+
 def plan(
-    target, direction="inbound", action="sync", kind=None, asset=None, archive_id=None, path=None
+    target,
+    direction="inbound",
+    action="sync",
+    kind=None,
+    asset=None,
+    archive_id=None,
+    path=None,
+    selections=None,
 ):
+    """Preview changes. `selections` replaces the saved outbound selections for a
+    one-off copy (sharing one asset) without writing them to configuration."""
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
     if action not in ("sync", "remove", "restore"):
         raise c.ShareError("Unknown plan action")
+    if selections is not None:
+        if direction != "outbound" or action != "sync":
+            raise c.ShareError("Explicit selections apply to outbound copies only")
+        one_off(selections)
     c.safe_path(target, ".captain/archive")
     c.safe_path(target, ".captain/.gitignore")
     cfg, old = c.effective(target), state(target)
@@ -505,7 +556,8 @@ def plan(
             next_state["inbound"] = desired
         if direction in ("outbound", "both"):
             destinations = set()
-            for key, row in cfg["outbound"].items():
+            outbound = cfg["outbound"] if selections is None else selections
+            for key, row in outbound.items():
                 try:
                     src = c.safe_path(target, row["path"])
                     validate_asset(src, row["kind"], outbound=True)
@@ -641,6 +693,9 @@ def plan(
         "archive_id": archive_id,
         "path": path,
     }
+    if selections is not None:
+        # Kept in the spec so apply re-plans exactly the same one-off copy.
+        spec["selections"] = selections
     result = {
         "version": 1,
         "spec": spec,

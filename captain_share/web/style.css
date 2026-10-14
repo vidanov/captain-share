@@ -356,35 +356,37 @@ main {
   padding: 28px 24px 0;
 }
 
-/* First run */
-.first-run {
+/* First setup */
+.setup {
   max-width: 40rem;
-  margin: 8vh auto;
+  margin: 6vh auto;
 }
-.first-run h1 {
+.setup h1 {
   font-size: 2rem;
   margin-bottom: 8px;
 }
-.first-run > p {
+.setup > p {
   font-size: 15px;
   max-width: 34rem;
 }
-.first-run-steps {
+.setup-steps {
   list-style: none;
   counter-reset: step;
   padding: 0;
   margin: 28px 0;
-  display: grid;
-  gap: 14px;
 }
-.first-run-steps li {
+.setup-steps li {
   counter-increment: step;
   position: relative;
-  padding: 3px 0 0 40px;
-  min-height: 26px;
+  padding: 3px 0 22px 42px;
+  margin: 0 0 22px;
+  border-bottom: 1px solid var(--rule);
   color: var(--ink-2);
 }
-.first-run-steps li::before {
+.setup-steps li:last-child {
+  border-bottom: 0;
+}
+.setup-steps li::before {
   content: counter(step);
   position: absolute;
   left: 0;
@@ -394,22 +396,327 @@ main {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 2px solid var(--rule-strong);
+  border: 2px solid var(--jack-ring);
   font-size: 12px;
   font-weight: 700;
   color: var(--ink);
 }
-.first-run-steps li:first-child::before {
-  border-color: var(--amber);
-  color: var(--amber);
-}
-.first-run-steps strong {
+.setup-steps strong {
+  display: block;
+  margin-bottom: 10px;
   color: var(--ink);
 }
-.first-run-actions {
+.setup-steps form {
   display: flex;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.setup-steps form .hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+.agent-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  border: 1px solid var(--rule-strong);
+}
+.agent-pick::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--jack-ring);
+}
+.agent-pick:hover {
+  background: var(--panel-3);
+  color: var(--ink);
+}
+.agent-pick.on {
+  color: var(--ink);
+  border-color: var(--mint-ring);
+}
+.agent-pick.on::before {
+  background: var(--mint);
+  border-color: var(--mint);
+}
+
+/* Library home and Share: one column, one action per row. */
+.home {
+  max-width: 52rem;
+  margin: 0 auto;
+}
+.home > p {
+  max-width: 40rem;
+}
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.strip p {
+  margin: 0 auto 0 0;
+  color: var(--ink);
+}
+.strip small {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.strip-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.strip-dot.ok {
+  background: var(--mint);
+}
+#home-search {
+  margin: 16px 0 0;
+}
+.lib-heading {
+  margin: 28px 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.lib-list {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.lib-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 18px;
+  align-items: center;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.lib-row:last-child {
+  border-bottom: 0;
+}
+.lib-row > :not(.lib-act):not(.share-panel) {
+  grid-column: 1;
+}
+.lib-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-weight: 620;
+}
+.badge-new,
+.badge-edit {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.badge-edit {
+  color: var(--ink-2);
+}
+.lib-desc {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.lib-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.lib-act {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px 14px;
+  max-width: 16rem;
+}
+.have {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.have i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--mint);
+  background: var(--mint);
+  box-shadow: inset 0 0 0 2px var(--panel-2);
+}
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+button.link:hover {
+  background: none;
+  color: var(--ink);
+}
+/* Recommending is occasional: the command link shows on the row in focus. */
+@media (hover: hover) {
+  .lib-row .copy-get {
+    opacity: 0;
+  }
+  .lib-row:hover .copy-get,
+  .lib-row:focus-within .copy-get {
+    opacity: 1;
+  }
+}
+.lib-more {
+  margin: 12px 16px;
+}
+.share-panel {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+}
+.share-panel label {
+  margin-top: 0;
+}
+.share-panel textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+.share-panel label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+  font-weight: 500;
+}
+.share-changes {
+  margin: 8px 0 4px;
+}
+.share-done p {
+  margin: 8px 0 0;
+}
+.copy-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+}
+.copy-line code {
+  margin-right: auto;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Where installed: secondary pages under one heading. */
+.subnav {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.subnav button {
+  padding: 8px 12px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.subnav button:hover {
+  background: transparent;
+  color: var(--ink);
+}
+.subnav button.active {
+  color: var(--ink);
+  border-bottom-color: var(--amber);
+}
+.settings-title {
+  margin: 24px 0 10px;
+}
+
+/* Get: where should it work? */
+.where {
+  margin: 14px 0 4px;
+  padding: 0;
+  border: 0;
+}
+.where legend {
+  margin-bottom: 6px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.where-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-weight: 400;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.where-option:has(input:checked) {
+  border-color: var(--amber);
+}
+.where-option strong {
+  display: block;
+  color: var(--ink);
+}
+.where-option input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.where-option span {
+  text-align: left;
 }
 
 /* Bay */
@@ -1293,6 +1600,19 @@ summary {
   }
   .library-row {
     grid-template-columns: 1fr auto;
+  }
+  .lib-row {
+    grid-template-columns: 1fr;
+  }
+  .lib-act {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    max-width: none;
+    margin-top: 10px;
+  }
+  .strip {
+    flex-wrap: wrap;
   }
   /* The faceplate hides its path at this width; a library row keeps it. */
   .library-row .faceplate-path {

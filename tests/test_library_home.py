@@ -1,0 +1,472 @@
+import contextlib
+import io
+import json
+import os
+import threading
+from datetime import datetime
+from unittest.mock import patch
+
+from captain_share import cli
+from captain_share import config as c
+from captain_share import engine as e
+from captain_share import repositories as r
+from captain_share.server import make_server
+from tests import test_server
+from tests.test_sharing import SharingFixture
+
+AUTHOR = ["-c", "user.name=Ada Example", "-c", "user.email=ada@example.invalid"]
+
+
+class LibraryFixture(SharingFixture):
+    """A Git library connected to a project; the home folder is self.base."""
+
+    def setUp(self):
+        super().setUp()
+        # As in real use, the home folder's .captain is the global layer.
+        self.home_env = patch.dict(os.environ, {"CAPTAIN_SHARE_HOME": str(self.base / ".captain")})
+        self.home_env.start()
+        self.home, self.servers = self.base, []
+        try:
+            e.git(self.lib, "init", "-b", "main")
+            for key, value in (
+                ("user.name", "Test Sharer"),
+                ("user.email", "sharer@example.invalid"),
+                ("commit.gpgsign", "false"),
+            ):
+                e.git(self.lib, "config", key, value)
+            self.commit(self.lib, "Add hello")
+        except BaseException:
+            self.tearDown()
+            raise
+
+    def tearDown(self):
+        for server, thread in self.servers:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        # Stop before the fixture's own patch so the outer environment is restored.
+        self.home_env.stop()
+        super().tearDown()
+
+    def commit(self, path, message="fixture", author=AUTHOR):
+        e.git(path, "add", "-A")
+        e.git(path, *author, "-c", "commit.gpgsign=false", "commit", "-q", "-m", message)
+        return e.git(path, "rev-parse", "HEAD").stdout.decode().strip()
+
+    def start(self):
+        """A new server process: a new session for "new since last looked"."""
+        self.server, self.token = make_server(self.repo)
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.servers.append((self.server, thread))
+
+    request = test_server.ServerTests.request
+
+    def remote(self):
+        remote = self.base / "remote.git"
+        e.git(self.base, "clone", "-q", "--bare", str(self.lib), str(remote))
+        e.git(self.lib, "remote", "add", "origin", str(remote))
+        e.git(self.lib, "fetch", "-q", "origin")
+        e.git(self.lib, "branch", "-q", "--set-upstream-to=origin/main", "main")
+        return remote
+
+    def colleague_push(self, remote, rel, text):
+        other = self.base / "colleague"
+        if not other.exists():
+            e.git(self.base, "clone", "-q", str(remote), str(other))
+        target = other / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+        self.commit(other, "Colleague change")
+        e.git(other, "push", "-q")
+
+
+class EngineOneOffTests(LibraryFixture):
+    def test_explicit_selection_copies_one_asset_without_saving_config(self):
+        self.skill(self.repo / "skills/mine")
+        self.skill(self.repo / "skills/other")
+        c.select(self.repo, "outbound", "team", "skills", "other", path="skills/other")
+        row = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        planned = e.plan(self.repo, "outbound", selections={"team/skills/mine": row})
+        self.assertEqual([x["op"] for x in planned["changes"]], ["copy"])
+        self.assertTrue(planned["changes"][0]["path"].endswith("ip/skills/mine"))
+        e.apply(planned)
+        self.assertTrue((self.lib / "ip/skills/mine/SKILL.md").exists())
+        self.assertFalse((self.lib / "ip/skills/other").exists())
+        saved = json.loads((self.repo / ".captain/sharing.json").read_text())
+        self.assertEqual(list(saved["outbound"]), ["team/skills/other"])
+        # A second share after an edit replaces the earlier copy, archived beside it.
+        (self.repo / "skills/mine/SKILL.md").write_text("---\nname: mine\n---\nv2")
+        again = e.plan(self.repo, "outbound", selections={"team/skills/mine": row})
+        self.assertEqual([x["op"] for x in again["changes"]], ["archive", "copy"])
+        (self.repo / "skills/mine/SKILL.md").write_text("---\nname: mine\n---\nv3")
+        with self.assertRaisesRegex(c.ShareError, "stale"):
+            e.apply(again)
+
+    def test_explicit_selections_are_validated(self):
+        row = {"source": "team", "kind": "skills", "name": "x", "path": "skills/x"}
+        for direction, selections in (
+            ("inbound", {"team/skills/x": row}),
+            ("outbound", {"team/skills/y": row}),
+            ("outbound", {"team/skills/x": {**row, "path": None}}),
+            ("outbound", {}),
+        ):
+            with self.assertRaises(c.ShareError):
+                e.plan(self.repo, direction, selections=selections)
+
+
+class HomeApiTests(LibraryFixture):
+    def test_home_lists_libraries_assets_and_ownership(self):
+        (self.lib / "profiles").mkdir()
+        (self.lib / "profiles/starter.manifest").write_text("skills: hello\n")
+        self.commit(self.lib, "Starter set")
+        c.add_source(self.home, "team", self.lib)
+        c.select(self.home, "inbound", "team", "skills", "hello")
+        c.set_tools(self.home, ["kiro", "claude"])
+        e.apply(e.plan(self.home))
+        self.start()
+        code, home = self.request("/api/home")
+        self.assertEqual(code, 200)
+        self.assertEqual(set(home), {"user", "project", "agents", "libraries", "assets"})
+        self.assertEqual((home["user"], home["project"]), (str(self.home), str(self.repo)))
+        self.assertEqual(home["agents"], ["kiro", "claude"])
+        (lib,) = home["libraries"]
+        self.assertEqual(lib["source"], "team")
+        self.assertEqual(lib["path"], str(self.lib))
+        self.assertTrue(lib["is_repo"])
+        self.assertEqual((lib["branch"], lib["new"], lib["updated"]), ("main", 0, 0))
+        self.assertEqual(lib["starter"], ["team/skills/hello"])
+        datetime.fromisoformat(lib["last_commit_at"])
+        (asset,) = home["assets"]
+        self.assertEqual(asset["key"], "team/skills/hello")
+        self.assertEqual(asset["description"], "Test helper")
+        self.assertEqual(asset["shared_by"], "Ada Example")
+        datetime.fromisoformat(asset["shared_at"])
+        self.assertEqual(asset["have"], {"user": True, "project": False, "from": None})
+        self.assertEqual(asset["linked"], {"user": True, "project": False})
+        self.assertEqual((asset["new"], asset["updated"], asset["edited"]), (False, False, False))
+        self.assertIsNone(asset["power"])
+        # A folder above the project provides it: inherited, not the project's own.
+        c.select(self.repo.parent, "inbound", "team", "skills", "hello")
+        (self.lib / "ip/skills/hello/SKILL.md").write_text("---\nname: hello\n---\nedited")
+        _, home = self.request("/api/home")
+        self.assertEqual(
+            home["assets"][0]["have"],
+            {"user": True, "project": True, "from": str(self.repo.parent)},
+        )
+        self.assertTrue(home["assets"][0]["edited"])
+
+    def test_new_and_updated_compare_with_the_previous_session(self):
+        c.add_source(self.home, "team", self.lib)
+        c.select(self.home, "inbound", "team", "skills", "hello")
+        self.start()
+        _, first = self.request("/api/home")
+        # First sight of a library marks nothing as new.
+        self.assertEqual((first["libraries"][0]["new"], first["assets"][0]["new"]), (0, False))
+        seen = json.loads((c.global_dir() / "seen.json").read_text())
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip()
+        self.assertEqual(
+            (seen["team"]["head"], seen["team"]["assets"]), (head, ["team/skills/hello"])
+        )
+        self.skill(self.lib / "ip/skills/fresh")
+        self.skill(self.lib / "ip/skills/hello", "Better instructions")
+        self.commit(self.lib, "Improve hello, add fresh")
+        # What arrives while the window is open (Update library) is marked at once.
+        _, same_session = self.request("/api/home")
+        marks = {a["name"]: (a["new"], a["updated"]) for a in same_session["assets"]}
+        self.assertEqual(marks, {"fresh": (True, False), "hello": (False, True)})
+        self.start()  # Next session compares with what the first one saw.
+        for _ in range(2):  # Marks stay fixed while this window is open.
+            _, later = self.request("/api/home")
+            marks = {a["name"]: (a["new"], a["updated"]) for a in later["assets"]}
+            self.assertEqual(marks, {"fresh": (True, False), "hello": (False, True)})
+            self.assertEqual(
+                (later["libraries"][0]["new"], later["libraries"][0]["updated"]), (1, 1)
+            )
+        self.start()
+        _, third = self.request("/api/home")
+        self.assertFalse(any(a["new"] or a["updated"] for a in third["assets"]))
+
+    def test_fetch_reports_behind_without_changing_files(self):
+        remote = self.remote()
+        self.colleague_push(remote, "ip/skills/hello/extra.md", "more")
+        self.start()
+        code, status = self.request("/api/fetch", {"source": "team"})
+        self.assertEqual((code, status["behind"], status["ahead"]), (200, 1, 0))
+        self.assertFalse((self.lib / "ip/skills/hello/extra.md").exists())
+        _, home = self.request("/api/home")
+        self.assertEqual(home["libraries"][0]["behind"], 1)
+        code, pulled = self.request(
+            "/api/git", {"source": "team", "action": "pull", "fingerprint": status["fingerprint"]}
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue((self.lib / "ip/skills/hello/extra.md").exists())
+        self.assertEqual(self.request("/api/fetch", {"source": "missing"})[0], 400)
+        e.git(self.lib, "remote", "remove", "origin")
+        self.assertEqual(self.request("/api/fetch", {"source": "team"})[0], 400)
+
+    def test_profile_saves_selections_for_a_place(self):
+        (self.lib / "profiles").mkdir()
+        (self.lib / "profiles/starter.manifest").write_text("skills: hello\n")
+        c.add_source(self.home, "team", self.lib)
+        self.start()
+        code, result = self.request(
+            "/api/profile", {"target": str(self.home), "source": "team", "profile": "starter"}
+        )
+        self.assertEqual((code, result["applied"]), (200, True))
+        self.assertIn("team/skills/hello", c.effective(self.home)["inbound"])
+        self.assertEqual(
+            self.request("/api/profile", {"source": "team", "profile": "../x"})[0], 400
+        )
+
+
+class ShareApiTests(LibraryFixture):
+    def test_candidates_list_local_originals_and_library_edits(self):
+        self.skill(self.repo / ".claude/skills/mine")
+        self.skill(self.repo / "skills/hello")
+        (self.lib / "ip/skills/hello/notes.md").write_text("in-place edit")
+        self.start()
+        code, found = self.request("/api/share-candidates")
+        self.assertEqual(code, 200)
+        self.assertEqual(found["libraries"], ["team"])
+        local = {row["name"]: row for row in found["local"]}
+        self.assertEqual(local["mine"]["path"], ".claude/skills/mine")
+        self.assertEqual(local["mine"]["description"], "Test helper")
+        self.assertIsNone(local["mine"]["exists_in"])
+        self.assertEqual(local["hello"]["exists_in"], "team")
+        self.assertEqual(
+            found["edited"],
+            [
+                {
+                    "source": "team",
+                    "kind": "skills",
+                    "name": "hello",
+                    "files": ["ip/skills/hello/notes.md"],
+                }
+            ],
+        )
+
+    def test_share_commits_only_the_asset_and_pushes(self):
+        remote = self.remote()
+        self.skill(self.repo / "skills/mine")
+        (self.lib / "unrelated.md").write_text("staged by the user")
+        e.git(self.lib, "add", "unrelated.md")
+        (self.lib / "untracked.md").write_text("left alone")
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        code, plan = self.request("/api/share-plan", body)
+        self.assertEqual(code, 200)
+        self.assertTrue(plan["can_apply"])
+        self.assertEqual(plan["commit_paths"], ["ip/skills/mine"])
+        self.assertEqual([x["op"] for x in plan["changes"]], ["copy"])
+        # The ordinary apply endpoint does not apply a share without its note.
+        self.assertEqual(self.request("/api/apply", {"fingerprint": plan["fingerprint"]})[0], 400)
+        for note in ("", "   ", None):
+            code, _ = self.request(
+                "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": note}
+            )
+            self.assertEqual(code, 400)
+        self.assertFalse((self.lib / "ip/skills/mine").exists())
+        code, result = self.request(
+            "/api/share-apply",
+            {"fingerprint": plan["fingerprint"], "note": "Share mine", "push": True},
+        )
+        self.assertEqual(code, 200, result)
+        self.assertEqual(set(result), {"commit", "pushed", "push_error", "get_command"})
+        self.assertEqual((result["pushed"], result["push_error"]), (True, None))
+        self.assertEqual(result["get_command"], "captain-share get mine")
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip()
+        self.assertEqual(result["commit"], head)
+        self.assertEqual(e.git(remote, "rev-parse", "main").stdout.decode().strip(), head)
+        files = e.git(self.lib, "show", "--name-only", "--format=%s", "HEAD").stdout.decode()
+        self.assertEqual(files.split(), ["Share", "mine", "ip/skills/mine/SKILL.md"])
+        status = e.git(self.lib, "status", "--porcelain").stdout.decode()
+        self.assertIn("A  unrelated.md", status)
+        self.assertIn("?? untracked.md", status)
+        saved = json.loads((self.repo / ".captain/sharing.json").read_text())
+        self.assertEqual(saved["outbound"], {})
+        # Sharing the same version again has nothing to record.
+        _, again = self.request("/api/share-plan", body)
+        self.assertFalse(again["can_apply"])
+
+    def test_refused_push_keeps_the_commit_and_stale_preview_is_refused(self):
+        self.skill(self.repo / "skills/mine")
+        e.git(self.lib, "remote", "add", "origin", str(self.base / "missing.git"))
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        _, plan = self.request("/api/share-plan", body)
+        (self.repo / "skills/mine/SKILL.md").write_text("---\nname: mine\n---\nchanged")
+        code, stale = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share"}
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("stale", stale["error"])
+        self.assertFalse((self.lib / "ip/skills/mine").exists())
+        _, plan = self.request("/api/share-plan", body)
+        code, result = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share", "push": True}
+        )
+        self.assertEqual(code, 200)
+        self.assertFalse(result["pushed"])
+        self.assertTrue(result["push_error"])
+        self.assertEqual(
+            e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip(), result["commit"]
+        )
+
+    def test_share_into_an_existing_name_or_plain_folder_is_blocked(self):
+        self.skill(self.repo / "skills/hello")
+        plain = self.base / "plain"
+        plain.mkdir()
+        c.init(plain, library=True)
+        c.add_source(self.repo, "plain", plain)
+        self.skill(self.repo / "skills/mine")
+        self.start()
+        _, clash = self.request(
+            "/api/share-plan",
+            {"source": "team", "kind": "skills", "name": "hello", "path": "skills/hello"},
+        )
+        self.assertFalse(clash["can_apply"])
+        _, plain_plan = self.request(
+            "/api/share-plan",
+            {"source": "plain", "kind": "skills", "name": "mine", "path": "skills/mine"},
+        )
+        self.assertFalse(plain_plan["can_apply"])
+        self.assertIn("not a Git repository", " ".join(plain_plan["errors"]))
+        for bad in ("../outside", "/abs"):
+            code, _ = self.request(
+                "/api/share-plan",
+                {"source": "team", "kind": "skills", "name": "mine", "path": bad},
+            )
+            self.assertEqual(code, 400)
+
+    def test_commit_edits_commits_only_that_asset(self):
+        remote = self.remote()
+        self.skill(self.lib / "ip/skills/other")
+        self.commit(self.lib, "Add other")
+        (self.lib / "ip/skills/hello/SKILL.md").write_text("---\nname: hello\n---\nimproved")
+        (self.lib / "ip/skills/hello/new.md").write_text("new file")
+        (self.lib / "ip/skills/other/SKILL.md").write_text("---\nname: other\n---\nwip")
+        self.start()
+        status = r.status(self.repo, "team")
+        body = {
+            "source": "team",
+            "kind": "skills",
+            "name": "hello",
+            "note": "Improve hello",
+            "push": True,
+            "fingerprint": status["fingerprint"],
+        }
+        self.assertEqual(self.request("/api/commit-edits", {**body, "note": ""})[0], 400)
+        self.assertEqual(self.request("/api/commit-edits", {**body, "fingerprint": "x"})[0], 400)
+        code, result = self.request("/api/commit-edits", body)
+        self.assertEqual(code, 200, result)
+        self.assertTrue(result["pushed"])
+        self.assertEqual(
+            e.git(remote, "rev-parse", "main").stdout.decode().strip(), result["commit"]
+        )
+        files = e.git(self.lib, "show", "--name-only", "--format=", "HEAD").stdout.decode()
+        self.assertEqual(
+            sorted(files.split()), ["ip/skills/hello/SKILL.md", "ip/skills/hello/new.md"]
+        )
+        self.assertEqual(
+            e.git(self.lib, "status", "--porcelain").stdout.decode().strip(),
+            "M ip/skills/other/SKILL.md",
+        )
+        body["fingerprint"] = r.status(self.repo, "team")["fingerprint"]
+        code, nothing = self.request("/api/commit-edits", body)
+        self.assertEqual(code, 400)
+        self.assertIn("no uncommitted changes", nothing["error"])
+
+
+class CliTests(LibraryFixture):
+    def run_cli(self, *argv, tty=None, answer="n"):
+        out, err = io.StringIO(), io.StringIO()
+        stdin = io.StringIO()
+        stdin.isatty = lambda: bool(tty)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(patch("captain_share.cli.sys.stdin", stdin))
+            stack.enter_context(patch("builtins.input", return_value=answer))
+            code = cli.main(list(argv))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_get_installs_for_the_user_by_default(self):
+        c.add_source(self.home, "team", self.lib)
+        code, out, _ = self.run_cli("--target", str(self.repo), "get", "hello")
+        self.assertEqual(code, 0)
+        self.assertIn("captain-share get hello --apply", out)
+        self.assertIn("team/skills/hello", c.effective(self.home)["inbound"])
+        self.assertFalse((self.home / ".kiro/skills/hello").exists())
+        code, out, _ = self.run_cli("--target", str(self.repo), "get", "team/hello", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.home / ".kiro/skills/hello").is_symlink())
+        self.assertFalse((self.repo / ".kiro/skills/hello").exists())
+        code, out, _ = self.run_cli("--target", str(self.repo), "get", "team/skills/hello")
+        self.assertIn("already installed", out)
+
+    def test_get_here_asks_and_declining_changes_nothing(self):
+        before = (self.repo / ".captain/sharing.json").read_text()
+        code, out, _ = self.run_cli("--target", str(self.repo), "get", "hello", "--here", tty=True)
+        self.assertEqual(code, 0)
+        self.assertIn("Nothing was changed", out)
+        self.assertEqual((self.repo / ".captain/sharing.json").read_text(), before)
+        code, out, _ = self.run_cli(
+            "--target", str(self.repo), "get", "hello", "--here", tty=True, answer="y"
+        )
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+
+    def test_get_reports_ambiguity_missing_and_conflicts(self):
+        other = self.base / "other-lib"
+        other.mkdir()
+        c.init(other, library=True)
+        self.skill(other / "ip/skills/hello")
+        c.add_source(self.home, "team", self.lib)
+        c.add_source(self.home, "other", other)
+        code, _, err = self.run_cli("--target", str(self.repo), "get", "hello")
+        self.assertEqual(code, 1)
+        self.assertIn("other/skills/hello, team/skills/hello", err)
+        for ref in ("missing", "team/nonsense/hello", "a/b/c/d", "../hello"):
+            self.assertEqual(self.run_cli("--target", str(self.repo), "get", ref)[0], 1)
+        self.skill(self.home / ".kiro/skills/hello", "unmanaged copy")
+        code, out, _ = self.run_cli(
+            "--target", str(self.repo), "--json", "get", "team/hello", "--apply"
+        )
+        self.assertEqual(code, 1)
+        report = json.loads(out)
+        self.assertFalse(report["applied"])
+        self.assertFalse(report["plan"]["can_apply"])
+        self.assertNotIn("team/skills/hello", c.effective(self.home)["inbound"])
+
+    def test_share_previews_then_commits_with_note(self):
+        self.skill(self.repo / "skills/mine")
+        code, out, _ = self.run_cli(
+            "--target", str(self.repo), "share", "skills", "mine", "--source", "team"
+        )
+        self.assertEqual(code, 0, out)
+        self.assertIn("Commits only: ip/skills/mine", out)
+        self.assertFalse((self.lib / "ip/skills/mine").exists())
+        code, _, err = self.run_cli(
+            "--target", str(self.repo), "share", "skills", "mine", "--source", "team", "--apply"
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("--note", err)
+        code, out, _ = self.run_cli(
+            "--target",
+            str(self.repo),
+            "--json",
+            "share",
+            "skills",
+            "mine",
+            "--source",
+            "team",
+            "--note",
+            "Share mine",
+            "--apply",
+        )
+        self.assertEqual(code, 0, out)
+        result = json.loads(out)
+        self.assertEqual(result["get_command"], "captain-share get mine")
+        subject = e.git(self.lib, "log", "-1", "--format=%s").stdout.decode().strip()
+        self.assertEqual(subject, "Share mine")

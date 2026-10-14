@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T07:05:42+00:00",
+  "generatedAt": "2026-10-14T07:35:43+00:00",
   "title": "Design System: Captain Share",
   "extensions": {
     "colorMeta": {
@@ -373,6 +373,8 @@
       "faceplateHeight": "3.75rem (6.5rem at narrow width)",
       "assetColumn": "25rem (9rem at narrow width)",
       "placeColumn": "9rem (6.5rem at narrow width)",
+      "homeColumn": "max 52rem, centered; intro text 40rem",
+      "setupColumn": "max 40rem, centered",
       "legend": "one line under the matrix, 12px Muted Ink, 14px jack samples",
       "dock": "sticky 16px above the viewport bottom; message above routing bar, 8px apart",
       "reviewSheetWidth": "min(34rem, 100%)",
@@ -409,16 +411,8 @@
       "kind": "nav",
       "refersTo": "faceplate",
       "description": "Major and minor section tabs split by a hairline; active tab carries an amber underline.",
-      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Assets</button><button class=\"ds-tab\">Libraries</button><span class=\"ds-nav-rule\"></span><button class=\"ds-tab ds-minor\">Projects</button><button class=\"ds-tab ds-minor\">Archive</button></nav>",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Library</button><button class=\"ds-tab\">Share</button><span class=\"ds-nav-rule\"></span><button class=\"ds-tab ds-minor\">Where installed</button><button class=\"ds-tab ds-minor\">Settings</button></nav>",
       "css": ".ds-nav { display: flex; align-items: center; gap: 2px; padding: 0 24px; background: var(--panel-2, #1a1d21); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-tab { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: transparent; color: var(--ink-2, #aeb2b9); border: 0; border-bottom: 2px solid transparent; padding: 18px 12px 16px; cursor: pointer; } .ds-tab:hover { color: var(--ink, #ece9e3); } .ds-tab:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-tab.is-active { color: var(--ink, #ece9e3); font-weight: 600; border-bottom-color: var(--amber, #f2a33a); } .ds-minor { font-size: 12.5px; font-weight: 500; color: var(--ink-3, #8b919a); } .ds-nav-rule { width: 1px; height: 18px; margin: 0 10px; background: var(--rule-strong, #3b4149); }"
-    },
-    {
-      "name": "Agent Summary",
-      "kind": "custom",
-      "refersTo": "agent-summary",
-      "description": "Quiet one-line summary of a place's linked agents; clicking it opens that column's agent chips.",
-      "html": "<div class=\"ds-colhead\"><strong>backend</strong><span>this project</span><button class=\"ds-agent-summary\" aria-expanded=\"false\">Kiro, Copilot</button></div>",
-      "css": ".ds-colhead { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 9rem; padding: 12px 6px 10px; background: var(--panel-2, #1a1d21); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; text-align: center; } .ds-colhead strong { font-size: 13px; color: var(--ink, #ece9e3); } .ds-colhead span { font-size: 11px; color: var(--ink-3, #8b919a); } .ds-agent-summary { margin-top: 4px; padding: 1px 6px; max-width: 100%; font: 500 11px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink-2, #aeb2b9); background: transparent; border: 0; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; } .ds-agent-summary:hover, .ds-agent-summary[aria-expanded=true] { color: var(--ink, #ece9e3); background: var(--panel-3, #22262b); } .ds-agent-summary:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
     },
     {
       "name": "Bottom Dock",
@@ -429,12 +423,36 @@
       "css": ".ds-dock { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0 24px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-msg { max-width: min(44rem, 100%); padding: 10px 14px; border-radius: 6px; background: var(--panel-3, #22262b); border: 1px solid var(--rule-strong, #3b4149); color: var(--ink, #ece9e3); font-size: 13px; cursor: pointer; } .ds-msg:hover { border-color: var(--ink-3, #8b919a); } .ds-dock-bar { display: flex; align-items: center; gap: 10px; min-width: min(40rem, 100%); padding: 10px 12px 10px 18px; background: var(--panel-3, #22262b); border: 1px solid var(--amber, #f2a33a); border-radius: 10px; } .ds-dock-bar span { margin-right: auto; font-size: 13px; color: var(--ink, #ece9e3); font-variant-numeric: tabular-nums; } .ds-dock-bar button { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; } .ds-dock-bar button:hover { background: var(--amber-hover, #f6b55c); } .ds-dock-bar button:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
     },
     {
-      "name": "Agent Chips",
+      "name": "Library Row",
+      "kind": "card",
+      "refersTo": "library-row",
+      "description": "The everyday unit: name, kind tag, badge, description, who shared it, and one action (Get, or a have pill with a Remove link).",
+      "html": "<div class=\"ds-list\"><div class=\"ds-lrow\"><div><div class=\"ds-lname\">review <span class=\"ds-ltag\">Skill</span><span class=\"ds-lnew\">New</span></div><p class=\"ds-ldesc\">Review a change before it merges.</p><p class=\"ds-lmeta\">Shared by a teammate · 2 days ago</p></div><div class=\"ds-lact\"><button class=\"ds-get\">Get</button><button class=\"ds-link ds-copy\">Copy get command</button></div></div><div class=\"ds-lrow\"><div><div class=\"ds-lname\">plan <span class=\"ds-ltag\">Skill</span></div><p class=\"ds-ldesc\">Plan a change before editing.</p></div><div class=\"ds-lact\"><span class=\"ds-have\"><i></i>For you</span><button class=\"ds-link\">Remove</button></div></div></div>",
+      "css": ".ds-list { max-width: 52rem; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink, #ece9e3); } .ds-lrow { display: grid; grid-template-columns: 1fr auto; column-gap: 18px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--rule, #2a2e34); } .ds-lrow:last-child { border-bottom: 0; } .ds-lname { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 620; } .ds-ltag, .ds-lnew { font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3, #8b919a); } .ds-lnew { font-weight: 700; color: var(--amber, #f2a33a); } .ds-ldesc { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2, #aeb2b9); } .ds-lmeta { margin: 2px 0 0; font-size: 12px; color: var(--ink-3, #8b919a); } .ds-lact { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 14px; max-width: 16rem; } .ds-get { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; } .ds-get:hover { background: var(--amber-hover, #f6b55c); } .ds-have { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink-2, #aeb2b9); } .ds-have i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--mint, #43c08f); background: var(--mint, #43c08f); box-shadow: inset 0 0 0 2px var(--panel-2, #1a1d21); } .ds-link { padding: 0; border: 0; background: none; color: var(--ink-3, #8b919a); font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; } .ds-link:hover { color: var(--ink, #ece9e3); } .ds-get:focus-visible, .ds-link:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } @media (hover: hover) { .ds-lrow .ds-copy { opacity: 0; } .ds-lrow:hover .ds-copy, .ds-lrow:focus-within .ds-copy { opacity: 1; } }"
+    },
+    {
+      "name": "Status Strip",
+      "kind": "custom",
+      "refersTo": "status-strip",
+      "description": "Library status on the home: amber lamp when something waits, mint when up to date; at most one button.",
+      "html": "<div class=\"ds-strips\"><div class=\"ds-strip\"><span class=\"ds-dot\"></span><p>2 updates waiting for team</p><button class=\"ds-go\">Update library</button></div><div class=\"ds-strip\"><span class=\"ds-dot ok\"></span><p>team is up to date</p><button>Check for updates</button></div></div>",
+      "css": ".ds-strips { display: grid; gap: 16px; max-width: 52rem; font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-strip { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); } .ds-strip p { margin: 0 auto 0 0; color: var(--ink, #ece9e3); } .ds-strip small { display: block; font-size: 12px; color: var(--ink-3, #8b919a); } .ds-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--amber, #f2a33a); } .ds-dot.ok { background: var(--mint, #43c08f); } .ds-strip button { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid var(--rule-strong, #3b4149); border-radius: 6px; background: transparent; color: var(--ink, #ece9e3); cursor: pointer; } .ds-strip button:hover { background: var(--panel-3, #22262b); border-color: var(--ink-3, #8b919a); } .ds-strip button.ds-go { background: var(--amber, #f2a33a); border-color: transparent; color: var(--amber-ink, #1c1306); } .ds-strip button.ds-go:hover { background: var(--amber-hover, #f6b55c); } .ds-strip button:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Agent Picks",
       "kind": "chip",
-      "refersTo": "agent-chip",
-      "description": "Per-place agent toggles with a small lamp, lit mint when linked; shown only under an open agent summary.",
-      "html": "<div class=\"ds-agents\"><button class=\"ds-agent is-on\" aria-pressed=\"true\">Kiro</button><button class=\"ds-agent\" aria-pressed=\"false\">Claude</button><button class=\"ds-agent\" aria-pressed=\"false\">Codex</button><button class=\"ds-agent is-on\" aria-pressed=\"true\">Copilot</button></div>",
-      "css": ".ds-agents { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 8.5rem; } .ds-agent { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 1px 2px; font: 600 10.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; border-radius: 4px; background: transparent; color: var(--ink-3, #8b919a); border: 1px solid var(--rule, #2a2e34); cursor: pointer; } .ds-agent::before { content: ''; width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--rule-strong, #3b4149); } .ds-agent:hover { background: var(--panel-3, #22262b); color: var(--ink, #ece9e3); } .ds-agent:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-agent.is-on { color: var(--ink, #ece9e3); border-color: var(--rule-strong, #3b4149); } .ds-agent.is-on::before { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); }"
+      "refersTo": "agent-pick",
+      "description": "Pill toggles for the agents a person uses, in first setup and Settings; mint lamp and Mint Ring border when on.",
+      "html": "<div class=\"ds-picks\"><button class=\"ds-pick is-on\" aria-pressed=\"true\">Kiro</button><button class=\"ds-pick is-on\" aria-pressed=\"true\">Claude Code</button><button class=\"ds-pick\" aria-pressed=\"false\">Codex</button><button class=\"ds-pick\" aria-pressed=\"false\">Copilot</button></div>",
+      "css": ".ds-picks { display: flex; flex-wrap: wrap; gap: 8px; } .ds-pick { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; background: transparent; color: var(--ink-2, #aeb2b9); border: 1px solid var(--rule-strong, #3b4149); font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; cursor: pointer; } .ds-pick::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--jack-ring, #646b75); } .ds-pick:hover { background: var(--panel-3, #22262b); color: var(--ink, #ece9e3); } .ds-pick:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-pick.is-on { color: var(--ink, #ece9e3); border-color: var(--mint-ring, #358a6c); } .ds-pick.is-on::before { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); }"
+    },
+    {
+      "name": "Where Option",
+      "kind": "custom",
+      "refersTo": "where-option",
+      "description": "Radio choice in the review sheet for where a Get should work; the chosen option's border turns amber.",
+      "html": "<fieldset class=\"ds-where\"><legend>Where should it work?</legend><label class=\"ds-wopt\"><input type=\"radio\" name=\"w\" checked><span><strong>Everywhere for me</strong>Every project on this machine.</span></label><label class=\"ds-wopt\"><input type=\"radio\" name=\"w\"><span><strong>Only in backend</strong>Just this project.</span></label></fieldset>",
+      "css": ".ds-where { margin: 0; padding: 16px; border: 0; background: var(--panel-2, #1a1d21); font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; max-width: 30rem; } .ds-where legend { margin-bottom: 6px; font-weight: 650; color: var(--ink, #ece9e3); } .ds-wopt { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0 0; padding: 10px 12px; border: 1px solid var(--rule, #2a2e34); border-radius: 8px; color: var(--ink-2, #aeb2b9); cursor: pointer; accent-color: var(--amber, #f2a33a); } .ds-wopt:hover { border-color: var(--rule-strong, #3b4149); } .ds-wopt:has(input:checked) { border-color: var(--amber, #f2a33a); } .ds-wopt:focus-within { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-wopt strong { display: block; color: var(--ink, #ece9e3); } .ds-wopt input { margin-top: 3px; }"
     },
     {
       "name": "Jack States",
@@ -443,30 +461,15 @@
       "description": "Signature control: seven states of a 22px circle, with a cable from a folder jack.",
       "html": "<div class=\"ds-jacks\"><button class=\"ds-jack\" aria-label=\"Free\"></button><button class=\"ds-jack on\" aria-label=\"Installed here\"></button><button class=\"ds-jack inherited\" aria-label=\"From a folder above\"></button><button class=\"ds-jack covered\" aria-label=\"Installed for your user\"></button><button class=\"ds-jack pending on\" aria-label=\"Will be installed\"></button><button class=\"ds-jack pending\" aria-label=\"Will be removed\"></button><button class=\"ds-jack blocked\" aria-label=\"A local file is in the way\"></button></div>",
       "css": ".ds-jacks { display: flex; gap: 18px; padding: 16px; background: var(--panel-2, #1a1d21); } .ds-jack { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid var(--jack-ring, #646b75); background: var(--panel, #131518); cursor: pointer; transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-jack:hover { border-color: var(--ink-3, #8b919a); background: var(--panel-3, #22262b); transform: scale(1.08); } .ds-jack:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-jack.on { background: var(--mint, #43c08f); border-color: var(--mint, #43c08f); box-shadow: inset 0 0 0 3px var(--panel-2, #1a1d21); } .ds-jack.inherited { background: var(--mint-dim, #2a6e57); border-color: var(--mint-ring, #358a6c); box-shadow: inset 0 0 0 3px var(--panel-2, #1a1d21); } .ds-jack.covered { border-style: dashed; border-color: var(--mint-ring, #358a6c); background: transparent; } .ds-jack.pending { border-color: var(--amber, #f2a33a); background: var(--panel, #131518); box-shadow: none; } .ds-jack.pending::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--amber, #f2a33a); } .ds-jack.pending:not(.on)::after { background: transparent; border: 2px solid var(--amber, #f2a33a); inset: 5px; } .ds-jack.blocked { border-color: var(--red, #f06464); } .ds-jack.blocked::before { content: ''; position: absolute; left: 3px; right: 3px; top: 8px; height: 2px; background: var(--red, #f06464); transform: rotate(-45deg); }"
-    },
-    {
-      "name": "Routing Bar",
-      "kind": "custom",
-      "refersTo": "routing-bar",
-      "description": "Sticky summary of pending changes with Discard and Review and apply.",
-      "html": "<div class=\"ds-routing\"><span>Add reviewer.json to your user</span><button class=\"ds-routing-quiet\">Discard</button><button class=\"ds-routing-go\">Review and apply</button></div>",
-      "css": ".ds-routing { display: flex; align-items: center; gap: 10px; min-width: min(40rem, 100%); padding: 10px 12px 10px 18px; background: var(--panel-3, #22262b); border: 1px solid var(--amber, #f2a33a); border-radius: 10px; } .ds-routing > span { margin-right: auto; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink, #ece9e3); font-variant-numeric: tabular-nums; } .ds-routing button { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border-radius: 6px; cursor: pointer; } .ds-routing-quiet { background: transparent; color: var(--ink, #ece9e3); border: 1px solid var(--rule-strong, #3b4149); } .ds-routing-quiet:hover { background: var(--panel-3, #22262b); border-color: var(--ink-3, #8b919a); } .ds-routing-go { background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); border: 1px solid transparent; } .ds-routing-go:hover { background: var(--amber-hover, #f6b55c); } .ds-routing button:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; }"
-    },
-    {
-      "name": "Matrix Panel",
-      "kind": "card",
-      "refersTo": "panel",
-      "description": "Lifted panel with hairline rows: a recessed library band, then an asset row with engraved kind tag.",
-      "html": "<div class=\"ds-panel\"><div class=\"ds-band\"><span class=\"ds-engraved\">Team</span><span class=\"ds-muted\">5 assets</span></div><div class=\"ds-row\"><div class=\"ds-name\">plan <span class=\"ds-kind\">Skill</span></div><p class=\"ds-desc\">Plan a change before editing.</p></div></div>",
-      "css": ".ds-panel { width: 25rem; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; } .ds-band { display: flex; align-items: baseline; gap: 10px; padding: 16px 16px 8px; background: var(--panel, #131518); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-engraved { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #ece9e3); } .ds-muted { font-size: 11px; color: var(--ink-3, #8b919a); } .ds-row { padding: 11px 16px; } .ds-row:hover { background: rgba(255, 255, 255, 0.02); } .ds-name { font-size: 13.5px; font-weight: 620; color: var(--ink, #ece9e3); } .ds-kind { margin-left: 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3, #8b919a); } .ds-desc { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-3, #8b919a); }"
     }
   ],
   "narrative": {
     "northStar": "The Patch Bay",
-    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nThe window is a rack-mounted patch bay. Library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a matrix sized to its columns instead of stretched across the screen, and one quiet legend line under it. Anything that is a setting rather than a state stays folded until asked for.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
+    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nBehind its front panel, the window is a rack-mounted patch bay. Day to day, a teammate sees only the front: a calm list of what the team library offers, what is new, and what they already have, with one action on each row. The bay itself sits under \"Where installed\": library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a centered 52rem library column, and on the grid a matrix sized to its columns with one quiet legend line under it. Places, agents and layers never reach the everyday screens, and anything that is a setting rather than a state stays folded until asked for.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
     "keyCharacteristics": [
       "Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.",
-      "Color is state: mint is installed, amber is pending or your action, red is blocked.",
+      "Color is state: mint is installed or up to date, amber is new, pending or your next step, red is blocked.",
+      "Everyday screens (Library, Share, first setup) are one column of rows with one action each; the grid is a maintenance view.",
       "The jack (22px circle) is the signature control, with seven legible states and a one-line legend under the grid.",
       "Engraved small caps label the panel; they never act as headings or kickers.",
       "One authored motion: a new cable draws out of the folder jack in 200ms."
@@ -474,7 +477,7 @@
     "rules": [
       {
         "name": "The Two Lamps Rule",
-        "body": "Mint says \"this is installed\"; amber says \"this will change, or you are touching it\". Neither appears as decoration, and mint never fills a button.",
+        "body": "Mint says \"this is installed\" or \"up to date\"; amber says \"this waits for you\": something new, a pending change, the next step, or what you are touching. Neither appears as decoration, and mint never fills a button.",
         "section": "colors"
       },
       {
@@ -489,7 +492,7 @@
       },
       {
         "name": "The Engraving Rule",
-        "body": "Uppercase tracked caps label a part of the panel: a control, the matrix corner, a library group, an asset's kind. They are never placed above a heading to introduce it.",
+        "body": "Uppercase tracked caps label a part of the panel: a control, the matrix corner, a library group, a list on the library home, an asset's kind or a row badge. They are never placed above a heading to introduce it.",
         "section": "typography"
       },
       {
@@ -508,6 +511,11 @@
         "section": "layout"
       },
       {
+        "name": "The Front Panel Rule",
+        "body": "Everyday screens (Library, Share, first setup) show no places, agents or layers. Each row carries one action: a Get button, or a \"have\" pill with a quiet Remove link. Places, agents and layers live under Where installed and Settings.",
+        "section": "layout"
+      },
+      {
         "name": "The Folded Settings Rule",
         "body": "The grid shows state; settings wait to be asked for. A place's agents read as one quiet line in its column head and open into toggles only for the column clicked; a filter that cannot narrow anything is not shown; extra folders, long descriptions and full paths stay folded behind a button, a click on the row, or a tooltip.",
         "section": "layout"
@@ -521,9 +529,11 @@
     "dos": [
       "**Do** show install state with the jack and its seven states, and keep the one-line legend directly under the matrix.",
       "**Do** use the three panel tones and 1px hairlines for every separation; keep the matrix sized to its columns.",
-      "**Do** reserve Patch Amber for pending changes, the forward action, focus, the active tab and selection.",
+      "**Do** reserve Patch Amber for what waits for the person: new items, pending changes, the forward action, focus, the active tab and selection.",
       "**Do** keep monospace for paths, commands and change lines only.",
       "**Do** use tabular numerals for every count that updates live.",
+      "**Do** give each library row exactly one action: Get (primary amber only for new or updated items, quiet otherwise) or a mint \"have\" pill with a Remove link.",
+      "**Do** keep occasional row actions as links that appear on hover or focus where the device can hover.",
       "**Do** summarize per-place settings in one quiet line and open their controls only on request, for one place at a time.",
       "**Do** put status messages and pending changes in the bottom dock, stacked, so neither covers the other or the grid.",
       "**Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.",
@@ -534,10 +544,11 @@
       "**Don't** fill a button, banner or decoration with mint; mint means installed.",
       "**Don't** put a drop shadow on panels, bars or sheets; only a modal dialog casts one.",
       "**Don't** place engraved small caps above a heading as a kicker or eyebrow.",
-      "**Don't** use a circle for anything that is not a state lamp or a toggleable jack.",
+      "**Don't** show places, agents or layers on Library, Share or first setup.",
+      "**Don't** use a circle for anything that is not a state lamp, a toggleable jack or a setup step number.",
       "**Don't** float toasts over the grid or show a control that has nothing to choose between.",
       "**Don't** add raw hex values in component rules; extend the `:root` custom properties.",
-      "**Don't** lay out card grids or stack boxed panels inside the matrix or lists; rows inside a panel are divided by hairlines."
+      "**Don't** lay out card grids or stack lifted boxes inside panels; rows inside a panel are divided by hairlines, and a form opened from a row sits in a recessed page-tone well with 8px corners."
     ]
   }
 }

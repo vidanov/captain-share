@@ -24,6 +24,13 @@ when they are explicitly synced, not automatically to every child repository.
 - **Receive:** `list --source NAME`, then `select inbound NAME skills SKILL`
   with optional `--alias LOCAL_NAME`. Use the matching kind and file extension
   for agents, prompts, steering, or Copilot assets.
+- **Get one asset:** `get NAME` (or `SOURCE/NAME`, `SOURCE/KIND/NAME`) saves the
+  selection for the user and previews; `--here` targets the project, `--apply`
+  applies. An ambiguous name lists the full references to choose from.
+- **Share one asset:** `share KIND NAME --source NAME` previews; adding
+  `--note TEXT --apply` copies it and commits only its paths in the library
+  (`--push` to push; a refused push keeps the commit). Share only when the user
+  asked to, with their wording for the note.
 - **Contribute:** `scan`, inspect the chosen local originals, then
   `select outbound NAME skills SKILL --path skills/SKILL`. Outbound copies are
   written to the library checkout; existing shared edits cause a conflict.

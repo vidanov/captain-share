@@ -8,6 +8,7 @@ from pathlib import Path
 from . import config as c
 from . import engine as e
 from . import integrations as i
+from . import repositories as r
 
 
 def output(value, as_json=False):
@@ -96,6 +97,25 @@ def parser():
             cmd.add_argument("--apply", action="store_true", help="Apply this fresh preview")
     ap = sub.add_parser("apply", help="Apply a saved preview if still current")
     ap.add_argument("plan_file")
+    get = sub.add_parser(
+        "get",
+        help="Get one library asset by name for your user (or this project with --here)",
+    )
+    get.add_argument("ref", metavar="REF", help="NAME, SOURCE/NAME or SOURCE/KIND/NAME")
+    get.add_argument(
+        "--here", action="store_true", help="Install into --target (or this folder) instead"
+    )
+    get.add_argument("--apply", action="store_true", help="Apply without asking")
+    share = sub.add_parser(
+        "share", help="Copy one local asset into a library and commit only it with a note"
+    )
+    share.add_argument("kind", choices=list(c.KINDS))
+    share.add_argument("name")
+    share.add_argument("--source", required=True, help="Library to share into")
+    share.add_argument("--note", help="Commit message describing the share (needed to apply)")
+    share.add_argument("--path", help="The asset's path in --target when several exist")
+    share.add_argument("--push", action="store_true", help="Push the commit after it is made")
+    share.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
     sub.add_parser("status", help="Inspect links and configuration")
     sub.add_parser("guard", help="Check that local installation paths are not tracked by Git")
     rem = sub.add_parser("remove", help="Archive one local asset or alias")
@@ -148,6 +168,132 @@ def parser():
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--open", action="store_true")
     return p
+
+
+def resolve(ref, places):
+    """(source, kind, name) for NAME, SOURCE/NAME or SOURCE/KIND/NAME across the
+    libraries visible from `places`; ambiguity is an error naming the full refs."""
+    parts = ref.split("/") if isinstance(ref, str) else []
+    if not 1 <= len(parts) <= 3 or not all(parts):
+        raise c.ShareError("Use NAME, SOURCE/NAME or SOURCE/KIND/NAME")
+    source = c.name(parts[0]) if len(parts) > 1 else None
+    kind = parts[1] if len(parts) == 3 else None
+    if kind is not None and kind not in c.KINDS:
+        raise c.ShareError(f"Unknown asset kind: {kind}")
+    sources: dict = {}
+    for place in places:
+        sources.update(c.effective(place)["sources"])
+    found = e.locate({"sources": sources}, parts[-1], source, kind)
+    if not found:
+        raise c.ShareError(
+            f"No connected library has {ref}. If a teammate shared it recently, update "
+            "the library first: Update library in `captain-share serve`, or git pull in "
+            "its checkout."
+        )
+    if len(found) > 1:
+        refs = ", ".join("/".join(row) for row in found)
+        raise c.ShareError(f"{ref} is ambiguous; use one of: {refs}")
+    return found[0]
+
+
+def own_selection(target, key):
+    data = c.read_json(c.safe_path(target, ".captain/sharing.json"), c.blank()) or c.blank()
+    return data.get("inbound", {}).get(key)
+
+
+def restore_selection(target, key, previous):
+    directory = c.config_dir(target)
+    with c.locks([directory]):
+        cfg = c.read_json(directory / "sharing.json")
+        c.validate(cfg, directory / "sharing.json")
+        if previous is None:
+            cfg["inbound"].pop(key, None)
+        else:
+            cfg["inbound"][key] = previous
+        c.validate(cfg, directory / "sharing.json")
+        c.atomic_json(directory / "sharing.json", cfg)
+
+
+def get(args, project):
+    """Save one inbound selection (or preview a Kiro power), preview, then apply
+    after --apply or a yes at the terminal. A plan with conflicts applies nothing."""
+    home = c.global_dir().parent
+    target = project if args.here else home
+    source, kind, name = resolve(args.ref, [home, target] if args.here else [home])
+    label = f"{source}/{kind}/{name}"
+    report = {"ref": label, "target": str(target), "applied": False, "result": None}
+
+    def say(text):
+        if not args.json:
+            print(text)
+
+    previous = None
+    if kind == "powers":
+        planned = i.power_plan(target, "install", source, name)
+    else:
+        previous = own_selection(target, label)
+        c.select(target, "inbound", source, kind, name)
+        planned = e.plan(target, "inbound")
+    report["plan"] = planned
+    if not args.json:
+        output(planned)
+    if not planned["can_apply"]:
+        if kind != "powers":
+            restore_selection(target, label, previous)
+        say(f"Nothing was changed; resolve the conflicts above to get {label}.")
+        return report
+    if not planned["changes"]:
+        say(f"{label} is already installed.")
+        return report
+    apply = args.apply
+    if not apply and not args.json and sys.stdin.isatty():
+        apply = input(f"Get {name}? [y/N] ").strip().lower() in ("y", "yes")
+        if not apply:
+            if kind != "powers":
+                restore_selection(target, label, previous)
+            say("Nothing was changed.")
+            return report
+    if not apply:
+        where = " --here" if args.here else ""
+        say(f"Selection saved. To apply: captain-share get {args.ref}{where} --apply")
+        return report
+    report["result"] = i.power_apply(planned) if kind == "powers" else e.apply(planned)
+    report["applied"] = True
+    say(f"Got {label} for {'this project' if args.here else 'your user'}.")
+    return report
+
+
+def share(args, target):
+    path = args.path
+    if path is None:
+        found = [
+            row["path"]
+            for row in e.scan(target)
+            if row["kind"] == args.kind and row["name"] == args.name and row["status"] == "local"
+        ]
+        if len(found) != 1:
+            raise c.ShareError(
+                f"Choose the original with --path: {', '.join(found)}"
+                if found
+                else f"No local {args.kind} named {args.name} in {target}"
+            )
+        path = found[0]
+    if args.apply and not args.note:
+        raise c.ShareError("Add --note describing what you share; it becomes the commit message")
+    planned = r.share_plan(target, args.source, args.kind, args.name, path)
+    if not args.apply or not planned["can_apply"]:
+        if not args.json:
+            output(planned)
+            if planned["commit_paths"]:
+                print(f"Commits only: {', '.join(planned['commit_paths'])}")
+        return planned
+    result = r.share_apply(planned, args.note, args.push)
+    if not args.json:
+        print(f"Committed {result['commit'][:12]} in {args.source}.")
+        if args.push:
+            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        print(f"Teammates can run: {result['get_command']}")
+    return result
 
 
 def main(argv=None):
@@ -232,6 +378,12 @@ def main(argv=None):
                 raise c.ShareError("Saved plan targets a different folder than --target")
             # A saved plan owns its target; an explicit mismatch is rejected.
             result = e.apply(saved)
+        elif command in ("get", "share"):
+            result = get(args, target) if command == "get" else share(args, target)
+            if args.json:
+                output(result, True)
+            blocked = result.get("can_apply") is False or result.get("push_error")
+            return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
         elif command == "status":
             result = e.status(target)
         elif command == "guard":
