@@ -140,6 +140,11 @@ def parser():
         "--here", action="store_true", help="Install into --target (or this folder) instead"
     )
     get.add_argument("--apply", action="store_true", help="Apply without asking")
+    get.add_argument(
+        "--allow-code",
+        action="store_true",
+        help="For a Kiro power: allow the MCP servers and hooks it brings to run",
+    )
     share = sub.add_parser(
         "share", help="Copy one local asset into a library and commit only it with a note"
     )
@@ -288,6 +293,12 @@ def parser():
         cmd.add_argument("source")
         cmd.add_argument("name")
         cmd.add_argument("--apply", action="store_true")
+        if action == "install":
+            cmd.add_argument(
+                "--allow-code",
+                action="store_true",
+                help="Allow the MCP servers and hooks the power brings to run",
+            )
     repo = sub.add_parser("repo", help="Keep a local directory of connected repos")
     rr = repo.add_subparsers(dest="repo_action", required=True)
     ra = rr.add_parser("add")
@@ -363,7 +374,7 @@ def get(args, project):
 
     previous = None
     if kind == "powers":
-        planned = i.power_plan(target, "install", source, name)
+        planned = i.power_plan(target, "install", source, name, args.allow_code)
     else:
         previous = own_selection(target, label)
         c.select(target, "inbound", source, kind, name)
@@ -374,7 +385,10 @@ def get(args, project):
     if not planned["can_apply"]:
         if kind != "powers":
             restore_selection(target, label, previous)
-        say(f"Nothing was changed; resolve the conflicts above to get {label}.")
+        if any(x["reason"] == "approval" for x in planned["conflicts"]):
+            say(f"Nothing was changed. If you trust it: captain-share get {args.ref} --allow-code")
+        else:
+            say(f"Nothing was changed; resolve the conflicts above to get {label}.")
         return report
     if not planned["changes"]:
         say(f"{label} is already installed.")
@@ -924,7 +938,13 @@ def main(argv=None):
             if args.power_action == "list":
                 result = i.powers(target, args.source)
             else:
-                result = i.power_plan(target, args.power_action, args.source, args.name)
+                result = i.power_plan(
+                    target,
+                    args.power_action,
+                    args.source,
+                    args.name,
+                    getattr(args, "allow_code", False),
+                )
                 if args.apply:
                     result = i.power_apply(result)
         elif command == "repo":

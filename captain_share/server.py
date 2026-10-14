@@ -1277,7 +1277,13 @@ def make_server(target, port=0):
                     plans.clear()
                     result = {"restored": len(previous)}
                 elif path == "/api/plan" and data.get("power"):
-                    result = i.power_plan(target, data["action"], data["source"], data["name"])
+                    result = i.power_plan(
+                        target,
+                        data["action"],
+                        data["source"],
+                        data["name"],
+                        bool(data.get("allow_code")),
+                    )
                     if not data.get("batch"):
                         plans.clear()
                     plans[result["fingerprint"]] = result

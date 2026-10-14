@@ -74,7 +74,9 @@ when they are explicitly synced, not automatically to every child repository.
 - **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
   `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
   install state; `powers install SOURCE POWER` previews and `--apply` runs
-  `kiro-cli powers install` (also updates). Powers are user-wide copies, never
+  `kiro-cli powers install` (also updates). A power with MCP servers or hooks
+  needs `--allow-code`: show the user what the preview says will run and add it
+  only after they agree. Powers are user-wide copies, never
   inbound selections. Do not edit `~/.kiro/powers` directly.
 - **Change an alias:** select the same inbound source/kind/name with a new
   `--alias`. The old shortcut is archived when synced. A filesystem alias does

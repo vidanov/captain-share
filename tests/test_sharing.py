@@ -730,6 +730,51 @@ class SharingTests(SharingFixture):
         run("powers", "uninstall", "team", "demo-power", "--apply")
         self.assertFalse((installed / "demo-power").exists())
 
+    def test_power_that_runs_code_needs_approval(self):
+        installed = self.fake_kiro()
+        original = self.power(env={"TOKEN": "${TOKEN}"})
+        (original / "hooks").mkdir()
+        (original / "hooks/format.kiro.hook").write_text('{"then": {"command": "fmt"}}')
+        planned = i.power_plan(self.repo, "install", "team", "demo-power")
+        self.assertFalse(planned["can_apply"])
+        self.assertEqual(planned["conflicts"][0]["reason"], "approval")
+        message = planned["errors"][0]
+        self.assertIn("MCP server demo (demo)", message)
+        self.assertIn("hook format.kiro.hook (hooks/format.kiro.hook)", message)
+        with self.assertRaises(c.ShareError):
+            i.power_apply(planned)
+        self.assertFalse(installed.exists())
+        # Allowing it installs, and the preview still lists what will run.
+        allowed = i.power_plan(self.repo, "install", "team", "demo-power", allow_code=True)
+        self.assertTrue(allowed["can_apply"])
+        self.assertEqual(len(allowed["changes"][0]["runs"]), 2)
+        i.power_apply(allowed)
+        self.assertTrue((installed / "demo-power/mcp.json").is_file())
+        # An approval is for that preview only; uninstalling needs none.
+        self.assertTrue(i.power_plan(self.repo, "uninstall", "team", "demo-power")["can_apply"])
+        # A power without servers or hooks needs no approval.
+        (original / "mcp.json").unlink()
+        import shutil
+
+        shutil.rmtree(original / "hooks")
+        self.assertTrue(i.power_plan(self.repo, "install", "team", "demo-power")["can_apply"])
+
+    def test_cli_get_power_with_code_needs_allow_code(self):
+        self.fake_kiro()
+        self.power(env={})
+        exe = Path(__file__).resolve().parents[1] / "bin/captain-share"
+
+        def run(*args):
+            return subprocess.run(
+                [str(exe), "--target", str(self.repo), *args], capture_output=True, text=True
+            )
+
+        refused = run("--json", "powers", "install", "team", "demo-power", "--apply")
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("runs code on this computer", refused.stdout + refused.stderr)
+        done = run("--json", "powers", "install", "team", "demo-power", "--allow-code", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
     def test_power_plan_without_kiro_cli_is_blocked(self):
         self.power()
         with patch("captain_share.integrations.shutil.which", return_value=None):

@@ -136,8 +136,57 @@ def powers(target, source):
     return rows
 
 
-def power_plan(target, action, source, name):
-    """Preview one explicit kiro-cli power operation for a library power."""
+def power_runs(original):
+    """What a power would start on this computer: MCP servers (from mcp.json or
+    plugin.json) and hooks. Each row has a type, a name and what runs."""
+    runs = []
+
+    def servers(mcp, where):
+        if not isinstance(mcp, dict):
+            return
+        for server, spec in sorted(mcp.items()):
+            spec = spec if isinstance(spec, dict) else {}
+            if spec.get("url"):
+                what = str(spec["url"])
+            else:
+                args = spec.get("args") if isinstance(spec.get("args"), list) else []
+                what = " ".join(str(x) for x in [spec.get("command", "?"), *args])
+            runs.append({"type": "MCP server", "name": str(server), "runs": what, "in": where})
+
+    def read(rel):
+        try:
+            return json.loads((original / rel).read_text())
+        except (OSError, ValueError):
+            return None
+
+    for rel in ("mcp.json", ".mcp.json"):
+        data = read(rel)
+        if isinstance(data, dict):
+            servers(data.get("mcpServers"), rel)
+    manifest = read("plugin.json")
+    if isinstance(manifest, dict):
+        servers(manifest.get("mcpServers"), "plugin.json")
+        if manifest.get("hooks"):
+            runs.append(
+                {"type": "hook", "name": "hooks", "runs": "see plugin.json", "in": "plugin.json"}
+            )
+    for p in sorted(original.rglob("*")):
+        rel = p.relative_to(original).as_posix()
+        if not p.is_file() or engine.ignored(p, original):
+            continue
+        if p.name.endswith(".kiro.hook") or p.name == "hooks.json" or rel.startswith("hooks/"):
+            runs.append({"type": "hook", "name": p.name, "runs": rel, "in": rel})
+    return runs
+
+
+def runs_label(row):
+    return f"{row['type']} {row['name']} ({row['runs']})"
+
+
+def power_plan(target, action, source, name, allow_code=False):
+    """Preview one explicit kiro-cli power operation for a library power. Installing
+    a power that brings MCP servers or hooks needs `allow_code`: they run on this
+    computer with the user's rights."""
     if action not in ("install", "uninstall"):
         raise c.ShareError("Power action must be install or uninstall")
     target = c.root(target)
@@ -145,6 +194,7 @@ def power_plan(target, action, source, name):
     original = engine.source_path(c.effective(target), c.name(source), "powers", name)
     engine.validate_asset(original, "powers")
     current = power_state(original)
+    runs = power_runs(original)
     installed = kiro_powers_dir() / name
     executable = shutil.which("kiro-cli")
     changes, conflicts = [], []
@@ -154,8 +204,20 @@ def power_plan(target, action, source, name):
         op = "kiro update" if current == "differs" else "kiro install"
         command = [executable, "powers", "install", str(original)]
         changes.append(
-            {"op": op, "path": str(installed), "source": str(original), "command": command}
+            {
+                "op": op,
+                "path": str(installed),
+                "source": str(original),
+                "command": command,
+                "runs": [runs_label(row) for row in runs],
+            }
         )
+        if runs and not allow_code:
+            conflicts.append(
+                f"{name} runs code on this computer: "
+                + "; ".join(runs_label(row) for row in runs)
+                + ". Read them, then allow it to install."
+            )
     elif action == "uninstall":
         if current == "not-installed":
             conflicts.append(f"Kiro has no installed power named {name}")
@@ -170,12 +232,20 @@ def power_plan(target, action, source, name):
             "action": action,
             "source": source,
             "name": name,
+            "allow_code": bool(allow_code),
         },
         "state": current,
+        "runs": runs,
         "changes": changes,
         "errors": conflicts,
         "conflicts": [
-            {"message": m, "path": None, "key": None, "reason": "error"} for m in conflicts
+            {
+                "message": m,
+                "path": None,
+                "key": None,
+                "reason": "approval" if m.startswith(f"{name} runs code") else "error",
+            }
+            for m in conflicts
         ],
         "can_apply": not conflicts,
         "observations": [
@@ -192,7 +262,13 @@ def power_apply(saved):
     if not isinstance(spec, dict) or spec.get("type") != "power":
         raise c.ShareError("Invalid power plan")
     with c.locks([kiro_powers_dir()]):
-        current = power_plan(spec["target"], spec["action"], spec["source"], spec["name"])
+        current = power_plan(
+            spec["target"],
+            spec["action"],
+            spec["source"],
+            spec["name"],
+            spec.get("allow_code", False),
+        )
         if current["fingerprint"] != saved.get("fingerprint"):
             raise c.ShareError("Plan is stale: the power or Kiro's copy changed. Preview again.")
         if not current["can_apply"]:
