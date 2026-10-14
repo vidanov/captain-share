@@ -201,6 +201,12 @@ def asset_of(prefix, rel):
     return parts[0], parts[1]
 
 
+def iso(value):
+    """Git writes UTC as "Z"; Python 3.9/3.10 fromisoformat only reads "+00:00"."""
+    value = value.strip()
+    return value[:-1] + "+00:00" if value.endswith("Z") else value
+
+
 def history(repo, prefix):
     """Author and date of the newest commit touching each asset: one git log."""
     marker = "\x1e"
@@ -219,7 +225,7 @@ def history(repo, prefix):
     for line in out.split("\n"):
         if line.startswith(marker):
             author, _, when = line[1:].partition("\x1f")
-            who = {"by": author, "at": when}
+            who = {"by": author, "at": iso(when)}
             continue
         key = asset_of(prefix, line) if line and who else None
         if key and key not in found:
@@ -249,7 +255,7 @@ def edits(repo, prefix, changes):
 
 
 def last_commit_at(repo):
-    return quiet(repo, "log", "-1", "--format=%cI").strip() or None
+    return iso(quiet(repo, "log", "-1", "--format=%cI")) or None
 
 
 def fetch(target, source):
