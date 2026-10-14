@@ -297,6 +297,12 @@ class ImportApiTests(LibraryFixture):
         self.skill(outside / "fresh")
         self.start()
         self.assertEqual(self.request("/api/import-folder", {"path": "relative"})[0], 400)
+        # The home folder (and anything above it) is refused: it holds notes, not a skill.
+        home = c.global_dir().parent
+        for broad in (home, home.parent):
+            code, body = self.request("/api/import-folder", {"path": str(broad)})
+            self.assertEqual(code, 400)
+            self.assertIn("home folder", body["error"])
         self.assertEqual(
             self.request("/api/import-folder", {"path": str(outside / "hello/SKILL.md")})[0], 400
         )

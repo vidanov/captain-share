@@ -3637,8 +3637,14 @@ $("folder-up").onclick = () => {
 $("folder-home").onclick = () => browseFolders("~");
 $("folder-project").onclick = () => browseFolders("");
 $("folder-hidden").onchange = () => browseFolders($("folder-location").value);
-$("folder-select").onclick = () => {
+$("folder-select").onclick = async () => {
   if (!pickerListing) return;
+  // A path typed or pasted into the field counts even without pressing Go.
+  const typed = $("folder-location").value.trim().replace(/\/+$/, "");
+  if (typed && typed !== pickerListing.path.replace(/\/+$/, "")) {
+    await browseFolders(typed);
+    if (!pickerListing || $("folder-error").textContent) return;
+  }
   let path = pickerListing.path;
   if (pickerField === "clone-path") {
     const name = $("folder-new-name").value.trim();

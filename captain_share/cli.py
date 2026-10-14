@@ -433,6 +433,7 @@ def import_assets(args, target):
             _, root = im.unzip_file(path, temp)
         else:
             root = c.root(path)
+            im.too_broad(root)
         rows = im.find(root, str(path) if temp else "")
         items = import_items(rows, args.kind, args.name, path)
         planned = im.plan(target, args.source, root, items, label=str(path))
@@ -473,7 +474,9 @@ def staged(path):
             raise c.ShareError(f"Not a zip file or folder: {path}")
         temp = Path(tempfile.mkdtemp(prefix="captain-share-import-"))
         return im.unzip_file(path, temp)[1], temp
-    return c.root(path), None
+    root = c.root(path)
+    im.too_broad(root)
+    return root, None
 
 
 def install(args, project):
