@@ -19,6 +19,28 @@ colors:
   mint-ring: "#358a6c"
   red: "#f06464"
   red-ink: "#ffd5d5"
+  amber-text: "#f2a33a"
+  mint-text: "#43c08f"
+  hover: "rgba(255, 255, 255, 0.02)"
+  panel-light: "#f4f2ed"
+  panel-2-light: "#fdfcfa"
+  panel-3-light: "#ebe8e1"
+  rule-light: "#e1ddd5"
+  rule-strong-light: "#c9c4ba"
+  ink-light: "#1c1e22"
+  ink-2-light: "#464b53"
+  ink-3-light: "#626873"
+  amber-light: "#e0901a"
+  amber-hover-light: "#eba23c"
+  amber-text-light: "#9a5800"
+  mint-light: "#27946a"
+  mint-dim-light: "#a9dcc6"
+  mint-text-light: "#1a7050"
+  mint-ring-light: "#2c8a65"
+  jack-ring-light: "#7b818b"
+  red-light: "#d14343"
+  red-ink-light: "#8f1d1d"
+  hover-light: "rgba(0, 0, 0, 0.025)"
 typography:
   display:
     fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, system-ui, Roboto, Helvetica Neue, sans-serif"
@@ -50,6 +72,11 @@ typography:
     fontWeight: 700
     lineHeight: 1.5
     letterSpacing: "-0.01em"
+  lede:
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, system-ui, Roboto, Helvetica Neue, sans-serif"
+    fontSize: "15px"
+    fontWeight: 400
+    lineHeight: 1.5
   row-title:
     fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, system-ui, Roboto, Helvetica Neue, sans-serif"
     fontSize: "13.5px"
@@ -213,7 +240,7 @@ Behind its front panel, the window is a rack-mounted patch bay. Day to day, a te
 
 The metaphor lives in the visuals and in the code, not in the words. The interface says "Assets", "click a circle", "Add a library" and "Review and apply"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a centered 52rem library column, and on the grid a matrix sized to its columns with one quiet legend line under it. Places, agents and layers never reach the everyday screens, and anything that is a setting rather than a state stays folded until asked for.
 
-The system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.
+The dark panel is the default world. A daylight world (warm off-white panels, the same lamps deepened for paper) follows the system's light preference unless the person picks a theme; a small pill in the faceplate cycles Auto, Light and Dark and is remembered in the browser. Every token is redefined for daylight, so components never branch on theme. The system uses one sans for everything a person reads and monospace only for paths and commands, ships no icon fonts and no images except the tour's screenshots, and runs under a self-only content policy with no external fonts or scripts.
 
 **Key Characteristics:**
 - Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.
@@ -221,7 +248,7 @@ The system is dark-only (`color-scheme: dark`), uses one sans for everything a p
 - Everyday screens (Library, Share, first setup) are one column of rows with one action each; the grid is a maintenance view.
 - The jack (22px circle) is the signature control, with seven legible states and a one-line legend under the grid.
 - Engraved small caps label the panel; they never act as headings or kickers.
-- One authored motion: a new cable draws out of the folder jack in 200ms.
+- Two authored motions: a new cable draws out of the folder jack in 200ms, and the tour's cursor glides to each click and rings it in amber.
 
 ## Colors
 
@@ -230,7 +257,8 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 ### Primary
 - **Patch Amber** (`amber`): Everything the person is doing, about to do, or should look at. Primary buttons, the active tab and sub-tab underline, the status-strip lamp when something waits, "New" and "Updated" row badges, the border of a chosen where-option, the focus ring, caret, text selection tint, pending jacks, the routing bar's border, cables, and the "Archive" operation in the review list.
 - **Lit Amber** (`amber-hover`): Hover state of primary buttons only.
-- **Amber Ink** (`amber-ink`): Text on any amber fill (8.8:1).
+- **Amber Ink** (`amber-ink`): Text on any amber fill (8.8:1 dark, 7.1:1 light).
+- **Amber Text** (`amber-text`): Every amber-colored word: NEW and UPDATED badges, "Archive" in the review list, the tour link on the setup screen. It equals Patch Amber in the dark world and deepens to `amber-text-light` (5.4:1) in daylight.
 
 ### Secondary
 - **Live Mint** (`mint`): Installed, linked, up to date. Filled jacks, the lamp in a "have" pill and on a linked agent chip or agent pick, the status-strip lamp when a library is up to date, "Link" operations in the review list, the badge on a folder that is already a library. A 4% mint wash marks the "Your user" column.
@@ -239,6 +267,7 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 
 ### Tertiary
 - **Fault Red** (`red`): Blocked. The ring and slash of a jack where a local file is in the way, and the border of an error message.
+- **Mint Text** (`mint-text`): Every mint-colored word: "Link" in the review list, the "has skills" badge in the folder picker. It equals Live Mint in the dark world and deepens to `mint-text-light` (5.9:1) in daylight.
 - **Fault Ink** (`red-ink`): The one error text color: error messages, conflict messages, warnings and folder errors, readable on every panel tone.
 
 ### Neutral
@@ -251,13 +280,19 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 - **Engraved Ink** (`ink`): Primary text and headings.
 - **Secondary Ink** (`ink-2`): Paragraphs, engraved labels, inactive tabs (7.95:1 on the lifted panel).
 - **Muted Ink** (`ink-3`): Descriptions, hints, kind tags, counts, paths (5.33:1 on the lifted panel; keep it at or above 12px).
+- **Row Hover** (`hover`): The faint wash under a hovered matrix row: 2% white in the dark world, 2.5% black in daylight.
+
+### Daylight
+The light world maps every role onto a paper ground: page `panel-light`, lifted `panel-2-light`, raised `panel-3-light`, hairlines `rule-light` and `rule-strong-light`, inks `ink-light` (16.3:1), `ink-2-light` and `ink-3-light` (5.5:1 on the lifted panel). Lamps keep their hue: `amber-light` with `amber-hover-light`, `mint-light` (filled jacks, 3.7:1), `mint-dim-light` (fills only), `mint-ring-light`, `jack-ring-light`, `red-light` and `red-ink-light`. Amber Ink stays the text on amber fills.
 
 ### Named Rules
 **The Two Lamps Rule.** Mint says "this is installed" or "up to date"; amber says "this waits for you": something new, a pending change, the next step, or what you are touching. Neither appears as decoration, and mint never fills a button.
 
+**The Lamp Text Rule.** Lamp-colored words use `amber-text` or `mint-text`, never the lamp tokens themselves, so they stay readable on paper as well as on the panel.
+
 **The Token Rule.** Every color lives as a custom property on `:root`. A new surface extends that set; it does not introduce a raw hex.
 
-**The Readable Ring Rule.** Every jack ring that identifies a state or a control holds at least 3:1 against the panel it sits on; fills may be dimmer, rings may not.
+**The Readable Ring Rule.** Every jack ring that identifies a state or a control holds at least 3:1 against the panel it sits on; fills may be dimmer, rings may not. Daylight does not meet it yet for amber: the pending-jack ring, focus outline, routing-bar border, active underlines and the strip lamp in `amber-light` measure 2.1 to 2.5:1 on the light panels.
 
 ## Typography
 
@@ -267,11 +302,12 @@ A warm off-white ink on a cool, nearly neutral anodized black, lit by two lamp c
 **Character:** One workhorse sans at mid-heavy weights (620 and 650) does all the talking, so the panel reads like a labelled instrument rather than a document. Monospace appears only where the text is something a machine reads back.
 
 ### Hierarchy
-- **Display** (`display`): The first-setup heading ("Set up Captain Share"), the only place the window raises its voice. The About page title is a one-off step below it at 1.75rem; it is not a ramp step for new surfaces.
-- **Headline** (`headline`): The view title at the top of each tab.
+- **Display** (`display`): The first-setup heading ("Set up Captain Share") and the About title, the only places the window raises its voice.
+- **Headline** (`headline`): The view title at the top of each tab, and the tour's step title (at line-height 1.25).
 - **Title** (`title`): Sheet and section headings, such as "Review changes". Small panel headings drop to 13px.
-- **Subtitle** (`subtitle`): Headings of the ruled sections on the About page ("Start here", "How sharing works").
-- **Wordmark** (`wordmark`): "Captain Share" in the faceplate, beside its amber lamp, on every view. The first-setup introduction paragraph is set at the same 15px as a one-off lede; it is not a separate role.
+- **Subtitle** (`subtitle`): Headings on the About page ("Get", "Share", "Stay in control", "Words used here").
+- **Wordmark** (`wordmark`): "Captain Share" in the faceplate and the tour header, beside its amber lamp.
+- **Lede** (`lede`): The introduction under a display heading (first setup, About) and the tour caption, in Secondary Ink.
 - **Row title** (`row-title`): Asset and library names in matrix and list rows. On the library home, names use the body size at the same weight (620).
 - **Body** (`body`): Running text; paragraphs in Secondary Ink, capped near 44rem, descriptions capped at 62ch and clamped to one line (two at narrow width) until the row is opened.
 - **Hint** (`hint`): Help lines, descriptions and the 12px legend line, in Muted Ink.
@@ -296,9 +332,9 @@ The Grid view is one column: a tools row (filter field, a kind select that appea
 
 A dock sticks 16px above the viewport bottom, in the page gutter, and stacks its contents 8px apart: the status message on top, the routing bar (at least 40rem wide) below it, so neither covers the other. The dock passes clicks through its empty space. The review opens as a 34rem sheet docked to the right edge below the faceplate, with its Apply and Cancel actions stuck to the sheet's bottom; while it is open the status message moves into the sheet under its hint.
 
-The other secondary views are single columns: Settings caps at 48rem, About at 72rem with an auto-fill grid of 20rem minimum columns. Rhythm comes from 10px gaps between controls, 16px row insets, 24px gutters and 28px between major blocks.
+The other secondary views are single columns: Settings caps at 48rem; About is a 52rem column (hero, a three-column Get / Share / Stay in control band between hairlines, a glossary and a "Where files go" map as two-column definition lists, then folded sections). The tour is a grid of the screen stage and a 22rem sticky caption, at most 88rem wide; at narrow width it becomes one column. Rhythm comes from 10px gaps between controls, 16px row insets, 24px gutters and 28px between major blocks.
 
-At 900px and below, the faceplate wraps to two lines (6.5rem) with the tabs on their own horizontally scrolling row and the path hidden. The page gutter and the dock's inset drop to 16px. The legend and status strips wrap, and a library row stacks its action under its text, left-aligned. The matrix becomes its own two-axis scroll area, columns narrow to 9rem for assets and 6.5rem for places, and the asset column and head row stick so names and places stay visible while scrolling.
+At 900px and below, the faceplate wraps to two lines (6.5rem) with the tabs on their own horizontally scrolling row and the path hidden. The page gutter and the dock's inset drop to 16px. About's three steps, its definition lists and the import rows collapse to one column. The legend and status strips wrap, and a library row stacks its action under its text, left-aligned. The matrix becomes its own two-axis scroll area, columns narrow to 9rem for assets and 6.5rem for places, and the asset column and head row stick so names and places stay visible while scrolling.
 
 ### Named Rules
 **The Sized-to-Fit Rule.** The matrix is as wide as its columns and no wider. It is never stretched to fill the viewport.
@@ -313,13 +349,14 @@ The system is flat. Depth comes from three panel tones (Anodized, Lifted, Raised
 
 ### Shadow Vocabulary
 - **Dialog lift** (`box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5)`): The folder picker dialog only, over a 60% near-black backdrop.
+- **Pointer lift** (`filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5))`): The tour's drawn cursor only, so it reads as a pointer over the screenshots.
 
 ### Named Rules
 **The Flat Panel Rule.** Panels, bars and sheets are separated by tone and hairline, never by a drop shadow. Only a modal dialog casts one.
 
 ## Shapes
 
-Corners are gently rounded and sized by role: 4px on agent chips and the agent summary, 6px on buttons, inputs, selects and status messages, 8px on boxes inset within a panel or sheet (the share form, the command line, where-options), 10px on panels, status strips and the routing bar, 12px on the dialog, full pills for agent picks, count chips and badges. Jacks, lamps (agent, "have", status strip), the wordmark and the setup step numbers are perfect circles; the circle is reserved for things that show state. Borders are always 1px, except the 2px ring of a jack and the 2px active-tab underline. A disabled slot (an asset that cannot go to that place) is a short 6x2px dash with fully rounded 2px ends instead of a circle; that capsule is a one-off, not a step in the radius scale.
+Corners are gently rounded and sized by role: 4px on agent chips and the agent summary, 6px on buttons, inputs, selects and status messages, 8px on boxes inset within a panel or sheet (the share form, the command line, where-options), 10px on panels, status strips and the routing bar, 12px on the dialog and the tour stage, full pills for agent picks, the theme switch, count chips and badges. Jacks, lamps (agent, "have", status strip), the wordmark and the setup step numbers are perfect circles; the circle is reserved for things that show state. Borders are always 1px, except the 2px ring of a jack and the 2px active-tab underline. Small dashes have fully rounded ends (radius half their height) rather than a scale radius: the 6x2px disabled slot (an asset that cannot go to that place) and the 22x6px tour progress steps.
 
 ## Components
 
@@ -389,6 +426,20 @@ Opens inline under a row on the Share screen: a recessed page-tone well with a H
 ### Where option
 A choice inside the review sheet's "where should it work" fieldset: a transparent box with a Hairline border and 8px corners, a radio, a bold Engraved Ink choice ("Everywhere for me", "Only in backend") and a Secondary Ink explanation. The chosen option's border turns amber.
 
+### Theme switch
+A quiet pill at the end of the faceplate tabs: 12px weight 500 Muted Ink, Hairline border, 4px by 8px padding. It reads "Auto", "Light" or "Dark" and cycles through them on click; hover fills Raised Control and brightens the text.
+
+### Found on this machine
+In first setup and Settings, a short Secondary Ink intro over a list panel of library rows, each with an Add button, for library checkouts already on disk. In the folder picker, folders that are libraries sort first at weight 620 with an 8px mint lamp and a "has skills" badge in Mint Text.
+
+### Import
+A status strip on the Share screen ("Add a skill from elsewhere") with quiet "Upload a zip…" and "Choose a folder…" buttons. It opens a recessed share-style panel of import rows (checkbox, name field, optional kind select, and a wrapped info line), each divided by a Hairline, followed by a quiet Review, a primary "Add to library" and a Cancel link.
+
+### Tour
+A replayable walkthrough at `/tour`: the faceplate-style header, then a 12px-rounded stage with simulated browser chrome (three Strong Hairline dots and a 11.5px address), a 1280:800 screen where two screenshots crossfade over 320ms, and an optional terminal frame in monospace. A drawn arrow cursor glides to each target over 900ms and an amber ring ripples out over 700ms on click. Beside it, a sticky caption: a tabular "Step N of M", a headline title, a 15px lede, quiet Back and Next, a primary Pause, a Replay link, and progress dashes (Strong Hairline, Dim Mint when done, Patch Amber for the current step). Under reduced motion it does not autoplay, the cursor jumps and the ripple holds still. The screen and terminal stay dark in both themes because the screenshots are dark-world captures. About links to it with a primary-styled link, and first setup with an Amber Text link.
+
+**Screenshot provenance.** The twelve JPEG screens (1280x800, under `captain_share/web/tour/`) are real captures of a disposable, fictional setup: `scripts/tour/fixture.sh` builds a throwaway library with fictional authors, a project and a skill zip, and `scripts/tour/capture.mjs` drives headless Chrome through the flows. Recapture them after visible UI changes and check that only fictional names and neutral paths appear (`scripts/tour/README.md`).
+
 ### Status message
 A Raised Control message with 6px corners and a Strong Hairline border, 10px by 14px padding, 13px text, up to 44rem wide, dismissed by click. It never floats over content: it sits at the top of the dock, or inside the review sheet under its hint while the sheet is open. Errors switch the border to Fault Red and the text to Fault Ink.
 
@@ -406,7 +457,8 @@ A Raised Control message with 6px corners and a Strong Hairline border, 10px by 
 - **Do** put status messages and pending changes in the bottom dock, stacked, so neither covers the other or the grid.
 - **Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.
 - **Do** use plain words in the interface ("circle", "install", "Review and apply"); keep the patch-bay vocabulary in visuals and class names.
-- **Do** turn the cable and sheet animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`.
+- **Do** use `amber-text` and `mint-text` for lamp-colored words, and define every new token in both worlds.
+- **Do** turn the cable, sheet and tour animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`.
 
 ### Don't:
 - **Don't** fill a button, banner or decoration with mint; mint means installed.

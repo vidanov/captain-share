@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 from . import config as c
 from . import engine as e
+from . import imports as im
 from . import integrations as i
 from . import repositories as r
 
@@ -116,6 +120,17 @@ def parser():
     share.add_argument("--path", help="The asset's path in --target when several exist")
     share.add_argument("--push", action="store_true", help="Push the commit after it is made")
     share.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
+    imp = sub.add_parser(
+        "import",
+        help="Add assets from a zip file or folder to a library, committing only them",
+    )
+    imp.add_argument("path", metavar="PATH", help="A zip file or a folder")
+    imp.add_argument("--source", required=True, help="Library to add the assets to")
+    imp.add_argument("--kind", choices=list(c.KINDS), help="Only assets of this kind")
+    imp.add_argument("--name", help="Add only the asset with this name (renames a single asset)")
+    imp.add_argument("--note", help="Commit message describing the addition (needed to apply)")
+    imp.add_argument("--push", action="store_true", help="Push the commit after it is made")
+    imp.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
     sub.add_parser("status", help="Inspect links and configuration")
     sub.add_parser("guard", help="Check that local installation paths are not tracked by Git")
     rem = sub.add_parser("remove", help="Archive one local asset or alias")
@@ -296,6 +311,82 @@ def share(args, target):
     return result
 
 
+def import_items(rows, kind, name, label):
+    """The candidates `import` adds: all valid ones, or the one --name selects."""
+    if kind:
+        rows = [row for row in rows if kind in row["kinds"]]
+    if name:
+        chosen = [row for row in rows if row["name"] == name]
+        if not chosen and len(rows) == 1:
+            chosen = rows  # A single asset is renamed.
+        if len(chosen) != 1:
+            names = ", ".join(row["name"] for row in rows) or "none"
+            raise c.ShareError(
+                f"Choose one asset with --name (and --kind); found in {label}: {names}"
+                if chosen
+                else f"No asset named {name} in {label}; found: {names}"
+            )
+    else:
+        chosen = [row for row in rows if row["error"] is None]
+        if not chosen:
+            problems = "; ".join(f"{row['id']}: {row['error']}" for row in rows)
+            raise c.ShareError(
+                f"No asset to add in {label}" + (f" ({problems})" if problems else "")
+            )
+    return [
+        {"id": row["id"], "kind": kind or row["kind"], "name": name or row["name"]}
+        for row in chosen
+    ]
+
+
+def import_assets(args, target):
+    """Preview adding assets from a zip file or folder; with --apply copy them into
+    the library and commit only their paths with the note (ADR 006)."""
+    if args.apply and not args.note:
+        raise c.ShareError("Add --note describing what you add; it becomes the commit message")
+    path = Path(args.path).expanduser().absolute()
+    temp = None
+    try:
+        if path.is_file():
+            if not zipfile.is_zipfile(path):
+                raise c.ShareError(f"Not a zip file or folder: {path}")
+            temp = Path(tempfile.mkdtemp(prefix="captain-share-import-"))
+            _, root = im.unzip_file(path, temp)
+        else:
+            root = c.root(path)
+        rows = im.find(root, str(path) if temp else "")
+        items = import_items(rows, args.kind, args.name, path)
+        planned = im.plan(target, args.source, root, items, label=str(path))
+        if not args.apply or not planned["can_apply"]:
+            planned["candidates"] = rows
+            if not args.json:
+                print(f"Found in {path}:")
+                for row in rows:
+                    note = f"  (cannot add: {row['error']})" if row["error"] else ""
+                    print(f"  {row['kind']:10} {row['name']}{note}")
+                print(f"Preview: add to {args.source}")
+                for change in planned["changes"]:
+                    print(f"  copy     {change['path']} ← {change['source']}")
+                for error in planned["errors"]:
+                    print(f"  Blocked: {error}")
+                if planned["commit_paths"]:
+                    print(f"Commits only: {', '.join(planned['commit_paths'])}")
+                if planned["can_apply"]:
+                    print("Ready. Add --note TEXT --apply to copy and commit.")
+            return planned
+        result = im.apply(planned, args.note, args.push)
+    finally:
+        if temp is not None:
+            shutil.rmtree(temp, ignore_errors=True)
+    if not args.json:
+        print(f"Committed {result['commit'][:12]} in {args.source}.")
+        if args.push:
+            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        for command in result["get_commands"]:
+            print(f"Teammates can run: {command}")
+    return result
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -378,8 +469,9 @@ def main(argv=None):
                 raise c.ShareError("Saved plan targets a different folder than --target")
             # A saved plan owns its target; an explicit mismatch is rejected.
             result = e.apply(saved)
-        elif command in ("get", "share"):
-            result = get(args, target) if command == "get" else share(args, target)
+        elif command in ("get", "share", "import"):
+            handler = {"get": get, "share": share, "import": import_assets}[command]
+            result = handler(args, target)
             if args.json:
                 output(result, True)
             blocked = result.get("can_apply") is False or result.get("push_error")

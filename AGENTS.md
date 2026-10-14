@@ -10,6 +10,8 @@ management skill and fictional fixtures are public product code.
 - `captain_share/engine.py`: preview/apply, ownership, links/copies and archives.
 - `captain_share/cli.py`, `server.py`, `web/`: interfaces to the same engine.
 - `captain_share/integrations.py`: Captain connection import and explicit Kiro handoff.
+- `captain_share/repositories.py`, `imports.py`: library Git operations and sharing;
+  staging zips/folders from outside and adding their assets to a library.
 - `captain_share/skills/manage-shared-assets/`: reusable management instructions.
 - `scripts/verify.py`: the local and CI verification entrypoint.
 

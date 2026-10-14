@@ -166,6 +166,23 @@ captain-share --target /path/to/project share skills review-code --source team \
   --note "Add review-code skill" --push --apply
 ```
 
+To add assets that arrived without Captain Share, `import` reads a zip file or a
+folder: the folder itself as an asset (`SKILL.md`, `POWER.md`/`plugin.json`), the
+assets one level down, the library layouts (`ip/<kind>/`, `<kind>/`), or else its
+Markdown files as prompts (`--kind steering` for steering). It previews all valid
+assets, or only the one `--name` selects (with one asset, `--name` renames it); an
+existing library asset is never overwritten. With `--note TEXT --apply` it copies
+them and commits only their paths, like `share`. Zips are extracted into a temporary
+folder with strict checks (no absolute or `..` paths, links or special entries; at
+most 20 MB, 2,000 entries and 100 MB unpacked). See
+[ADR 006](docs/adr/006-import-from-outside.md).
+
+```bash
+captain-share --target /path/to/project import ~/Downloads/review-code.zip --source team
+captain-share --target /path/to/project import ./notes --source team --kind steering \
+  --name house-style.md --note "Add house style steering" --push --apply
+```
+
 With `select outbound` and `sync`, outbound copies go into the local library
 checkout. Review that diff, run the library's checks, and commit normally. Push is available as an explicit, confirmed
 UI action. Sharing never copies whole projects. It refuses nested symlinks, local/generated folders,
@@ -272,6 +289,13 @@ With no library yet, the window asks three things once: which agents you use (Ki
 Claude Code, Codex, Copilot), your team library's Git URL (cloned to
 `~/Libraries/NAME`, or choose an existing checkout), and whether to take the
 library's starter set (`profiles/starter.manifest`, if it has one).
+It also lists libraries it finds on this machine (up to three folders below your
+home folder) with an Add button, so an existing checkout needs no path. Settings
+shows the same list. Watch the one-minute tour at `/tour` (linked from setup and
+About).
+
+The window follows your system's light or dark appearance; the switch in the top
+bar chooses Auto, Light, or Dark for this browser.
 
 ### Library: get what you need
 
@@ -282,6 +306,15 @@ assets. Get asks where it should work, everywhere for you or only in this projec
 shows the links it will create, and applies after Apply changes; Cancel puts the
 choice back. Remove archives the links. Hover a row for Copy get command, a line a
 teammate can run: `captain-share get NAME`.
+
+### Add a skill from elsewhere
+
+Share also takes a skill that arrived without Captain Share: Upload a zip… or
+Choose a folder… (a colleague's folder, a downloaded repository). The archive is
+checked first (no paths outside it, no links, size and file-count limits; nothing
+is run), every skill, agent, prompt or power found is listed with its description,
+and you can rename each one before Add to library copies, commits and optionally
+pushes it. See [ADR 006](docs/adr/006-import-from-outside.md).
 
 ### Share: pass a skill on
 

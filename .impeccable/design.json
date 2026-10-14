@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T07:35:43+00:00",
+  "generatedAt": "2026-10-14T08:09:58+00:00",
   "title": "Design System: Captain Share",
   "extensions": {
     "colorMeta": {
@@ -275,12 +275,369 @@
           "#ffe7e7"
         ],
         "cssVariable": "--red-ink"
+      },
+      "amber-text": {
+        "role": "primary",
+        "displayName": "Amber Text",
+        "canonical": "oklch(77.6% 0.148 69)",
+        "tonalRamp": [
+          "#200000",
+          "#4c0200",
+          "#6e2800",
+          "#904800",
+          "#b46900",
+          "#d88b14",
+          "#ffb14b",
+          "#ffe5ae"
+        ],
+        "cssVariable": "--amber-text"
+      },
+      "mint-text": {
+        "role": "secondary",
+        "displayName": "Mint Text",
+        "canonical": "oklch(72.6% 0.132 163)",
+        "tonalRamp": [
+          "#001403",
+          "#00350f",
+          "#00532b",
+          "#007348",
+          "#009567",
+          "#38b887",
+          "#66dfac",
+          "#beffe0"
+        ],
+        "cssVariable": "--mint-text"
+      },
+      "panel-light": {
+        "role": "neutral",
+        "displayName": "Anodized Panel (daylight)",
+        "canonical": "oklch(96.1% 0.007 89)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#252420",
+          "#41403c",
+          "#5f5d59",
+          "#7f7d79",
+          "#a09e9a",
+          "#c6c4bf",
+          "#efeeeb"
+        ],
+        "cssVariable": "--panel",
+        "theme": "light"
+      },
+      "panel-2-light": {
+        "role": "neutral",
+        "displayName": "Lifted Panel (daylight)",
+        "canonical": "oklch(99.1% 0.003 85)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252422",
+          "#40403e",
+          "#5e5d5c",
+          "#7e7d7b",
+          "#9f9e9c",
+          "#c5c4c2",
+          "#efeeed"
+        ],
+        "cssVariable": "--panel-2",
+        "theme": "light"
+      },
+      "panel-3-light": {
+        "role": "neutral",
+        "displayName": "Raised Control (daylight)",
+        "canonical": "oklch(93.1% 0.010 87)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#26241f",
+          "#423f3a",
+          "#605d57",
+          "#807d77",
+          "#a19e98",
+          "#c7c4bd",
+          "#f0eeea"
+        ],
+        "cssVariable": "--panel-3",
+        "theme": "light"
+      },
+      "rule-light": {
+        "role": "neutral",
+        "displayName": "Hairline (daylight)",
+        "canonical": "oklch(89.8% 0.012 85)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#27241e",
+          "#433f39",
+          "#615d56",
+          "#807d76",
+          "#a29e96",
+          "#c8c4bc",
+          "#f1eee9"
+        ],
+        "cssVariable": "--rule",
+        "theme": "light"
+      },
+      "rule-strong-light": {
+        "role": "neutral",
+        "displayName": "Strong Hairline (daylight)",
+        "canonical": "oklch(82.2% 0.015 85)",
+        "tonalRamp": [
+          "#0d0b07",
+          "#27241c",
+          "#433f37",
+          "#615d54",
+          "#817d73",
+          "#a39e94",
+          "#c9c4ba",
+          "#f1eee8"
+        ],
+        "cssVariable": "--rule-strong",
+        "theme": "light"
+      },
+      "jack-ring-light": {
+        "role": "neutral",
+        "displayName": "Jack Ring (daylight)",
+        "canonical": "oklch(60.2% 0.017 261)",
+        "tonalRamp": [
+          "#090b0f",
+          "#1f242c",
+          "#3b4049",
+          "#585e67",
+          "#787e88",
+          "#999fa9",
+          "#bec4cf",
+          "#ebeff5"
+        ],
+        "cssVariable": "--jack-ring",
+        "theme": "light"
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Engraved Ink (daylight)",
+        "canonical": "oklch(23.5% 0.008 264)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222428",
+          "#3d4044",
+          "#5b5e62",
+          "#7b7d82",
+          "#9c9ea4",
+          "#c1c4ca",
+          "#edeef2"
+        ],
+        "cssVariable": "--ink",
+        "theme": "light"
+      },
+      "ink-2-light": {
+        "role": "neutral",
+        "displayName": "Secondary Ink (daylight)",
+        "canonical": "oklch(41.1% 0.015 260)",
+        "tonalRamp": [
+          "#090b0f",
+          "#20242b",
+          "#3b4048",
+          "#595e66",
+          "#787e86",
+          "#999fa8",
+          "#bfc4ce",
+          "#ebeff5"
+        ],
+        "cssVariable": "--ink-2",
+        "theme": "light"
+      },
+      "ink-3-light": {
+        "role": "neutral",
+        "displayName": "Muted Ink (daylight)",
+        "canonical": "oklch(51.6% 0.019 263)",
+        "tonalRamp": [
+          "#090b10",
+          "#1f242d",
+          "#3a404a",
+          "#585e69",
+          "#777d89",
+          "#989fab",
+          "#bec4d1",
+          "#eaeff6"
+        ],
+        "cssVariable": "--ink-3",
+        "theme": "light"
+      },
+      "amber-light": {
+        "role": "primary",
+        "displayName": "Patch Amber (daylight)",
+        "canonical": "oklch(71.9% 0.151 69)",
+        "tonalRamp": [
+          "#210000",
+          "#4d0000",
+          "#6f2600",
+          "#924700",
+          "#b56800",
+          "#da8a0b",
+          "#ffb048",
+          "#ffe4ad"
+        ],
+        "cssVariable": "--amber",
+        "theme": "light"
+      },
+      "amber-hover-light": {
+        "role": "primary",
+        "displayName": "Lit Amber (daylight)",
+        "canonical": "oklch(76.6% 0.142 71)",
+        "tonalRamp": [
+          "#1f0100",
+          "#4a0700",
+          "#6b2b00",
+          "#8d4b00",
+          "#b16b00",
+          "#d58d1f",
+          "#fdb350",
+          "#ffe6b0"
+        ],
+        "cssVariable": "--amber-hover",
+        "theme": "light"
+      },
+      "mint-light": {
+        "role": "secondary",
+        "displayName": "Live Mint (daylight)",
+        "canonical": "oklch(59.5% 0.116 163)",
+        "tonalRamp": [
+          "#001303",
+          "#003311",
+          "#00512c",
+          "#00714a",
+          "#259268",
+          "#4fb589",
+          "#77dcae",
+          "#c5fee1"
+        ],
+        "cssVariable": "--mint",
+        "theme": "light"
+      },
+      "mint-dim-light": {
+        "role": "secondary",
+        "displayName": "Dim Mint (daylight)",
+        "canonical": "oklch(85.3% 0.061 167)",
+        "tonalRamp": [
+          "#001008",
+          "#002d1d",
+          "#194a39",
+          "#396956",
+          "#598975",
+          "#7aab96",
+          "#9fd1bc",
+          "#d8f7e9"
+        ],
+        "cssVariable": "--mint-dim",
+        "theme": "light"
+      },
+      "mint-ring-light": {
+        "role": "secondary",
+        "displayName": "Mint Ring (daylight)",
+        "canonical": "oklch(56.9% 0.105 163)",
+        "tonalRamp": [
+          "#001204",
+          "#003214",
+          "#00502f",
+          "#006f4c",
+          "#34916b",
+          "#59b38c",
+          "#80dab1",
+          "#c9fde3"
+        ],
+        "cssVariable": "--mint-ring",
+        "theme": "light"
+      },
+      "red-light": {
+        "role": "tertiary",
+        "displayName": "Fault Red (daylight)",
+        "canonical": "oklch(58.6% 0.179 25)",
+        "tonalRamp": [
+          "#2a0000",
+          "#600000",
+          "#860000",
+          "#ac1a24",
+          "#d24444",
+          "#fa6964",
+          "#ff9089",
+          "#ffd3cb"
+        ],
+        "cssVariable": "--red",
+        "theme": "light"
+      },
+      "red-ink-light": {
+        "role": "tertiary",
+        "displayName": "Fault Ink (daylight)",
+        "canonical": "oklch(42.6% 0.150 26)",
+        "tonalRamp": [
+          "#260000",
+          "#580000",
+          "#7c010b",
+          "#a1302c",
+          "#c7534b",
+          "#ed756b",
+          "#ff9b90",
+          "#ffd8cf"
+        ],
+        "cssVariable": "--red-ink",
+        "theme": "light"
+      },
+      "amber-text-light": {
+        "role": "primary",
+        "displayName": "Amber Text (daylight)",
+        "canonical": "oklch(52.5% 0.120 63)",
+        "tonalRamp": [
+          "#1e0100",
+          "#490a00",
+          "#6a2b00",
+          "#8c4b00",
+          "#af6b22",
+          "#d38d48",
+          "#fbb26e",
+          "#ffe5bd"
+        ],
+        "cssVariable": "--amber-text",
+        "theme": "light"
+      },
+      "mint-text-light": {
+        "role": "secondary",
+        "displayName": "Mint Text (daylight)",
+        "canonical": "oklch(48.7% 0.095 163)",
+        "tonalRamp": [
+          "#001205",
+          "#003116",
+          "#004f31",
+          "#176e4e",
+          "#3f8f6d",
+          "#62b18e",
+          "#88d8b3",
+          "#cdfbe4"
+        ],
+        "cssVariable": "--mint-text",
+        "theme": "light"
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Row Hover",
+        "canonical": "rgba(255, 255, 255, 0.02)",
+        "cssVariable": "--hover",
+        "tonalRamp": []
+      },
+      "hover-light": {
+        "role": "neutral",
+        "displayName": "Row Hover (daylight)",
+        "canonical": "rgba(0, 0, 0, 0.025)",
+        "cssVariable": "--hover",
+        "theme": "light",
+        "tonalRamp": []
       }
     },
     "typographyMeta": {
       "display": {
         "displayName": "Display",
-        "purpose": "First-run heading only."
+        "purpose": "First-setup heading and About title."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "Introduction under a display heading, and the tour caption."
       },
       "headline": {
         "displayName": "Headline",
@@ -296,7 +653,7 @@
       },
       "wordmark": {
         "displayName": "Wordmark",
-        "purpose": "The faceplate wordmark on every view."
+        "purpose": "The faceplate and tour-header wordmark."
       },
       "row-title": {
         "displayName": "Row Title",
@@ -323,11 +680,42 @@
         "purpose": "Paths, commands, change lines only."
       }
     },
+    "themes": [
+      {
+        "name": "dark",
+        "selector": ":root",
+        "purpose": "Default world; color-scheme dark."
+      },
+      {
+        "name": "light",
+        "selector": "@media (prefers-color-scheme: light) :root:not([data-theme=dark]), :root[data-theme=light]",
+        "purpose": "Daylight world; every token redefined. A faceplate pill cycles Auto/Light/Dark, stored in localStorage (captain-share-theme). Light tokens are listed in colors with a -light suffix and the same CSS variable."
+      }
+    ],
+    "rasters": [
+      {
+        "path": "captain_share/web/tour/*.jpg",
+        "count": 12,
+        "size": "1280x800 JPEG",
+        "ships": true,
+        "provenance": "Real captures of a disposable fictional setup: scripts/tour/fixture.sh builds a throwaway library with fictional authors, a project and a skill zip; scripts/tour/capture.mjs drives headless Chrome through first setup, Get, Share, import, Update library and Where installed. Recapture after visible UI changes; only fictional names and neutral paths may appear (scripts/tour/README.md). Dark-world captures."
+      },
+      {
+        "path": ".impeccable/review/*.png",
+        "ships": false,
+        "provenance": "Review captures from headless Chrome against disposable fictional fixtures; not part of the product."
+      }
+    ],
     "shadows": [
       {
         "name": "dialog-lift",
         "value": "0 12px 24px rgba(0, 0, 0, 0.5)",
         "purpose": "Folder picker dialog only, over a rgba(5, 6, 8, 0.6) backdrop."
+      },
+      {
+        "name": "pointer-lift",
+        "value": "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5))",
+        "purpose": "Tour cursor only (CSS filter)."
       },
       {
         "name": "lamp-bezel",
@@ -357,6 +745,21 @@
         "purpose": "The one authored motion; only new cables draw. Off under reduced motion."
       },
       {
+        "name": "tour-cursor",
+        "value": "900ms left/top",
+        "purpose": "Tour cursor glide to each target; jumps under reduced motion."
+      },
+      {
+        "name": "tour-crossfade",
+        "value": "320ms opacity",
+        "purpose": "Tour screenshot crossfade."
+      },
+      {
+        "name": "tour-click",
+        "value": "700ms scale 0.4 to 1.4, fade out",
+        "purpose": "Amber click ripple; held still under reduced motion."
+      },
+      {
         "name": "sheet-in",
         "value": "220ms translateX(24px) and opacity 0.6 to rest",
         "purpose": "Review sheet entry. Off under reduced motion."
@@ -373,12 +776,13 @@
       "faceplateHeight": "3.75rem (6.5rem at narrow width)",
       "assetColumn": "25rem (9rem at narrow width)",
       "placeColumn": "9rem (6.5rem at narrow width)",
-      "homeColumn": "max 52rem, centered; intro text 40rem",
+      "homeColumn": "max 52rem, centered; intro text 40rem (Library, Share, About)",
+      "tourGrid": "stage plus 22rem sticky caption, max 88rem; one column at narrow width",
       "setupColumn": "max 40rem, centered",
       "legend": "one line under the matrix, 12px Muted Ink, 14px jack samples",
       "dock": "sticky 16px above the viewport bottom; message above routing bar, 8px apart",
       "reviewSheetWidth": "min(34rem, 100%)",
-      "colorScheme": "dark only"
+      "colorScheme": "dark default, light via system or theme pill"
     }
   },
   "components": [
@@ -410,9 +814,9 @@
       "name": "Faceplate Tabs",
       "kind": "nav",
       "refersTo": "faceplate",
-      "description": "Major and minor section tabs split by a hairline; active tab carries an amber underline.",
-      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Library</button><button class=\"ds-tab\">Share</button><span class=\"ds-nav-rule\"></span><button class=\"ds-tab ds-minor\">Where installed</button><button class=\"ds-tab ds-minor\">Settings</button></nav>",
-      "css": ".ds-nav { display: flex; align-items: center; gap: 2px; padding: 0 24px; background: var(--panel-2, #1a1d21); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-tab { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: transparent; color: var(--ink-2, #aeb2b9); border: 0; border-bottom: 2px solid transparent; padding: 18px 12px 16px; cursor: pointer; } .ds-tab:hover { color: var(--ink, #ece9e3); } .ds-tab:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-tab.is-active { color: var(--ink, #ece9e3); font-weight: 600; border-bottom-color: var(--amber, #f2a33a); } .ds-minor { font-size: 12.5px; font-weight: 500; color: var(--ink-3, #8b919a); } .ds-nav-rule { width: 1px; height: 18px; margin: 0 10px; background: var(--rule-strong, #3b4149); }"
+      "description": "Major and minor section tabs split by a hairline; active tab carries an amber underline; the theme pill ends the row.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Library</button><button class=\"ds-tab\">Share</button><span class=\"ds-nav-rule\"></span><button class=\"ds-tab ds-minor\">Where installed</button><button class=\"ds-tab ds-minor\">Settings</button><button class=\"ds-theme\">Auto</button></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 2px; padding: 0 24px; background: var(--panel-2, #1a1d21); border-bottom: 1px solid var(--rule, #2a2e34); } .ds-tab { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: transparent; color: var(--ink-2, #aeb2b9); border: 0; border-bottom: 2px solid transparent; padding: 18px 12px 16px; cursor: pointer; } .ds-tab:hover { color: var(--ink, #ece9e3); } .ds-tab:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-tab.is-active { color: var(--ink, #ece9e3); font-weight: 600; border-bottom-color: var(--amber, #f2a33a); } .ds-minor { font-size: 12.5px; font-weight: 500; color: var(--ink-3, #8b919a); } .ds-theme { margin-left: 12px; padding: 4px 8px; font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink-3, #8b919a); background: transparent; border: 1px solid var(--rule, #2a2e34); border-radius: 999px; cursor: pointer; } .ds-theme:hover { color: var(--ink, #ece9e3); background: var(--panel-3, #22262b); } .ds-theme:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } .ds-nav-rule { width: 1px; height: 18px; margin: 0 10px; background: var(--rule-strong, #3b4149); }"
     },
     {
       "name": "Bottom Dock",
@@ -428,7 +832,7 @@
       "refersTo": "library-row",
       "description": "The everyday unit: name, kind tag, badge, description, who shared it, and one action (Get, or a have pill with a Remove link).",
       "html": "<div class=\"ds-list\"><div class=\"ds-lrow\"><div><div class=\"ds-lname\">review <span class=\"ds-ltag\">Skill</span><span class=\"ds-lnew\">New</span></div><p class=\"ds-ldesc\">Review a change before it merges.</p><p class=\"ds-lmeta\">Shared by a teammate · 2 days ago</p></div><div class=\"ds-lact\"><button class=\"ds-get\">Get</button><button class=\"ds-link ds-copy\">Copy get command</button></div></div><div class=\"ds-lrow\"><div><div class=\"ds-lname\">plan <span class=\"ds-ltag\">Skill</span></div><p class=\"ds-ldesc\">Plan a change before editing.</p></div><div class=\"ds-lact\"><span class=\"ds-have\"><i></i>For you</span><button class=\"ds-link\">Remove</button></div></div></div>",
-      "css": ".ds-list { max-width: 52rem; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink, #ece9e3); } .ds-lrow { display: grid; grid-template-columns: 1fr auto; column-gap: 18px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--rule, #2a2e34); } .ds-lrow:last-child { border-bottom: 0; } .ds-lname { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 620; } .ds-ltag, .ds-lnew { font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3, #8b919a); } .ds-lnew { font-weight: 700; color: var(--amber, #f2a33a); } .ds-ldesc { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2, #aeb2b9); } .ds-lmeta { margin: 2px 0 0; font-size: 12px; color: var(--ink-3, #8b919a); } .ds-lact { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 14px; max-width: 16rem; } .ds-get { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; } .ds-get:hover { background: var(--amber-hover, #f6b55c); } .ds-have { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink-2, #aeb2b9); } .ds-have i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--mint, #43c08f); background: var(--mint, #43c08f); box-shadow: inset 0 0 0 2px var(--panel-2, #1a1d21); } .ds-link { padding: 0; border: 0; background: none; color: var(--ink-3, #8b919a); font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; } .ds-link:hover { color: var(--ink, #ece9e3); } .ds-get:focus-visible, .ds-link:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } @media (hover: hover) { .ds-lrow .ds-copy { opacity: 0; } .ds-lrow:hover .ds-copy, .ds-lrow:focus-within .ds-copy { opacity: 1; } }"
+      "css": ".ds-list { max-width: 52rem; border: 1px solid var(--rule, #2a2e34); border-radius: 10px; background: var(--panel-2, #1a1d21); font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: var(--ink, #ece9e3); } .ds-lrow { display: grid; grid-template-columns: 1fr auto; column-gap: 18px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--rule, #2a2e34); } .ds-lrow:last-child { border-bottom: 0; } .ds-lname { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 620; } .ds-ltag, .ds-lnew { font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3, #8b919a); } .ds-lnew { font-weight: 700; color: var(--amber-text, #f2a33a); } .ds-ldesc { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2, #aeb2b9); } .ds-lmeta { margin: 2px 0 0; font-size: 12px; color: var(--ink-3, #8b919a); } .ds-lact { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 14px; max-width: 16rem; } .ds-get { font: 620 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; padding: 8px 14px; border: 1px solid transparent; border-radius: 6px; background: var(--amber, #f2a33a); color: var(--amber-ink, #1c1306); cursor: pointer; } .ds-get:hover { background: var(--amber-hover, #f6b55c); } .ds-have { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink-2, #aeb2b9); } .ds-have i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--mint, #43c08f); background: var(--mint, #43c08f); box-shadow: inset 0 0 0 2px var(--panel-2, #1a1d21); } .ds-link { padding: 0; border: 0; background: none; color: var(--ink-3, #8b919a); font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; } .ds-link:hover { color: var(--ink, #ece9e3); } .ds-get:focus-visible, .ds-link:focus-visible { outline: 2px solid var(--amber, #f2a33a); outline-offset: 2px; } @media (hover: hover) { .ds-lrow .ds-copy { opacity: 0; } .ds-lrow:hover .ds-copy, .ds-lrow:focus-within .ds-copy { opacity: 1; } }"
     },
     {
       "name": "Status Strip",
@@ -465,19 +869,24 @@
   ],
   "narrative": {
     "northStar": "The Patch Bay",
-    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nBehind its front panel, the window is a rack-mounted patch bay. Day to day, a teammate sees only the front: a calm list of what the team library offers, what is new, and what they already have, with one action on each row. The bay itself sits under \"Where installed\": library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a centered 52rem library column, and on the grid a matrix sized to its columns with one quiet legend line under it. Places, agents and layers never reach the everyday screens, and anything that is a setting rather than a state stays folded until asked for.\n\nThe system is dark-only (`color-scheme: dark`), uses one sans for everything a person reads and monospace only for paths and commands, ships no images or icon fonts, and runs under a self-only content policy with no external fonts or scripts.",
+    "overview": "**Creative North Star: \"The Patch Bay\"**\n\nBehind its front panel, the window is a rack-mounted patch bay. Day to day, a teammate sees only the front: a calm list of what the team library offers, what is new, and what they already have, with one action on each row. The bay itself sits under \"Where installed\": library assets are rows, places (this project, the folders above it, your user) are columns, and a round jack at each crossing shows where an asset is live. The panel is anodized near-black in three stepped tones, labels are engraved in small tracked caps, and the only light in the room comes from lamps: mint for what is installed, amber for what you are about to change, red for what is blocked. A thin amber cable runs from a folder's jack to the project jack it feeds, so inheritance is drawn rather than explained.\n\nThe metaphor lives in the visuals and in the code, not in the words. The interface says \"Assets\", \"click a circle\", \"Add a library\" and \"Review and apply\"; it never asks a teammate to know what a jack, patch or bay is. Density is that of a working tool: 14px body, hairline-ruled rows, a centered 52rem library column, and on the grid a matrix sized to its columns with one quiet legend line under it. Places, agents and layers never reach the everyday screens, and anything that is a setting rather than a state stays folded until asked for.\n\nThe dark panel is the default world. A daylight world (warm off-white panels, the same lamps deepened for paper) follows the system's light preference unless the person picks a theme; a small pill in the faceplate cycles Auto, Light and Dark and is remembered in the browser. Every token is redefined for daylight, so components never branch on theme. The system uses one sans for everything a person reads and monospace only for paths and commands, ships no icon fonts and no images except the tour's screenshots, and runs under a self-only content policy with no external fonts or scripts.",
     "keyCharacteristics": [
       "Stepped panel tones and 1px hairlines carry all structure; one modal casts the only shadow.",
       "Color is state: mint is installed or up to date, amber is new, pending or your next step, red is blocked.",
       "Everyday screens (Library, Share, first setup) are one column of rows with one action each; the grid is a maintenance view.",
       "The jack (22px circle) is the signature control, with seven legible states and a one-line legend under the grid.",
       "Engraved small caps label the panel; they never act as headings or kickers.",
-      "One authored motion: a new cable draws out of the folder jack in 200ms."
+      "Two authored motions: a new cable draws out of the folder jack in 200ms, and the tour's cursor glides to each click and rings it in amber."
     ],
     "rules": [
       {
         "name": "The Two Lamps Rule",
         "body": "Mint says \"this is installed\" or \"up to date\"; amber says \"this waits for you\": something new, a pending change, the next step, or what you are touching. Neither appears as decoration, and mint never fills a button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lamp Text Rule",
+        "body": "Lamp-colored words use `amber-text` or `mint-text`, never the lamp tokens themselves, so they stay readable on paper as well as on the panel.",
         "section": "colors"
       },
       {
@@ -487,7 +896,7 @@
       },
       {
         "name": "The Readable Ring Rule",
-        "body": "Every jack ring that identifies a state or a control holds at least 3:1 against the panel it sits on; fills may be dimmer, rings may not.",
+        "body": "Every jack ring that identifies a state or a control holds at least 3:1 against the panel it sits on; fills may be dimmer, rings may not. Daylight does not meet it yet for amber: the pending-jack ring, focus outline, routing-bar border, active underlines and the strip lamp in `amber-light` measure 2.1 to 2.5:1 on the light panels.",
         "section": "colors"
       },
       {
@@ -538,7 +947,8 @@
       "**Do** put status messages and pending changes in the bottom dock, stacked, so neither covers the other or the grid.",
       "**Do** draw jack rings in Jack Ring, Mint Ring or a lamp color, never in a hairline tone.",
       "**Do** use plain words in the interface (\"circle\", \"install\", \"Review and apply\"); keep the patch-bay vocabulary in visuals and class names.",
-      "**Do** turn the cable and sheet animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`."
+      "**Do** use `amber-text` and `mint-text` for lamp-colored words, and define every new token in both worlds.",
+      "**Do** turn the cable, sheet and tour animations off under `prefers-reduced-motion: reduce`, and keep state transitions at 160 to 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`."
     ],
     "donts": [
       "**Don't** fill a button, banner or decoration with mint; mint means installed.",

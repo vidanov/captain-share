@@ -1,5 +1,33 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
+// Theme: follow the system unless the viewer chose light or dark (kept per browser).
+const THEMES = ["auto", "light", "dark"];
+function storedTheme() {
+  try {
+    return localStorage.getItem("captain-share-theme") || "auto";
+  } catch {
+    return "auto";
+  }
+}
+function applyTheme(theme) {
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  const label = { auto: "Auto", light: "Light", dark: "Dark" }[theme];
+  $("theme-switch").textContent = label;
+  $("theme-switch").setAttribute("aria-label", "Theme: " + label);
+}
+let theme = storedTheme();
+applyTheme(theme);
+$("theme-switch").onclick = () => {
+  const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  theme = next;
+  try {
+    localStorage.setItem("captain-share-theme", next);
+  } catch {
+    // Without storage the choice lasts until reload.
+  }
+  applyTheme(next);
+};
 function readToken() {
   const fresh = new URLSearchParams(location.hash.slice(1)).get("token");
   if (fresh) sessionStorage.setItem("captain-share-token", fresh);
@@ -227,7 +255,12 @@ function render() {
     .querySelectorAll("#subnav button")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === view));
   // Everyday views show no places; the project picker belongs to Where installed.
-  document.querySelector(".faceplate-place").hidden = !where;
+  const onAbout = !$("about-page").hidden;
+  document.querySelector(".faceplate-place").hidden = !where || onAbout;
+  if (onAbout)
+    document
+      .querySelectorAll(".faceplate-nav button")
+      .forEach((b) => b.classList.remove("active"));
   $("subnav").hidden = !where;
   const setup = !sources && view !== "libraries";
   $("setup").hidden = !setup;
@@ -254,6 +287,7 @@ function render() {
   if (isPatch) return renderMatrix();
   if (view === "libraries") {
     renderAgents();
+    foundList($("settings-found"), "Found on this machine, not added yet:");
     return renderLibraries();
   }
   if (view === "projects") {
@@ -834,6 +868,11 @@ document.querySelectorAll(".faceplate-nav button, #subnav button").forEach(
     (button.onclick = () =>
       task(async () => {
         await cancelReview();
+        // The sections live on the workspace page; leave About when one is chosen.
+        if (!$("about-page").hidden) {
+          history.pushState(null, "", "/");
+          showPage("/");
+        }
         view = button.dataset.tab;
         if (view === "share") shareData = null;
         $("search").value = "";
@@ -2178,6 +2217,11 @@ function cloneDestination() {
   return { name, path: name ? homePath() + "/Libraries/" + name : "" };
 }
 function renderSetup() {
+  if (!$("setup-found").childElementCount)
+    foundList(
+      $("setup-found"),
+      "Already on this machine? Add it with one click:",
+    );
   if (!setupAgents) setupAgents = [...(home?.agents || ["kiro"])];
   agentPicks($("setup-agents"), setupAgents, (tool) => {
     setupAgents = setupAgents.includes(tool)
@@ -2222,6 +2266,318 @@ $("setup-folder").onclick = () =>
     $("source-scope").value = "user";
     openFolderPicker("source-path");
   });
+
+// ---------------------------------------------------------------- add from elsewhere (ADR 006)
+let importStage = null;
+$("import-zip").onclick = () => $("import-file").click();
+$("import-folder").onclick = () => openFolderPicker("import-path");
+$("import-file").onchange = () =>
+  task(async () => {
+    const file = $("import-file").files[0];
+    $("import-file").value = "";
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024)
+      throw new Error("That zip is larger than 20 MB.");
+    message("Checking " + file.name + "…");
+    const res = await fetch(
+      "/api/import-upload?name=" +
+        encodeURIComponent(file.name) +
+        "&target=" +
+        encodeURIComponent(currentTarget),
+      {
+        method: "POST",
+        headers: {
+          "X-Captain-Token": token,
+          "Content-Type": "application/zip",
+        },
+        body: file,
+      },
+    );
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || "Upload failed");
+    importStage = body;
+    message("");
+    renderImport();
+  });
+function importLibraries() {
+  return (home?.libraries || []).filter((lib) => lib.is_repo && lib.path);
+}
+function renderImport() {
+  const box = $("import-panel");
+  if (!importStage) {
+    box.replaceChildren();
+    return;
+  }
+  const panel = el("div", undefined, "share-panel import-panel");
+  panel.append(el("strong", "From " + shortPath(importStage.label)));
+  const items = [];
+  const list = el("div", undefined, "import-items");
+  for (const candidate of importStage.candidates) {
+    const row = el("div", undefined, "import-item");
+    const pick = el("input");
+    pick.type = "checkbox";
+    pick.checked = !candidate.error;
+    pick.disabled = !!candidate.error;
+    pick.setAttribute("aria-label", "Add " + candidate.name);
+    const name = el("input");
+    name.value = candidate.name;
+    name.setAttribute("aria-label", "Name in the library");
+    let kind = null;
+    if ((candidate.kinds || []).length > 1) {
+      kind = el("select");
+      for (const value of candidate.kinds) {
+        const option = el("option", KIND_LABELS[value] || value);
+        option.value = value;
+        kind.append(option);
+      }
+      kind.value = candidate.kind;
+      kind.setAttribute("aria-label", "Kind");
+    }
+    const info = el("div", undefined, "import-info");
+    info.append(
+      el("span", KIND_LABELS[candidate.kind] || candidate.kind, "kind-tag"),
+    );
+    if (candidate.description || candidate.error)
+      info.append(
+        el(
+          "p",
+          candidate.error || candidate.description,
+          candidate.error ? "lib-meta warn" : "lib-desc",
+        ),
+      );
+    row.append(pick, name, ...(kind ? [kind] : []), info);
+    list.append(row);
+    items.push({ candidate, pick, name, kind });
+  }
+  if (!importStage.candidates.length)
+    list.append(
+      el(
+        "p",
+        "No skill, agent, prompt or power found here. A skill is a folder with SKILL.md.",
+        "hint warn",
+      ),
+    );
+  panel.append(list);
+  const libraries = importLibraries();
+  let library = null;
+  if (libraries.length > 1) {
+    library = el("select");
+    for (const lib of libraries) {
+      const option = el("option", lib.source);
+      option.value = lib.source;
+      library.append(option);
+    }
+    const label = el("label", "Library");
+    label.append(library);
+    panel.append(label);
+  }
+  const note = el("textarea");
+  note.rows = 2;
+  note.value =
+    "Add " +
+    importStage.candidates
+      .filter((c) => !c.error)
+      .map((c) => c.name)
+      .join(", ");
+  const noteLabel = el("label", "What is it good for? Teammates see this.");
+  noteLabel.append(note);
+  panel.append(noteLabel);
+  const pushBox = el("label", undefined, "check");
+  const push = el("input");
+  push.type = "checkbox";
+  push.checked = true;
+  pushBox.append(push, " Push to the team now");
+  panel.append(pushBox);
+  const changes = el("div", undefined, "share-changes");
+  panel.append(changes);
+  const actions = el("div", undefined, "actions");
+  const check = el("button", "Review", "quiet");
+  check.type = "button";
+  const go = el("button", "Add to library");
+  go.type = "button";
+  go.disabled = true;
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => {
+    importStage = null;
+    renderImport();
+  };
+  actions.append(check, go, cancel);
+  panel.append(actions);
+  let plan = null;
+  const invalidatePlan = () => {
+    plan = null;
+    go.disabled = true;
+    changes.replaceChildren();
+  };
+  for (const item of items) {
+    item.pick.onchange = invalidatePlan;
+    item.name.oninput = invalidatePlan;
+    if (item.kind) item.kind.onchange = invalidatePlan;
+  }
+  if (library) library.onchange = invalidatePlan;
+  check.onclick = () =>
+    task(async () => {
+      const chosen = items
+        .filter((item) => item.pick.checked)
+        .map((item) => ({
+          id: item.candidate.id,
+          kind: item.kind ? item.kind.value : item.candidate.kind,
+          name: item.name.value.trim(),
+        }));
+      if (!chosen.length) throw new Error("Choose at least one asset to add.");
+      if (!libraries.length)
+        throw new Error("Add a Git library first; assets are committed there.");
+      plan = await api("import-plan", {
+        stage: importStage.stage,
+        items: chosen,
+        source: library?.value || libraries[0].source,
+      });
+      const lines = plan.changes.map((change) => {
+        const line = el("div", undefined, "change");
+        line.append(
+          el("strong", change.op),
+          " ",
+          el("code", shortPath(change.path)),
+        );
+        return line;
+      });
+      for (const path of plan.commit_paths || []) {
+        const line = el("div", undefined, "change");
+        line.append(el("strong", "Commit"), " ", el("code", path));
+        lines.push(line);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      changes.replaceChildren(...lines);
+      go.disabled = !plan.can_apply;
+    });
+  go.onclick = () =>
+    task(async () => {
+      if (!plan) return;
+      if (!note.value.trim())
+        throw new Error("Say in a few words what it is good for.");
+      const result = await api("import-apply", {
+        fingerprint: plan.fingerprint,
+        note: note.value.trim(),
+        push: push.checked,
+      });
+      home = await api("home").catch(() => home);
+      const done = el("div", undefined, "share-done");
+      done.append(
+        el(
+          "strong",
+          result.pushed
+            ? "Added to the library and shared."
+            : "Added to the library. Not pushed yet.",
+        ),
+      );
+      if (result.push_error)
+        done.append(el("p", "Push failed: " + result.push_error, "hint warn"));
+      done.append(el("p", "It is in Library now. Teammates can run:", "hint"));
+      for (const command of result.get_commands || []) {
+        const line = el("div", undefined, "copy-line");
+        const code = el("code", command);
+        const copy = el("button", "Copy", "quiet");
+        copy.type = "button";
+        copy.onclick = () =>
+          navigator.clipboard
+            .writeText(command)
+            .then(() => message("Copied. Paste it in chat."))
+            .catch(() => message(command));
+        line.append(code, copy);
+        done.append(line);
+      }
+      const open = el("button", "Open Library");
+      open.type = "button";
+      open.onclick = () => {
+        importStage = null;
+        renderImport();
+        view = "home";
+        render();
+        window.scrollTo(0, 0);
+      };
+      done.append(open);
+      panel.replaceChildren(done);
+    });
+  box.replaceChildren(panel);
+}
+
+// ---------------------------------------------------------------- libraries on this machine
+let found = null,
+  finding = null;
+async function discover() {
+  if (found) return found;
+  if (!finding)
+    finding = api("discover")
+      .then((result) => (found = result))
+      .catch(() => (found = { libraries: [] }))
+      .finally(() => (finding = null));
+  return finding;
+}
+function foundList(box, intro) {
+  box.replaceChildren(
+    el("p", "Looking for libraries on this machine…", "hint"),
+  );
+  discover().then((result) => {
+    const rows = result.libraries.filter((lib) => !lib.connected).slice(0, 8);
+    if (!rows.length) {
+      box.replaceChildren();
+      return;
+    }
+    const list = el("div", undefined, "lib-list");
+    for (const lib of rows) {
+      const row = el("div", undefined, "lib-row");
+      const name = el("div", undefined, "lib-name");
+      name.append(el("span", lib.name));
+      row.append(
+        name,
+        el(
+          "p",
+          Object.entries(lib.counts)
+            .map(([kind, n]) => n + " " + assetNoun(kind, n))
+            .join(", ") +
+            " · " +
+            shortPath(lib.path),
+          "lib-meta",
+        ),
+      );
+      const act = el("div", undefined, "lib-act");
+      const add = el("button", "Add");
+      add.type = "button";
+      add.onclick = () =>
+        task(async () => {
+          if (!$("setup").hidden && setupAgents) await saveSetupAgents();
+          await api("source", {
+            name: lib.name,
+            path: lib.path,
+            layout: lib.layout,
+            target: homePath(),
+          });
+          found = null;
+          view = "home";
+          await refresh();
+          message(
+            "Library " +
+              lib.name +
+              " added for every project. Get what you need from it.",
+          );
+        });
+      act.append(add);
+      row.append(act);
+      list.append(row);
+    }
+    box.replaceChildren(el("p", intro, "found-intro"), list);
+    if (result.truncated)
+      box.append(
+        el(
+          "p",
+          "Searched part of your home folder. Use Add a library folder for others.",
+          "hint",
+        ),
+      );
+  });
+}
 
 task(refresh);
 
@@ -2272,10 +2628,20 @@ async function browseFolders(path) {
             : "assets at its root") +
           "). Use it, or open a subfolder."
         : "";
-    for (const folder of result.folders) {
-      const button = el("button", folder.name, "folder-entry quiet");
-      if (pickerField === "source-path" && folder.library)
-        button.append(el("span", "library", "badge"));
+    // Libraries first: they are what people look for in this picker.
+    const libraryFirst = ["source-path", "import-path"].includes(pickerField);
+    const folders = libraryFirst
+      ? [...result.folders].sort((a, b) => !!b.library - !!a.library)
+      : result.folders;
+    for (const folder of folders) {
+      const button = el(
+        "button",
+        folder.name,
+        "folder-entry quiet" +
+          (libraryFirst && folder.library ? " is-library" : ""),
+      );
+      if (libraryFirst && folder.library)
+        button.append(el("span", "has skills", "badge"));
       button.type = "button";
       button.onclick = () => browseFolders(folder.path);
       $("folder-list").append(button);
@@ -2303,24 +2669,31 @@ async function openFolderPicker(field) {
   if (busy) return;
   pickerField = field;
   const cloning = field === "clone-path";
-  let path = $(field).value.trim();
+  const importing = field === "import-path";
+  let path = importing ? "~" : $(field).value.trim();
   $("folder-new").hidden = !cloning;
   const registering = field === "project-path";
   $("folder-picker-title").textContent = cloning
     ? "Choose checkout parent folder"
-    : registering
-      ? "Choose a project folder"
-      : "Choose a library folder";
+    : importing
+      ? "Choose a skill folder"
+      : registering
+        ? "Choose a project folder"
+        : "Choose a library folder";
   $("folder-picker-help").textContent = cloning
     ? "Choose an existing parent and name the new checkout. The folder is created when you clone."
-    : registering
-      ? "Open the project folder and register it. Nothing is installed until you sync it."
-      : "Folders marked library contain ip/ or skills/, agents/, … Open one and choose Use this folder.";
+    : importing
+      ? "Open a skill folder, or a folder with several skills, and add it. Nothing is copied before you review."
+      : registering
+        ? "Open the project folder and register it. Nothing is installed until you sync it."
+        : "Folders marked library contain ip/ or skills/, agents/, … Open one and choose Use this folder.";
   $("folder-select").textContent = cloning
     ? "Use checkout location"
-    : registering
-      ? "Register this project"
-      : "Use this folder";
+    : importing
+      ? "Add from this folder"
+      : registering
+        ? "Register this project"
+        : "Use this folder";
   if (cloning) {
     path = path.replace(/\/$/, "");
     const split = path.lastIndexOf("/");
@@ -2363,6 +2736,11 @@ $("folder-select").onclick = () => {
   $(pickerField).value = path;
   $("folder-picker").close();
   if (pickerField === "source-path") describeLibrary();
+  if (pickerField === "import-path")
+    task(async () => {
+      importStage = await api("import-folder", { path });
+      renderImport();
+    });
   if (pickerField === "project-path")
     task(async () => {
       const result = await api("projects", { path });
@@ -2386,6 +2764,13 @@ function showPage(path, focus = true) {
   $("about-link").setAttribute("aria-current", about ? "page" : "false");
   $("workspace-link").setAttribute("aria-current", about ? "false" : "page");
   document.title = about ? "About · Captain Share" : "Captain Share";
+  // About is not a section: no section is current and no place applies there.
+  if (about) {
+    document
+      .querySelectorAll(".faceplate-nav button")
+      .forEach((b) => b.classList.remove("active"));
+    document.querySelector(".faceplate-place").hidden = true;
+  } else if (state) render();
   if (focus && about) $("about-title").focus();
   if (focus) window.scrollTo(0, 0);
 }

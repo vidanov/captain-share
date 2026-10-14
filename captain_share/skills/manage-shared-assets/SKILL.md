@@ -31,6 +31,10 @@ when they are explicitly synced, not automatically to every child repository.
   `--note TEXT --apply` copies it and commits only its paths in the library
   (`--push` to push; a refused push keeps the commit). Share only when the user
   asked to, with their wording for the note.
+- **Add from outside:** `import PATH --source NAME` previews the assets in a zip
+  file or folder (all valid ones; `--name` picks or renames one, `--kind steering`
+  for Markdown). `--note TEXT --apply` copies them into the library and commits only
+  their paths; existing library assets are never overwritten. Same consent as share.
 - **Contribute:** `scan`, inspect the chosen local originals, then
   `select outbound NAME skills SKILL --path skills/SKILL`. Outbound copies are
   written to the library checkout; existing shared edits cause a conflict.
