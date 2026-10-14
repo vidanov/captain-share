@@ -218,8 +218,9 @@ captain-share outdated --fetch  # checks each library's server first
 
 It lists linked assets with newer commits on the server, library edits not shared
 yet, copies of older team versions, copies you changed, and kept versions whose team
-original changed, each with what to do next. See
-[ADR 011](docs/adr/011-outdated-report.md).
+original changed, each with what to do next. The window's Library view shows the
+same list as "Behind the team", and Where installed has "Where from?" for each file.
+See [ADR 011](docs/adr/011-outdated-report.md).
 
 ## Configuration scopes
 

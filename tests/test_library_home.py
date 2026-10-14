@@ -822,3 +822,26 @@ class OutdatedTests(LibraryFixture):
             code = cli.main(["--target", str(self.repo), "outdated"])
         self.assertEqual(code, 0)
         self.assertIn("Everything is up to date (1)", out.getvalue())
+
+
+class BehindApiTests(LibraryFixture):
+    def test_outdated_and_why_endpoints(self):
+        first = (self.lib / "ip/skills/hello/SKILL.md").read_text()
+        (self.lib / "ip/skills/hello/SKILL.md").write_text(first + "\nnewer")
+        self.commit(self.lib, "Improve hello")
+        old = self.repo / ".kiro/skills/hello"
+        old.mkdir(parents=True)
+        (old / "SKILL.md").write_text(first)
+        self.start()
+        code, report = self.request("/api/outdated")
+        self.assertEqual(code, 200, report)
+        self.assertIn(
+            ("older-copy", ".kiro/skills/hello"),
+            {(x["state"], x.get("path")) for x in report["rows"]},
+        )
+        code, found = self.request("/api/why?path=" + str(old))
+        self.assertEqual(code, 200, found)
+        self.assertEqual((found["status"], found["source"]), ("local", "team"))
+        outside = self.base.parent / "elsewhere"
+        self.assertEqual(self.request("/api/why?path=" + str(outside))[0], 400)
+        self.assertEqual(self.request("/api/why?path=")[0], 400)
