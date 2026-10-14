@@ -531,6 +531,10 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     if (change.edit) div.append(el("div", change.edit, "change-from"));
     if (change.command)
       div.append(el("code", "Runs " + change.command.join(" "), "command"));
+    if ((change.runs || []).length) {
+      div.append(el("div", "Starts on your computer:", "change-from"));
+      change.runs.forEach((line) => div.append(el("code", line, "command")));
+    }
     $("changes").append(div);
   });
   if (!pending.changes.length)
@@ -689,6 +693,17 @@ async function previewMany(rows) {
 function conflictRow(conflict, spec) {
   const div = el("div", undefined, "conflict");
   div.append(el("p", conflict.message));
+  // A power with MCP servers or hooks installs only after the person allows them.
+  if (conflict.reason === "approval" && spec.power) {
+    const allow = el("button", "I trust these, allow them", "quiet");
+    allow.type = "button";
+    allow.onclick = () => task(() => preview({ ...spec, allow_code: true }));
+    const cancel = el("button", "Don't install", "link");
+    cancel.type = "button";
+    cancel.onclick = () => task(cancelReview);
+    div.append(allow, cancel);
+    return div;
+  }
   const [source, kind, name] = (conflict.key || "").split("/");
   if (conflict.reason === "unmanaged" && conflict.path) {
     const archive = el("button", "Archive local copy", "quiet");
