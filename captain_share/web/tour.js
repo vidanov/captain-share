@@ -21,7 +21,7 @@ const STEPS = [
   {
     image: "03-library.jpg",
     x: 71.4,
-    y: 36.6,
+    y: 36.1,
     click: true,
     title: "Library is home",
     text: "It lists everything in the library, who shared it and when. The team suggests a starter set; one click takes it.",
@@ -91,7 +91,7 @@ const STEPS = [
   {
     image: "12-updates.jpg",
     x: 72.4,
-    y: 36.6,
+    y: 33.8,
     click: true,
     title: "Weeks later: what's new?",
     text: "Check for updates asks Git whether the team pushed anything. Update library brings it in.",
