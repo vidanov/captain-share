@@ -253,7 +253,11 @@ class ImportApiTests(LibraryFixture):
             {"fingerprint": plan["fingerprint"], "note": "Add alpha and beta", "push": True},
         )
         self.assertEqual(code, 200, result)
-        self.assertEqual(set(result), {"commit", "pushed", "push_error", "get_commands"})
+        self.assertEqual(
+            set(result),
+            {"commit", "pushed", "push_error", "get_commands", "branch", "review_url"}
+            | {"push_error_hint", "push_error_command", "waiting_for_review"},
+        )
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(
             result["get_commands"],

@@ -63,7 +63,11 @@ class StarterTests(LibraryFixture):
             {"fingerprint": plan["fingerprint"], "note": "Starter set", "push": True},
         )
         self.assertEqual(code, 200, result)
-        self.assertEqual(set(result), {"commit", "pushed", "push_error"})
+        self.assertEqual(
+            set(result),
+            {"commit", "pushed", "push_error", "branch", "review_url"}
+            | {"push_error_hint", "push_error_command", "waiting_for_review"},
+        )
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(out(remote, "rev-parse", "main"), result["commit"])
         self.assertEqual(

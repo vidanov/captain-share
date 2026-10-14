@@ -15,6 +15,27 @@ from . import integrations as i
 from . import repositories as r
 
 
+def explain(hint=None, command=None, stream=None):
+    """Print the next step for an explained Git failure (ADR 009)."""
+    if hint:
+        print(f"  {hint}", file=stream or sys.stdout)
+    if command:
+        print(f"  Run: {command}", file=stream or sys.stdout)
+
+
+def pushed_lines(result):
+    """Push outcome, review link and next step after a commit."""
+    if result.get("pushed"):
+        print("Pushed.")
+    else:
+        print(f"Not pushed: {result.get('push_error')}")
+        explain(result.get("push_error_hint"), result.get("push_error_command"))
+    if result.get("waiting_for_review"):
+        print(f"Waiting for review on branch {result.get('branch')}.")
+        if result.get("review_url"):
+            print(f"Open the review: {result['review_url']}")
+
+
 def output(value, as_json=False):
     if as_json:
         print(json.dumps(value, indent=2, sort_keys=True))
@@ -123,6 +144,11 @@ def parser():
     share.add_argument("--push", action="store_true", help="Push the commit after it is made")
     share.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
     share.add_argument(
+        "--review",
+        action="store_true",
+        help="Commit on a new review branch (merge request) instead of the library branch",
+    )
+    share.add_argument(
         "--adopt",
         action="store_true",
         help="Afterwards link this folder to the library original instead of its copy",
@@ -170,6 +196,11 @@ def parser():
     prom.add_argument("--note", help="Commit message in the team library (needed to apply)")
     prom.add_argument("--push", action="store_true")
     prom.add_argument("--apply", action="store_true")
+    prom.add_argument(
+        "--review",
+        action="store_true",
+        help="Commit on a new review branch (merge request) instead of the library branch",
+    )
     st = sub.add_parser("starter", help="Show or change a library's starter set")
     st.add_argument("source")
     change = st.add_mutually_exclusive_group()
@@ -180,6 +211,11 @@ def parser():
     st.add_argument("--note", help="Commit message (needed to apply)")
     st.add_argument("--push", action="store_true")
     st.add_argument("--apply", action="store_true")
+    st.add_argument(
+        "--review",
+        action="store_true",
+        help="Commit on a new review branch (merge request) instead of the library branch",
+    )
     adopt = sub.add_parser(
         "adopt", help="Replace local copies of a library asset with links to the original"
     )
@@ -202,6 +238,11 @@ def parser():
     imp.add_argument("--note", help="Commit message describing the addition (needed to apply)")
     imp.add_argument("--push", action="store_true", help="Push the commit after it is made")
     imp.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
+    imp.add_argument(
+        "--review",
+        action="store_true",
+        help="Commit on a new review branch (merge request) instead of the library branch",
+    )
     sub.add_parser("status", help="Inspect links and configuration")
     sub.add_parser("guard", help="Check that local installation paths are not tracked by Git")
     rem = sub.add_parser("remove", help="Archive one local asset or alias")
@@ -366,7 +407,15 @@ def share(args, target):
         path = found[0]
     if args.apply and not args.note:
         raise c.ShareError("Add --note describing what you share; it becomes the commit message")
-    planned = r.share_plan(target, args.source, args.kind, args.name, path, adopt=args.adopt)
+    planned = r.share_plan(
+        target,
+        args.source,
+        args.kind,
+        args.name,
+        path,
+        adopt=args.adopt,
+        mode="review" if args.review else "direct",
+    )
     if not args.apply or not planned["can_apply"]:
         if not args.json:
             output(planned)
@@ -378,8 +427,8 @@ def share(args, target):
     result = r.share_apply(planned, args.note, args.push, adopt=args.adopt)
     if not args.json:
         print(f"Committed {result['commit'][:12]} in {args.source}.")
-        if args.push:
-            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        if args.push or result.get("waiting_for_review"):
+            pushed_lines(result)
         if args.adopt:
             print(
                 "This folder now uses the library version."
@@ -435,7 +484,14 @@ def import_assets(args, target):
             root = c.root(path)
         rows = im.find(root, str(path) if temp else "")
         items = import_items(rows, args.kind, args.name, path)
-        planned = im.plan(target, args.source, root, items, label=str(path))
+        planned = im.plan(
+            target,
+            args.source,
+            root,
+            items,
+            label=str(path),
+            mode="review" if args.review else "direct",
+        )
         if not args.apply or not planned["can_apply"]:
             planned["candidates"] = rows
             if not args.json:
@@ -459,8 +515,8 @@ def import_assets(args, target):
             shutil.rmtree(temp, ignore_errors=True)
     if not args.json:
         print(f"Committed {result['commit'][:12]} in {args.source}.")
-        if args.push:
-            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        if args.push or result.get("waiting_for_review"):
+            pushed_lines(result)
         for command in result["get_commands"]:
             print(f"Teammates can run: {command}")
     return result
@@ -538,7 +594,14 @@ def promote(args, target):
     from . import personal as me
     from .server import places
 
-    planned = me.promote_plan(target, args.kind, args.name, args.team, places(target))
+    planned = me.promote_plan(
+        target,
+        args.kind,
+        args.name,
+        args.team,
+        places(target),
+        "review" if args.review else "direct",
+    )
     if not args.apply or not planned["can_apply"]:
         if not args.json:
             for row in planned["changes"]:
@@ -552,8 +615,8 @@ def promote(args, target):
     result = me.promote_apply(planned, args.note, args.push)
     if not args.json:
         print(f"Committed {result['commit'][:12]} in {args.team}.")
-        if args.push:
-            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        if args.push or result.get("waiting_for_review"):
+            pushed_lines(result)
         for problem in result["errors"]:
             print(f"  Not finished: {problem}")
     return result
@@ -695,12 +758,8 @@ def main(argv=None):
                         + (f" on {result['branch']}" if result["branch"] else "")
                         + "."
                     )
-                    if args.push:
-                        print(
-                            "Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}"
-                        )
-                    if result["review_url"]:
-                        print(f"Open a review: {result['review_url']}")
+                    if args.push or result.get("waiting_for_review"):
+                        pushed_lines(result)
                     if result["adopt_error"]:
                         print(f"Kept your copy: {result['adopt_error']}")
                     return 1 if result["push_error"] or result["adopt_error"] else 0
@@ -755,7 +814,13 @@ def main(argv=None):
                         raise c.ShareError(f"{args.remove} is not in the starter set")
                     assets.remove(args.remove)
                 clear = bool(args.clear)
-                planned = r.starter_plan(target, args.source, [] if clear else assets, clear)
+                planned = r.starter_plan(
+                    target,
+                    args.source,
+                    [] if clear else assets,
+                    clear,
+                    "review" if args.review else "direct",
+                )
                 if not args.apply or not planned["can_apply"]:
                     result = planned
                     if not args.json:
@@ -771,12 +836,8 @@ def main(argv=None):
                     result = r.starter_apply(planned, args.note, args.push)
                     if not args.json:
                         print(f"Committed {result['commit'][:12]} in {args.source}.")
-                        if args.push:
-                            print(
-                                "Pushed."
-                                if result["pushed"]
-                                else f"Not pushed: {result['push_error']}"
-                            )
+                        if args.push or result.get("waiting_for_review"):
+                            pushed_lines(result)
                         return 1 if result["push_error"] else 0
         elif command == "adopt":
             result = e.plan(
@@ -841,10 +902,12 @@ def main(argv=None):
             else 0
         )
     except (c.ShareError, OSError, ValueError, KeyError, TypeError) as exc:
+        fields = exc.fields() if isinstance(exc, c.ShareError) else {}
         if args.json:
-            print(json.dumps({"ok": False, "error": str(exc)}))
+            print(json.dumps({"ok": False, "error": str(exc), **fields}))
         else:
             print(f"captain-share: {exc}", file=sys.stderr)
+            explain(fields.get("hint"), fields.get("command"), sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

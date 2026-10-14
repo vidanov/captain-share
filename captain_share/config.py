@@ -14,7 +14,28 @@ from typing import Any
 
 
 class ShareError(Exception):
-    pass
+    """A refusal or failure to show the user. `hint` says what to do next, `command`
+    is an exact command that helps, and `detail` keeps the original tool output."""
+
+    def __init__(self, message="", hint=None, command=None, detail=None):
+        super().__init__(message)
+        self.hint, self.command, self.detail = hint, command, detail
+
+    def fields(self):
+        """The extra JSON fields of this error, when present."""
+        return {
+            key: value
+            for key, value in (
+                ("hint", self.hint),
+                ("command", self.command),
+                ("detail", self.detail),
+            )
+            if value
+        }
+
+    def wrap(self, message):
+        """A new error with another message that keeps this one's hint and command."""
+        return ShareError(message, self.hint, self.command, self.detail)
 
 
 # A kind names a library folder and format; each tool that reads it gets its own link.
@@ -189,11 +210,12 @@ def validate(data, path, local=False):
             raise ShareError(f"{field} must be an object at {path}")
     for sid, spec in data.get("sources", {}).items():
         name(sid)
-        keys = {"path", "layout", "enabled"} if local else {"url", "description", "enabled"}
+        keys = {"path", "layout", "enabled", "sign"} if local else {"url", "description", "enabled"}
         if not isinstance(spec, dict) or set(spec) - keys:
             raise ShareError(f"Invalid source {sid} at {path}")
-        if "enabled" in spec and not isinstance(spec["enabled"], bool):
-            raise ShareError(f"Source enabled must be boolean at {path}")
+        for flag in ("enabled", "sign"):
+            if flag in spec and not isinstance(spec[flag], bool):
+                raise ShareError(f"Source {flag} must be boolean at {path}")
         if local and spec.get("enabled", True):
             if not isinstance(spec.get("path"), str) or not spec["path"]:
                 raise ShareError(f"Source {sid} needs a local path at {path}")
@@ -372,7 +394,8 @@ def add_source(target, sid, path, layout=None, scope="repo", url=None):
     with locks([d]):
         local = read_json(d / "sharing.local.json", {"version": 1, "sources": {}})
         validate(local, d / "sharing.local.json", True)
-        local["sources"][sid] = {"path": str(location), "layout": layout, "enabled": True}
+        kept = {k: v for k, v in local["sources"].get(sid, {}).items() if k == "sign"}
+        local["sources"][sid] = {"path": str(location), "layout": layout, "enabled": True, **kept}
         portable = read_json(d / "sharing.json")
         validate(portable, d / "sharing.json")
         portable["sources"][sid] = {"enabled": True, **({"url": url} if url else {})}
@@ -394,6 +417,26 @@ def remove_source(target, sid, scope="repo"):
         atomic_json(d / "sharing.json", cfg)
         atomic_json(d / "sharing.local.json", local)
     return {"source": sid, "disabled": True}
+
+
+def set_sign(target, sid, sign):
+    """Sign Captain Share's commits in one library (ADR 009). Machine-local: stored
+    beside the checkout path in the sharing.local.json that binds the library."""
+    name(sid)
+    if not isinstance(sign, bool):
+        raise ShareError("sign must be true or false")
+    bound = None
+    for p, data, local in layers(target):
+        if local and data.get("sources", {}).get(sid, {}).get("path"):
+            bound = p
+    if bound is None:
+        raise ShareError(f"Library {sid} is not connected on this machine")
+    with locks([bound.parent]):
+        data = read_json(bound)
+        validate(data, bound, True)
+        data["sources"][sid]["sign"] = sign
+        atomic_json(bound, data)
+    return {"source": sid, "sign": sign}
 
 
 def set_tools(target, tools, scope="repo"):
