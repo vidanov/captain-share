@@ -9,7 +9,8 @@ Use the `captain-share` CLI as the filesystem authority. It must be installed or
 available as `bin/captain-share` in its checkout. Work with the user's chosen
 folders and libraries; a source repository's access rights remain independent.
 
-Inspect the target with `captain-share --target FOLDER status` and `config`.
+Inspect the target with `captain-share --target FOLDER status` and `config`;
+`why PATH` explains where one file in an agent folder came from.
 These read merged global, ancestor-folder, and repository settings. Portable
 selections live in `.captain/sharing.json`; checkout paths live separately in
 `sharing.local.json`. A deeper selection overrides the same source/kind/name;

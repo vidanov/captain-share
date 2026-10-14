@@ -236,6 +236,17 @@ local paths. This is a convenience boundary, not access control or IP isolation.
 See [configuration format](docs/configuration.md) for examples and [migration](docs/migration.md)
 for existing Captain and toolkit installations.
 
+## Where did this come from?
+
+```bash
+captain-share why ~/.kiro/skills/review/SKILL.md
+```
+
+`why` names the asset a file belongs to, the library original it links to, whether
+Captain Share installed that link, and which `.captain/sharing.json` selected it. For
+a copy it says whether it matches the library version; it also recognizes library
+originals and powers installed by Kiro. It reads only.
+
 ## Remove, archive, restore
 
 ```bash
