@@ -958,6 +958,16 @@ button.link:hover {
   color: var(--ink-2);
 }
 
+.change-group {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.change-group > summary {
+  font-weight: 620;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 /* Starter set editor (Settings) */
 .starter-editor {
   margin: 0 0 12px;

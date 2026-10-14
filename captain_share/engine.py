@@ -448,8 +448,10 @@ def plan(
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
-    if action not in ("sync", "remove", "restore", "adopt", "keep", "relink"):
+    if action not in ("sync", "remove", "restore", "adopt", "keep", "relink", "disconnect"):
         raise c.ShareError("Unknown plan action")
+    if action == "disconnect":
+        c.name(source)
     if action == "relink":
         c.asset_name(kind, asset)
         c.name(source)
@@ -466,7 +468,7 @@ def plan(
                 raise c.ShareError("replace and link_team must be true or false")
         if path is not None:
             c.safe_path(target, path, leaf_link=True)
-    elif source is not None or replace:
+    elif (source is not None and action != "disconnect") or replace:
         raise c.ShareError("source and replace apply to adopt and keep plans only")
     if action == "keep":
         if not isinstance(new_name, str) or not new_name:
@@ -487,6 +489,7 @@ def plan(
     next_state = json.loads(json.dumps(old))
     changes, observations, errors, conflicts = [], [], [], []
     config_update = None
+    local_update = None
 
     def conflict(message, path=None, key=None, reason="error"):
         # Strings stay the stable CLI contract; structured rows let interfaces offer fixes.
@@ -727,6 +730,55 @@ def plan(
                     conflict(str(exc), row.get("path"), key)
     elif action == "adopt":
         kept = link_original()
+    elif action == "disconnect":
+        # One place's part of disconnecting a library (ADR 010): archive its managed
+        # links, drop its selections and its binding; the checkout is not touched.
+        prefix = f"{source}/"
+        for rel, previous in old["inbound"].items():
+            if not str(previous.get("key", "")).startswith(prefix):
+                continue
+            try:
+                dest = c.safe_path(target, rel, leaf_link=True)
+                existing = observe(dest)
+                if existing is None:
+                    next_state["inbound"].pop(rel, None)
+                    continue
+                if tracked(target, dest):
+                    conflict(
+                        f"{rel} is tracked by Git; remove it through its repository first",
+                        rel,
+                        previous.get("key"),
+                        "tracked",
+                    )
+                    continue
+                if existing != {"type": "link", "target": previous["source_path"]}:
+                    conflict(
+                        f"{rel} changed since Captain Share linked it; restore or archive it first",
+                        rel,
+                        previous.get("key"),
+                        "changed",
+                    )
+                    continue
+                archive(dest, previous)
+                next_state["inbound"].pop(rel, None)
+            except (c.ShareError, OSError) as exc:
+                conflict(str(exc), rel, previous.get("key"))
+        for key in [k for k in next_state["outbound"] if k.startswith(prefix)]:
+            next_state["outbound"].pop(key)
+        updated = json.loads(json.dumps(local_cfg))
+        for direction in ("inbound", "outbound"):
+            for key in [k for k in updated[direction] if k.startswith(prefix)]:
+                updated[direction].pop(key)
+        updated["sources"].pop(source, None)
+        if updated != local_cfg:
+            config_update = updated
+        local_path = c.safe_path(target, ".captain/sharing.local.json")
+        bindings = c.read_json(local_path)
+        if isinstance(bindings, dict) and source in bindings.get("sources", {}):
+            c.validate(bindings, local_path, True)
+            observe(local_path)
+            local_update = json.loads(json.dumps(bindings))
+            local_update["sources"].pop(source)
     elif action == "relink":
         old_key, key = f"{from_source}/{kind}/{asset}", f"{source}/{kind}/{asset}"
         src = None
@@ -943,6 +995,8 @@ def plan(
         spec.update(source=source, new_name=new_name, link_team=link_team)
     if action == "relink":
         spec.update(source=source, from_source=from_source)
+    if action == "disconnect":
+        spec.update(source=source)
     result = {
         "version": 1,
         "spec": spec,
@@ -959,6 +1013,8 @@ def plan(
     }
     if action in ("adopt", "keep"):
         result["kept"] = kept
+    if action == "disconnect":
+        result["local_update"] = local_update
     result["fingerprint"] = digest(result)
     return result
 
@@ -1246,61 +1302,15 @@ def apply(saved):
     ):
         raise c.ShareError("Invalid plan document")
     target = c.root(saved["spec"]["target"])
-    cfg = c.effective(target)
-    roots = [target / ".captain"]
-    roots += [
-        Path(s["path"]).expanduser().resolve() / ".captain"
-        for s in cfg["sources"].values()
-        if s.get("path")
-    ]
-    repo = git_root(target)
-    if repo:
-        # Worktrees sharing an exclude file share a lock too.
-        info = exclude_change(target, [])
-        roots.append(Path(info["path"]))
-    with c.locks(roots):
+    with c.locks(apply_roots(target)):
         current = plan(**saved["spec"])
         if current["fingerprint"] != saved.get("fingerprint"):
             raise c.ShareError("Plan is stale: files or configuration changed. Preview again.")
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
-        tx, archives = Transaction(), []
+        tx, archives = Transaction(), []  # type: tuple[Transaction, list[dict]]
         try:
-            for change in current["changes"]:
-                dest = Path(change["path"])
-                if change["op"] == "archive":
-                    owner = Path(change.get("archive_root", str(target)))
-                    archive_id = archive_into(tx, dest, owner, change.get("selection"))
-                    archives.append({"id": archive_id, "root": str(owner)})
-                elif change["op"] == "link":
-                    tx.link(change["source"], dest)
-                elif change["op"] == "copy":
-                    tx.copy(Path(change["source"]), dest)
-                elif change["op"] == "rename":
-                    tx.copy(Path(change["source"]), dest)
-                    if change.get("edit"):
-                        skill = dest / "SKILL.md"
-                        renamed = rename_frontmatter(skill.read_text(), change["name"])
-                        if renamed is None:
-                            raise c.ShareError(f"Could not rename {skill}")
-                        tx.write(skill, renamed[0])
-                elif change["op"] == "restore":
-                    tx.move(Path(change["source"]), dest)
-                    record = Path(change["archive_record"])
-                    meta = c.read_json(record)
-                    meta["restored"] = datetime.now(timezone.utc).isoformat()
-                    tx.write(record, meta)
-            if current["config_update"] is not None:
-                tx.write(c.safe_path(target, ".captain/sharing.json"), current["config_update"])
-            tx.write(c.safe_path(target, ".captain/sharing-state.json"), current["next_state"])
-            ex = current["exclusion"]
-            if ex and ex["changed"]:
-                tx.write(Path(ex["path"]), ex["text"])
-            ig = c.safe_path(target, ".captain/.gitignore")
-            original = ig.read_text() if ig.exists() else ""
-            extra = [x for x in c.LOCAL_IGNORE.splitlines() if x not in original.splitlines()]
-            if extra:
-                tx.write(ig, original.rstrip("\n") + "\n" + "\n".join(extra) + "\n")
+            perform(tx, current, target, archives)
         except Exception as exc:
             issues = tx.rollback()
             raise c.ShareError(
@@ -1313,6 +1323,65 @@ def apply(saved):
         "archives": archives,
         "target": str(target),
     }
+
+
+def apply_roots(target):
+    """Lock keys for applying a plan at target: its .captain, every bound library's
+    .captain (archives), and a shared Git exclude file."""
+    cfg = c.effective(target)
+    roots = [target / ".captain"]
+    roots += [
+        Path(s["path"]).expanduser().resolve() / ".captain"
+        for s in cfg["sources"].values()
+        if s.get("path")
+    ]
+    repo = git_root(target)
+    if repo:
+        # Worktrees sharing an exclude file share a lock too.
+        info = exclude_change(target, [])
+        roots.append(Path(info["path"]))
+    return roots
+
+
+def perform(tx, current, target, archives):
+    """Carry out a fresh plan's changes inside a transaction the caller rolls back."""
+    for change in current["changes"]:
+        dest = Path(change["path"])
+        if change["op"] == "archive":
+            owner = Path(change.get("archive_root", str(target)))
+            archive_id = archive_into(tx, dest, owner, change.get("selection"))
+            archives.append({"id": archive_id, "root": str(owner)})
+        elif change["op"] == "link":
+            tx.link(change["source"], dest)
+        elif change["op"] == "copy":
+            tx.copy(Path(change["source"]), dest)
+        elif change["op"] == "rename":
+            tx.copy(Path(change["source"]), dest)
+            if change.get("edit"):
+                skill = dest / "SKILL.md"
+                renamed = rename_frontmatter(skill.read_text(), change["name"])
+                if renamed is None:
+                    raise c.ShareError(f"Could not rename {skill}")
+                tx.write(skill, renamed[0])
+        elif change["op"] == "restore":
+            tx.move(Path(change["source"]), dest)
+            record = Path(change["archive_record"])
+            meta = c.read_json(record)
+            meta["restored"] = datetime.now(timezone.utc).isoformat()
+            tx.write(record, meta)
+    if current["config_update"] is not None:
+        tx.write(c.safe_path(target, ".captain/sharing.json"), current["config_update"])
+    if current.get("local_update") is not None:
+        tx.write(c.safe_path(target, ".captain/sharing.local.json"), current["local_update"])
+    tx.write(c.safe_path(target, ".captain/sharing-state.json"), current["next_state"])
+    ex = current["exclusion"]
+    if ex and ex["changed"]:
+        tx.write(Path(ex["path"]), ex["text"])
+    ig = c.safe_path(target, ".captain/.gitignore")
+    original = ig.read_text() if ig.exists() else ""
+    extra = [x for x in c.LOCAL_IGNORE.splitlines() if x not in original.splitlines()]
+    if extra:
+        tx.write(ig, original.rstrip("\n") + "\n" + "\n".join(extra) + "\n")
 
 
 def archives(target):

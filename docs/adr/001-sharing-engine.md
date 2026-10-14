@@ -18,6 +18,8 @@ for explicit Git operations and status; it does not depend on either interface.
 `imports.py` stages zips and folders from outside (ADR 006) and uses config, engine and
 repositories; it does not depend on either interface either. `personal.py` creates the
 personal library and promotes assets from it (ADR 008) with the same three modules.
+`disconnect.py` disconnects a library from every managed place (ADR 010) with config,
+engine and integrations.
 
 `scripts/check_repository.py` enforces these static Python import directions and
 runs in full and fast verification. Its tests permit the real graph, plant a

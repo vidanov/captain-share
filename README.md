@@ -343,6 +343,10 @@ for the project). `captain-share promote KIND NAME --to TEAM --note TEXT --apply
 later moves one to a team library and relinks every place that used it
 ([ADR 008](docs/adr/008-personal-library.md)).
 
+`captain-share source disconnect NAME` previews disconnecting a library from every
+place (links archived, selections and bindings removed, the checkout folder kept);
+`--apply` does it ([ADR 010](docs/adr/010-disconnect-library.md)).
+
 Team libraries on protected or signed-only hosts work too
 ([ADR 009](docs/adr/009-git-hosts.md)): add `--review` to `share`, `import`, `promote`
 or `starter` to commit on a new `share/NAME-USER` branch (the checkout is not
