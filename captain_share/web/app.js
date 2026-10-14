@@ -3305,6 +3305,7 @@ function proposePanel(row, spec) {
                   " but not pushed.",
           ),
         );
+        done.append(...landedLine(result));
         if (result.review_url) {
           const link = el("a", "Open the review request", "about-tour");
           link.href = result.review_url;
@@ -3335,6 +3336,7 @@ function proposePanel(row, spec) {
               : "Your changes are committed in the library but not pushed.",
           ),
         );
+        done.append(...landedLine(result));
         if (result.adopted)
           done.append(
             el(
@@ -3345,8 +3347,7 @@ function proposePanel(row, spec) {
             ),
           );
       }
-      if (result.push_error)
-        done.append(el("p", "Push failed: " + result.push_error, "hint warn"));
+      done.append(...pushProblem(result));
       if (result.adopt_error)
         done.append(
           el(
@@ -3729,8 +3730,31 @@ function reviewChoice(source, onChange) {
   };
 }
 // What happened after a commit: waiting for review, pushed, or why the push failed.
+// Where a commit went: "Commit a94e79c in kiro-shared on main · pushed".
+function landedLine(result) {
+  if (!result.commit) return [];
+  const line = el("p", undefined, "landed");
+  line.append(
+    "Commit ",
+    el("code", result.commit.slice(0, 7)),
+    result.library ? " in " + result.library : "",
+    result.landed_on ? " on " : "",
+    result.landed_on ? el("code", result.landed_on) : "",
+    result.pushed ? " · pushed" : " · not pushed, only in your library folder",
+  );
+  return [line];
+}
+function pushProblem(result) {
+  if (!result.push_error) return [];
+  const parts = [el("p", "Push failed: " + result.push_error, "hint warn")];
+  if (result.push_error_hint)
+    parts.push(el("p", result.push_error_hint, "hint"));
+  if (result.push_error_command)
+    parts.push(commandLine(result.push_error_command));
+  return parts;
+}
 function pushOutcome(result) {
-  const parts = [];
+  const parts = [...landedLine(result)];
   if (result.waiting_for_review) {
     parts.push(
       el("p", "Waiting for review on branch " + result.branch + ".", "hint"),
@@ -3743,14 +3767,7 @@ function pushOutcome(result) {
       parts.push(link);
     }
   }
-  if (result.push_error) {
-    parts.push(el("p", "Push failed: " + result.push_error, "hint warn"));
-    if (result.push_error_hint)
-      parts.push(el("p", result.push_error_hint, "hint"));
-    if (result.push_error_command)
-      parts.push(commandLine(result.push_error_command));
-  }
-  return parts;
+  return parts.concat(pushProblem(result));
 }
 
 // ---------------------------------------------------------------- outdated copies

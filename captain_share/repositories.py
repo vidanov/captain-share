@@ -597,10 +597,29 @@ def push_failure(exc=None):
     }
 
 
+def bad_signature(repo, rev="HEAD"):
+    """A ShareError when `rev` carries a signature that does not verify, else None.
+    A gpg.program wrapper that reads a passphrase from stdin signs the wrong data:
+    Git accepts it, but nobody can verify the commit, so it must not be pushed."""
+    mark = quiet(repo, "log", "-1", "--format=%G?", rev).strip()
+    if mark != "B":
+        return None
+    return c.ShareError(
+        "The commit's signature does not verify, so it was not pushed.",
+        "Your signing setup signed the wrong data; a gpg.program wrapper that passes "
+        "the passphrase on standard input does this. Fix it, re-sign the commit with "
+        "git commit --amend --no-edit -S in the library, then push.",
+        f"git -C {repo} verify-commit {rev}",
+    )
+
+
 def publish(target, source, path, push):
     """(pushed, push_error fields). A refused push keeps the commit."""
     if not push:
         return False, push_failure()
+    problem = bad_signature(path)
+    if problem is not None:
+        return False, push_failure(problem)
     try:
         push_checked(path, status(target, source))
     except c.ShareError as exc:
@@ -608,9 +627,16 @@ def publish(target, source, path, push):
     return True, push_failure()
 
 
-def direct_fields():
-    """Keys every apply result has, for a commit on the checkout's own branch."""
-    return {"branch": None, "review_url": None, "waiting_for_review": False}
+def direct_fields(source, repo):
+    """Keys every apply result has, for a commit on the checkout's own branch:
+    which library and branch the commit landed on."""
+    return {
+        "branch": None,
+        "review_url": None,
+        "waiting_for_review": False,
+        "library": source,
+        "landed_on": quiet(repo, "symbolic-ref", "--quiet", "--short", "HEAD").strip() or None,
+    }
 
 
 def get_command(target, source, kind, name):
@@ -752,7 +778,12 @@ def share_apply(saved, note, push=False, adopt=False):
                     "The copy stays in the library; commit it there or share again."
                 ) from exc
             pushed, failure = publish(args["target"], args["source"], path, push)
-            result = {"commit": sha, "pushed": pushed, **failure, **direct_fields()}
+            result = {
+                "commit": sha,
+                "pushed": pushed,
+                **failure,
+                **direct_fields(args["source"], repo),
+            }
     # Under review the project keeps its copy until the change is merged.
     adopt_error = adopt_after_share(**args) if adopt and mode == "direct" else None
     return {
@@ -785,6 +816,7 @@ def commit_edits(target, source, kind, name, note, push, fingerprint):
         "commit": sha,
         "pushed": pushed,
         **failure,
+        **direct_fields(source, lib["repo"]),
         "get_command": get_command(target, source, kind, name),
     }
 
@@ -1151,7 +1183,10 @@ def review_send(target, source, lib, entries, note, branch, base, head, push):
     """Commit entries on the review branch, push it when asked, and find its link."""
     sha = review_commit(lib["repo"], entries, note, branch, head, signs(lib))
     pushed, failure, url = False, push_failure(), None
-    if push:
+    problem = bad_signature(lib["repo"], sha) if push else None
+    if problem is not None:
+        failure = push_failure(problem)
+    elif push:
         before = status(target, source)
         try:
             output = push_checked(
@@ -1168,6 +1203,8 @@ def review_send(target, source, lib, entries, note, branch, base, head, push):
         "branch": branch,
         "review_url": url,
         "waiting_for_review": True,
+        "library": source,
+        "landed_on": branch,
     }
 
 
@@ -1202,7 +1239,12 @@ def propose_apply(saved, note, push=False):
                     "version is archived in the library; commit there or restore it."
                 ) from exc
             pushed, failure = publish(args["target"], args["source"], lib["path"], push)
-            result = {"commit": sha, "pushed": pushed, **failure, **direct_fields()}
+            result = {
+                "commit": sha,
+                "pushed": pushed,
+                **failure,
+                **direct_fields(args["source"], repo),
+            }
         else:
             entries = [(current["commit_paths"][0], local)]
             result = review_send(
@@ -1378,4 +1420,9 @@ def starter_apply(saved, note, push=False):
                 raise exc.wrap(message) from exc
             raise c.ShareError(message) from exc
         pushed, failure = publish(args["target"], args["source"], lib["path"], push)
-    return {"commit": sha, "pushed": pushed, **failure, **direct_fields()}
+    return {
+        "commit": sha,
+        "pushed": pushed,
+        **failure,
+        **direct_fields(args["source"], lib["repo"]),
+    }

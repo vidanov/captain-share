@@ -301,7 +301,7 @@ def promote_apply(saved, note, push=False):
         "commit": sha,
         "pushed": pushed,
         **failure,
-        **r.direct_fields(),
+        **r.direct_fields(team, lib["repo"]),
         "relinked": relinked,
         "removed": removed,
         "errors": errors,

@@ -27,6 +27,14 @@ people what to do, and a direct commit could never be pushed.
   are signed as well (also when `commit.gpgsign` is set, which `commit-tree` does
   not read). Before changing files, a signing check creates an unreferenced test
   commit; if the key cannot sign, nothing changes and the hint names the setting.
+  Git can also produce a signature that does not verify (for example a
+  `gpg.program` wrapper that feeds the passphrase on standard input, where Git
+  sends the data to sign). Before pushing, Captain Share asks Git for the commit's
+  signature status and keeps a commit with a bad signature local, with a hint and
+  the `verify-commit` command.
+- **Where it landed.** Every result that commits names the library and branch
+  (`library`, `landed_on`: the checkout's branch, or the review branch), so the
+  window says "Commit abc1234 in team on main · pushed".
 - **Review mode** for share, import, promote, starter set and proposals: the commit
   is built from a temporary index on a new branch `share/NAME-USER` from the
   checkout's HEAD; the working tree and the current branch are never touched.
