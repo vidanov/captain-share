@@ -93,6 +93,8 @@ function message(text, error = false, extra = {}) {
   box.replaceChildren();
   if (text) box.append(error ? "Error: " + text : text);
   if (text && extra.hint) box.append(el("span", extra.hint, "message-hint"));
+  if (text && extra.detail)
+    box.append(el("pre", extra.detail, "message-detail"));
   if (text && extra.command) box.append(commandLine(extra.command));
   box.className = error ? "error" : "";
   if (text && !error) messageTimer = setTimeout(() => message(""), 6000);
@@ -146,6 +148,7 @@ async function api(path, data) {
     const error = new Error(body.error || "Request failed");
     error.hint = body.hint;
     error.command = body.command;
+    error.detail = body.detail;
     throw error;
   }
   return body;
@@ -159,7 +162,11 @@ async function task(fn) {
   try {
     await fn();
   } catch (e) {
-    message(e.message, true, { hint: e.hint, command: e.command });
+    message(e.message, true, {
+      hint: e.hint,
+      command: e.command,
+      detail: e.detail,
+    });
   } finally {
     busy = false;
   }
@@ -1755,7 +1762,7 @@ function renderLibraries() {
           name +
           " (for libraries that require signed commits)",
       );
-      list.append(sign, starterEditor(name));
+      list.append(sign, checkEditor(name, spec), starterEditor(name));
     }
   }
 }
@@ -3834,6 +3841,43 @@ function reviewChoice(source, onChange) {
   };
 }
 // What happened after a commit: waiting for review, pushed, or why the push failed.
+// The command that checks a library before Captain Share commits to it. Set per
+// machine; Captain Share never runs a command the library itself asks for.
+function checkEditor(name, spec) {
+  const box = el("div", undefined, "check-editor");
+  const label = el("label", "Check before sharing to " + name);
+  const input = el("input");
+  input.placeholder = "e.g. python3 scripts/check_library.py";
+  input.value = (spec.check || [])
+    .map((arg) => (/[\s"']/.test(arg) ? JSON.stringify(arg) : arg))
+    .join(" ");
+  label.append(input);
+  const save = el("button", "Save", "quiet");
+  save.type = "button";
+  save.onclick = () =>
+    task(async () => {
+      const result = await api("library-settings", {
+        source: name,
+        check: input.value.trim(),
+      });
+      state.config.sources[name].check = result.check || undefined;
+      message(
+        result.check
+          ? "Shares to " + name + " run “" + result.check.join(" ") + "” first."
+          : "Shares to " + name + " no longer run a check.",
+      );
+    });
+  box.append(
+    label,
+    save,
+    el(
+      "p",
+      "Runs in the library folder after the files are copied and before the commit; files it changes are committed too. If it fails, nothing is committed.",
+      "hint",
+    ),
+  );
+  return box;
+}
 // Where a commit went: "Commit a94e79c in kiro-shared on main · pushed".
 function landedLine(result) {
   if (!result.commit) return [];
@@ -3846,6 +3890,7 @@ function landedLine(result) {
     result.landed_on ? el("code", result.landed_on) : "",
     result.pushed ? " · pushed" : " · not pushed, only in your library folder",
   );
+  if (result.checked) line.append(" · checked by ", el("code", result.checked));
   return [line];
 }
 function pushProblem(result) {

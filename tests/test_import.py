@@ -257,7 +257,7 @@ class ImportApiTests(LibraryFixture):
             set(result),
             {"commit", "pushed", "push_error", "get_commands", "branch", "review_url"}
             | {"push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(

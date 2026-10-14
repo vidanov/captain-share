@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import subprocess
 import sys
 import time
@@ -1061,7 +1062,17 @@ def make_server(target, port=0):
                     plans.pop(fingerprint)
                     result = dc.apply(saved)
                 elif path == "/api/library-settings":
-                    result = c.set_sign(target, data["source"], data["sign"])
+                    if "check" in data:
+                        text = data["check"]
+                        if not isinstance(text, str):
+                            raise c.ShareError("check must be a command line or empty")
+                        try:
+                            command = shlex.split(text) or None
+                        except ValueError as exc:
+                            raise c.ShareError(f"Could not read the command: {exc}") from exc
+                        result = c.set_check(target, data["source"], command)
+                    else:
+                        result = c.set_sign(target, data["source"], data["sign"])
                     plans.clear()
                 elif path == "/api/fetch":
                     result = r.fetch(target, data["source"])

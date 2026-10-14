@@ -312,6 +312,50 @@ class ShareApiTests(LibraryFixture):
         )
         self.assertEqual(code, 200, view)
 
+    def test_library_check_runs_before_the_commit(self):
+        import sys
+
+        self.skill(self.repo / "skills/mine")
+        (self.lib / "catalog.txt").write_text("old")
+        self.commit(self.lib, "Add catalog")
+        refresh = "open('catalog.txt', 'w').write('refreshed')"
+        c.set_check(self.repo, "team", [sys.executable, "-c", refresh])
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        _, plan = self.request("/api/share-plan", body)
+        code, result = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share mine"}
+        )
+        self.assertEqual(code, 200, result)
+        self.assertIn("-c", result["checked"])
+        files = e.git(self.lib, "show", "--name-only", "--format=", "HEAD").stdout.decode().split()
+        self.assertEqual(files, ["catalog.txt", "ip/skills/mine/SKILL.md"])
+        # A failing check commits nothing and says how to run it again.
+        fail = "import sys; print('ip/skills/other: not allowed'); sys.exit(1)"
+        c.set_check(self.repo, "team", [sys.executable, "-c", fail])
+        self.skill(self.repo / "skills/other")
+        body = {**body, "name": "other", "path": "skills/other"}
+        _, plan = self.request("/api/share-plan", body)
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout
+        code, failed = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share other"}
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("library check failed", failed["error"])
+        self.assertIn("not allowed", failed["detail"])
+        self.assertIn("cd ", failed["command"])
+        self.assertEqual(e.git(self.lib, "rev-parse", "HEAD").stdout, head)
+        self.assertTrue((self.lib / "ip/skills/other/SKILL.md").is_file())
+        # Settings: a command line is stored as arguments; empty turns it off.
+        code, saved = self.request(
+            "/api/library-settings", {"source": "team", "check": 'python3 "my check.py" --x'}
+        )
+        self.assertEqual(saved["check"], ["python3", "my check.py", "--x"])
+        _, cleared = self.request("/api/library-settings", {"source": "team", "check": ""})
+        self.assertIsNone(cleared["check"])
+        with self.assertRaises(c.ShareError):
+            c.set_check(self.repo, "team", ["", "x"])
+
     def test_share_commits_only_the_asset_and_pushes(self):
         remote = self.remote()
         self.skill(self.repo / "skills/mine")
@@ -342,7 +386,7 @@ class ShareApiTests(LibraryFixture):
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
             | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         # The result says where the commit went.
         self.assertEqual((result["library"], result["landed_on"]), ("team", "main"))
@@ -727,7 +771,7 @@ class AdoptTests(LibraryFixture):
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
             | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         self.assertEqual(
             (result["pushed"], result["adopted"], result["adopt_error"]), (True, True, None)

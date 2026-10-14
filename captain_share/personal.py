@@ -261,7 +261,7 @@ def promote_apply(saved, note, push=False):
                 + (f"; recovery needed: {issues}" if issues else "")
             ) from exc
         try:
-            sha = r.commit(lib["repo"], current["commit_paths"], note, lib["sign"])
+            sha = r.commit(lib["repo"], current["commit_paths"], note, lib["sign"], lib["check"])
         except c.ShareError as exc:
             raise exc.wrap(
                 f"Copied into {team}, but the commit failed: {exc}. "
@@ -301,7 +301,7 @@ def promote_apply(saved, note, push=False):
         "commit": sha,
         "pushed": pushed,
         **failure,
-        **r.direct_fields(team, lib["repo"]),
+        **r.direct_fields(team, lib["repo"], lib["check"]),
         "relinked": relinked,
         "removed": removed,
         "errors": errors,
