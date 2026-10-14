@@ -272,6 +272,42 @@ class SharingTests(SharingFixture):
         found = e.why(self.lib / "ip/skills/hello/SKILL.md")
         self.assertEqual((found["status"], found["source"]), ("library", "team"))
 
+    def test_hidden_characters_block_share_and_install(self):
+        # A right-to-left override reorders what an editor shows.
+        src = self.skill(self.repo / "skills/new", "Run tests\u202e and nothing else")
+        c.select(self.repo, "outbound", "team", "skills", "new", path="skills/new")
+        plan = e.plan(self.repo, "outbound")
+        self.assertFalse(plan["can_apply"])
+        message = " ".join(plan["errors"])
+        self.assertIn("SKILL.md line 5, column 10: U+202E RIGHT-TO-LEFT OVERRIDE", message)
+        # Unicode tags can spell out instructions nobody sees; nested files count too.
+        (src / "SKILL.md").write_text("---\nname: new\ndescription: Fine\n---\nok")
+        (src / "references").mkdir()
+        hidden = "".join(chr(0xE0000 + ord(x)) for x in "obey")
+        (src / "references/notes.md").write_text("Notes" + hidden)
+        message = " ".join(e.plan(self.repo, "outbound")["errors"])
+        self.assertIn("references/notes.md line 1", message)
+        self.assertIn("and 3 more", message)
+        # The same check guards installs from a library.
+        (self.lib / "ip/skills/hello/SKILL.md").write_text(
+            "---\nname: hello\ndescription: x\n---\nzero\u200bwidth"
+        )
+        self.select()
+        plan = e.plan(self.repo)
+        self.assertFalse(plan["can_apply"])
+        self.assertIn("U+200B ZERO WIDTH SPACE", " ".join(plan["errors"]))
+
+    def test_ordinary_unicode_is_allowed(self):
+        # Joiners in emoji and scripts, emoji variation selectors, a leading byte
+        # order mark, right-to-left text and binary files are not hidden characters.
+        text = "\ufeff---\nname: hello\ndescription: x\n---\n"
+        text += "family \U0001f468\u200d\U0001f469 heart \u2764\ufe0f \u0645\u0631\u062d\u0628\u0627 \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"
+        (self.lib / "ip/skills/hello/SKILL.md").write_text(text, encoding="utf-8")
+        (self.lib / "ip/skills/hello/data.bin").write_bytes(b"\xff\xfe\x2e\x20" * 8)
+        self.select()
+        self.assertTrue(e.plan(self.repo)["can_apply"])
+        self.assertEqual(e.hidden_characters("x\ufeffy".encode()), [(1, 2, "\ufeff")])
+
     def test_git_exclusion_and_hook_preservation(self):
         self.git("init", "-q")
         hook = self.repo / ".git/hooks/pre-commit"
@@ -734,6 +770,51 @@ class SharingTests(SharingFixture):
         self.assertEqual(run("powers", "list", "--source", "team")[0]["kiro"], "current")
         run("powers", "uninstall", "team", "demo-power", "--apply")
         self.assertFalse((installed / "demo-power").exists())
+
+    def test_power_that_runs_code_needs_approval(self):
+        installed = self.fake_kiro()
+        original = self.power(env={"TOKEN": "${TOKEN}"})
+        (original / "hooks").mkdir()
+        (original / "hooks/format.kiro.hook").write_text('{"then": {"command": "fmt"}}')
+        planned = i.power_plan(self.repo, "install", "team", "demo-power")
+        self.assertFalse(planned["can_apply"])
+        self.assertEqual(planned["conflicts"][0]["reason"], "approval")
+        message = planned["errors"][0]
+        self.assertIn("MCP server demo (demo)", message)
+        self.assertIn("hook format.kiro.hook (hooks/format.kiro.hook)", message)
+        with self.assertRaises(c.ShareError):
+            i.power_apply(planned)
+        self.assertFalse(installed.exists())
+        # Allowing it installs, and the preview still lists what will run.
+        allowed = i.power_plan(self.repo, "install", "team", "demo-power", allow_code=True)
+        self.assertTrue(allowed["can_apply"])
+        self.assertEqual(len(allowed["changes"][0]["runs"]), 2)
+        i.power_apply(allowed)
+        self.assertTrue((installed / "demo-power/mcp.json").is_file())
+        # An approval is for that preview only; uninstalling needs none.
+        self.assertTrue(i.power_plan(self.repo, "uninstall", "team", "demo-power")["can_apply"])
+        # A power without servers or hooks needs no approval.
+        (original / "mcp.json").unlink()
+        import shutil
+
+        shutil.rmtree(original / "hooks")
+        self.assertTrue(i.power_plan(self.repo, "install", "team", "demo-power")["can_apply"])
+
+    def test_cli_get_power_with_code_needs_allow_code(self):
+        self.fake_kiro()
+        self.power(env={})
+        exe = Path(__file__).resolve().parents[1] / "bin/captain-share"
+
+        def run(*args):
+            return subprocess.run(
+                [str(exe), "--target", str(self.repo), *args], capture_output=True, text=True
+            )
+
+        refused = run("--json", "powers", "install", "team", "demo-power", "--apply")
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("runs code on this computer", refused.stdout + refused.stderr)
+        done = run("--json", "powers", "install", "team", "demo-power", "--allow-code", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
     def test_power_plan_without_kiro_cli_is_blocked(self):
         self.power()

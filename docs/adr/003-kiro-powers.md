@@ -41,6 +41,14 @@ installed copy to report `not installed`, `current` (same content as the library
 or `differs` (an update is available or the installed copy came from elsewhere).
 Applying rechecks the preview fingerprint, as file plans do.
 
+A power can start programs on the user's computer: MCP servers (`mcp.json`,
+`.mcp.json`, or `mcpServers` in `plugin.json`) and hooks (`hooks` in `plugin.json`,
+`hooks.json`, `*.kiro.hook`, anything under `hooks/`). The install or update preview
+lists each one with what it runs, and is a conflict until the user allows it
+(`--allow-code` on `powers install` and `get`, or "I trust these" in the window).
+The approval belongs to that preview's fingerprint, so a changed power needs a new
+one. Uninstalling needs none.
+
 ## Consequences
 
 One library holds skills and powers. Library edits reach Kiro only after an

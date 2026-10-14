@@ -11,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,19 @@ from . import config as c
 MAX_ASSET_BYTES = 64 * 1024 * 1024
 # Regenerable local files: never listed, compared, or copied, and never blocking.
 HOUSEKEEPING = {".DS_Store", ".gitkeep", "__pycache__"}
+# Characters an editor does not show but an agent reads: bidirectional embeddings,
+# overrides and isolates (which reorder what is displayed), zero-width and invisible
+# characters, Hangul fillers, Unicode tags (which can spell out hidden instructions)
+# and supplementary variation selectors. Joiners (U+200C/D) and ordinary variation
+# selectors stay allowed: emoji and many scripts need them.
+HIDDEN_CHARACTERS = (
+    set(range(0x202A, 0x202F))
+    | set(range(0x2066, 0x206A))
+    | {0x200B, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x180E}
+    | {0x115F, 0x1160, 0x3164, 0xFFA0}
+    | set(range(0xE0000, 0xE0080))
+    | set(range(0xE0100, 0xE01F0))
+)
 FOLDER_KINDS = {"skills", "powers"}
 POWER_FIELDS = ("name", "version", "description", "keywords")
 
@@ -79,6 +93,33 @@ def snapshot(path, modes=True):
     return {"type": "directory" if path.is_dir() else "file", "hash": digest(rows)}
 
 
+def hidden_characters(data):
+    """(line, column, character) of each hidden character in UTF-8 text; [] for other
+    data. A byte order mark is allowed only at the start of the file."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for column, char in enumerate(line, 1):
+            code = ord(char)
+            if code in HIDDEN_CHARACTERS or (code == 0xFEFF and (number, column) != (1, 1)):
+                found.append((number, column, char))
+    return found
+
+
+def hidden_message(name, found):
+    number, column, char = found[0]
+    label = unicodedata.name(char, "UNNAMED CHARACTER")
+    more = f" and {len(found) - 1} more" if len(found) > 1 else ""
+    return (
+        f"Hidden character in {name} line {number}, column {column}: "
+        f"U+{ord(char):04X} {label}{more}. It can change what an agent reads without "
+        "showing in an editor; remove it first."
+    )
+
+
 def validate_asset(path, kind, outbound=False):
     if path.is_symlink():
         raise c.ShareError(f"Use the original asset, not a symlink: {path}")
@@ -97,6 +138,11 @@ def validate_asset(path, kind, outbound=False):
             raise c.ShareError(f"Asset contains a symlink: {p}")
         if p.name in {".git", ".env", "node_modules"}:
             raise c.ShareError(f"Remove local/generated material before sharing: {p.name}")
+        if p.is_file() and p.stat().st_size <= MAX_ASSET_BYTES:
+            found = hidden_characters(p.read_bytes())
+            if found:
+                name = p.name if p == path else p.relative_to(path).as_posix()
+                raise c.ShareError(hidden_message(name, found))
         if outbound and p.is_file():
             if p.stat().st_size > MAX_ASSET_BYTES:
                 raise c.ShareError("File exceeds 64 MiB limit")

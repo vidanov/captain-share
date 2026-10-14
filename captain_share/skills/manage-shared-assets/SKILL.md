@@ -65,7 +65,9 @@ when they are explicitly synced, not automatically to every child repository.
   written to the library checkout; existing shared edits cause a conflict.
   Generated outputs, private project context, fonts and licensed material need
   their own distribution decision. The built-in credential/path scan is only a
-  heuristic, never a confidentiality or licensing verdict.
+  heuristic, never a confidentiality or licensing verdict. A hidden-character error
+  (bidirectional override, zero-width, Unicode tag) blocks share and install alike:
+  show the user the reported line; do not strip it without their review.
 - **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude codex
   copilot` sets it for the target (`--target "$HOME"` for every project). Skills then
   link into `.kiro/skills/`, `.claude/skills/`, and `.agents/skills/` (Codex) from one
@@ -73,7 +75,9 @@ when they are explicitly synced, not automatically to every child repository.
 - **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
   `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
   install state; `powers install SOURCE POWER` previews and `--apply` runs
-  `kiro-cli powers install` (also updates). Powers are user-wide copies, never
+  `kiro-cli powers install` (also updates). A power with MCP servers or hooks
+  needs `--allow-code`: show the user what the preview says will run and add it
+  only after they agree. Powers are user-wide copies, never
   inbound selections. Do not edit `~/.kiro/powers` directly.
 - **Change an alias:** select the same inbound source/kind/name with a new
   `--alias`. The old shortcut is archived when synced. A filesystem alias does
