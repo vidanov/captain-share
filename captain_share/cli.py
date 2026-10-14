@@ -89,6 +89,13 @@ def parser():
     remove = ss.add_parser("remove")
     remove.add_argument("name")
     remove.add_argument("--scope", choices=["repo", "folder", "global"], default="repo")
+    disc = ss.add_parser(
+        "disconnect",
+        help="Disconnect a library everywhere: archive its links, drop its selections "
+        "and bindings; the checkout folder stays",
+    )
+    disc.add_argument("name")
+    disc.add_argument("--apply", action="store_true")
     ss.add_parser("list")
     sub.add_parser("config", help="Show merged configuration and contributing layers")
     tools = sub.add_parser(
@@ -625,6 +632,40 @@ def promote(args, target):
     return result
 
 
+def disconnect_library(args, target):
+    """Preview, or with --apply carry out, disconnecting a library (ADR 010)."""
+    from . import disconnect as dc
+    from .server import places
+
+    planned = dc.plan(args.name, places(target))
+    if not args.apply or not planned["can_apply"]:
+        if not args.json:
+            print(f"Disconnect {args.name} (the folder {planned['folder']} stays):")
+            for row in planned["changes"]:
+                where = row.get("place_label", "")
+                print(f"  {row['op']:10} {row.get('path') or row.get('key')}  [{where}]")
+            for row in planned["kept"]:
+                what = row.get("path") if row["reason"] == "copy" else row.get("name")
+                print(f"  kept       {what} ({row['reason']})")
+                if row.get("command"):
+                    print(f"             uninstall with: {row['command']}")
+            for error in planned["errors"]:
+                print(f"  Blocked: {error}")
+            if planned["can_apply"]:
+                print("Ready. Add --apply to disconnect.")
+        return planned
+    result = dc.apply(planned)
+    if not args.json:
+        print(
+            f"Disconnected {args.name}: {len(result['archives'])} links archived in "
+            f"{len(result['places'])} places; the folder stays."
+        )
+        for row in result["kept"]:
+            what = row.get("path") if row["reason"] == "copy" else row.get("name")
+            print(f"  kept {what} ({row['reason']})")
+    return result
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -639,6 +680,10 @@ def main(argv=None):
                 )
             elif args.source_action == "remove":
                 result = c.remove_source(target, args.name, args.scope)
+            elif args.source_action == "disconnect":
+                result = disconnect_library(args, target)
+                if not args.json:
+                    return 1 if result.get("can_apply") is False else 0
             else:
                 result = c.effective(target)["sources"]
         elif command == "config":

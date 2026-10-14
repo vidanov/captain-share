@@ -39,6 +39,9 @@ when they are explicitly synced, not automatically to every child repository.
   to the private `my-skills` library (local commits, never pushed) and installs it
   for the user (`--here` for the project). `promote KIND NAME --to TEAM --note TEXT
   --apply` moves it to a team library when the user wants to share it.
+- **Disconnect a library:** `source disconnect NAME` previews archiving its links
+  and removing its selections and bindings everywhere; `--apply` when the user
+  confirms. The checkout, unmanaged copies and installed Kiro powers stay (listed).
 - **Protected or signed-only libraries:** add `--review` to `share`, `import`,
   `promote` or `starter` to commit on a `share/NAME-USER` branch and open a merge
   request with `--push`. When Git fails, relay the printed hint and command to the

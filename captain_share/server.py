@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from . import config as c
+from . import disconnect as dc
 from . import engine as e
 from . import imports as im
 from . import integrations as i
@@ -1010,6 +1011,19 @@ def make_server(target, port=0):
                         target, data.get("source", ""), data["action"], data["fingerprint"]
                     )
                     plans.clear()
+                elif path == "/api/disconnect-plan":
+                    result = dc.plan(data["source"], places(startup))
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/disconnect-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    saved = plans.get(fingerprint)
+                    if saved is None or "disconnect" not in saved:
+                        raise c.ShareError("Preview the disconnect again before applying")
+                    plans.pop(fingerprint)
+                    result = dc.apply(saved)
                 elif path == "/api/library-settings":
                     result = c.set_sign(target, data["source"], data["sign"])
                     plans.clear()
@@ -1285,7 +1299,8 @@ def make_server(target, port=0):
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
                     if any(
-                        k in saved for k in ("share", "import", "propose", "starter", "promote")
+                        k in saved
+                        for k in ("share", "import", "propose", "starter", "promote", "disconnect")
                     ):
                         # A share or import also commits; it is applied only with its note.
                         raise c.ShareError("Apply a share or import preview with its note")

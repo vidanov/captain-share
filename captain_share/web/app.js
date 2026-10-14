@@ -171,6 +171,7 @@ function invalidate() {
   $("review").hidden = true;
   $("review-where").hidden = true;
   bulkAdopt = null;
+  disconnectPlan = null;
   $("apply").disabled = true;
 }
 function here() {
@@ -850,6 +851,20 @@ $("preview").onclick = () =>
 $("apply").onclick = () =>
   task(async () => {
     undo = null;
+    if (disconnectPlan) {
+      const plan = disconnectPlan;
+      disconnectPlan = null;
+      const result = await api("disconnect-apply", {
+        fingerprint: plan.fingerprint,
+      });
+      found = null;
+      await refresh();
+      message(
+        result.disconnected +
+          " is disconnected. Its links are in the Archive; the folder is still on disk.",
+      );
+      return;
+    }
     if (bulkAdopt) {
       // Each copy is planned again just before it is applied, so every step is fresh.
       const specs = bulkAdopt;
@@ -1685,6 +1700,10 @@ function renderLibraries() {
     );
     if (spec.path)
       row.append(revealButton(spec.path, "Show in " + state.file_manager));
+    const disconnect = el("button", "Disconnect…", "link");
+    disconnect.type = "button";
+    disconnect.onclick = () => task(() => previewDisconnect(name));
+    row.append(disconnect);
     list.append(row);
     if (spec.path) {
       const sign = el("label", undefined, "check sign-option");
@@ -3822,6 +3841,113 @@ async function previewAdoptAll(rows) {
   $("conflict-help").hidden = true;
   bulkAdopt = blocked ? null : specs;
   $("apply").disabled = !!blocked;
+  $("review").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------------------------------------------------------------- disconnect a library
+let disconnectPlan = null;
+async function previewDisconnect(source) {
+  await cancelReview();
+  const plan = await api("disconnect-plan", { source });
+  $("review").hidden = false;
+  $("changes").replaceChildren();
+  $("errors").replaceChildren();
+  setReviewHint(false);
+  // One folded group per place: a summary line, the details on demand.
+  const placeName = (change) =>
+    change.op === "disconnect" && !change.place
+      ? "Settings"
+      : change.place === home?.user
+        ? "Global"
+        : change.place_label || (change.place || "").split("/").pop();
+  const groups = new Map();
+  for (const change of plan.changes) {
+    const name = placeName(change);
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(change);
+  }
+  for (const [name, changes] of groups) {
+    const links = changes.filter((c) => c.op === "unlink").length;
+    const assets = changes.filter((c) => c.op === "deselect").length;
+    const files = changes.filter((c) => c.op === "disconnect").length;
+    const summary = [
+      links ? "remove " + links + (links === 1 ? " link" : " links") : "",
+      assets
+        ? "stop using " + assets + (assets === 1 ? " asset" : " assets")
+        : "",
+      files
+        ? "disconnect in " +
+          files +
+          (files === 1 ? " settings file" : " settings files")
+        : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const details = el("details", undefined, "change-group");
+    details.append(el("summary", name + ": " + summary));
+    for (const change of changes) {
+      const div = el("div", undefined, "change");
+      div.append(
+        el(
+          "strong",
+          change.op === "unlink"
+            ? "Remove link"
+            : change.op === "disconnect"
+              ? "Disconnect"
+              : change.op === "deselect"
+                ? "Stop using"
+                : change.op,
+          "op-remove",
+        ),
+        " ",
+        el(
+          "code",
+          change.op === "deselect"
+            ? (change.key || "").split("/").slice(1).join("/")
+            : shortPath(change.path || ""),
+        ),
+      );
+      details.append(div);
+    }
+    $("changes").append(details);
+  }
+  if ((plan.kept || []).length) {
+    $("changes").append(el("p", "Kept", "group-title"));
+    for (const item of plan.kept) {
+      $("changes").append(
+        el(
+          "p",
+          (item.reason === "power" ? item.name : shortPath(item.path || "")) +
+            (item.reason === "power"
+              ? " · a Kiro power stays installed; uninstall it with:"
+              : item.reason === "copy"
+                ? " · your own copy, not a link (" +
+                  (item.place_label || "") +
+                  ")"
+                : " · " + item.reason),
+          "hint",
+        ),
+      );
+      if (item.command) $("changes").append(commandLine(item.command));
+    }
+  }
+  if (plan.folder)
+    $("changes").append(
+      el(
+        "p",
+        "The library folder stays at " +
+          shortPath(plan.folder) +
+          "; nothing in it is deleted.",
+        "hint",
+      ),
+    );
+  for (const conflict of plan.conflicts)
+    $("errors").append(el("p", conflict.message));
+  $("review-count").textContent =
+    plan.changes.length + (plan.changes.length === 1 ? " change" : " changes");
+  $("conflict-help").hidden = true;
+  $("apply").disabled = !plan.can_apply;
+  disconnectPlan = plan;
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
