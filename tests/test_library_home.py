@@ -156,6 +156,20 @@ class HomeApiTests(LibraryFixture):
         )
         self.assertTrue(home["assets"][0]["edited"])
 
+    def test_your_own_commits_are_not_marked_new(self):
+        c.add_source(self.home, "team", self.lib)
+        self.start()
+        self.request("/api/home")  # first sight
+        self.skill(self.lib / "ip/skills/yours")
+        # Committed with the library's own identity: the user shared it themselves.
+        self.commit(self.lib, "Share yours", author=[])
+        self.skill(self.lib / "ip/skills/theirs")
+        self.commit(self.lib, "Colleague shares theirs")
+        _, home = self.request("/api/home")
+        marks = {a["name"]: a["new"] for a in home["assets"]}
+        self.assertEqual((marks["yours"], marks["theirs"]), (False, True))
+        self.assertEqual(home["libraries"][0]["new"], 1)
+
     def test_new_and_updated_compare_with_the_previous_session(self):
         c.add_source(self.home, "team", self.lib)
         c.select(self.home, "inbound", "team", "skills", "hello")
@@ -245,6 +259,21 @@ class ShareApiTests(LibraryFixture):
                 }
             ],
         )
+
+    def test_direct_share_refuses_a_checkout_off_the_main_branch(self):
+        self.remote()
+        e.git(self.lib, "switch", "-q", "-c", "share/leftover")
+        self.skill(self.repo / "skills/mine")
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        _, plan = self.request("/api/share-plan", body)
+        self.assertFalse(plan["can_apply"])
+        self.assertTrue(
+            any("on branch share/leftover, not main" in x["message"] for x in plan["conflicts"])
+        )
+        # Review mode does not use the checked-out branch, so it stays available.
+        _, review = self.request("/api/share-plan", {**body, "mode": "review"})
+        self.assertFalse(any("not main" in x["message"] for x in review["conflicts"]))
 
     def test_share_commits_only_the_asset_and_pushes(self):
         remote = self.remote()

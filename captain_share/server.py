@@ -556,7 +556,7 @@ def library_home(startup, baseline):
             info["starter"] = [c.selection_key(row) for row in starter]
         except (c.ShareError, OSError):
             pass
-        head, made, changed, edited = None, {}, set(), {}
+        head, made, changed, edited, own_email = None, {}, set(), {}, ""
         if lib["repo"] is not None:
             git = r.status(startup, source)
             head = git["head"] or None
@@ -577,6 +577,8 @@ def library_home(startup, baseline):
                 if fresh and kept:
                     info.update(behind=kept.get("behind"), ahead=kept.get("ahead"))
             made = r.history(lib["repo"], lib["prefix"])
+            # What you shared yourself is not news to you.
+            own_email = r.quiet(lib["repo"], "config", "user.email").strip().lower()
             edited = r.edits(lib["repo"], lib["prefix"], git["changes"])
         before = None if info["personal"] else baseline.get(source)
         if before is not None and lib["repo"] is not None:
@@ -590,8 +592,10 @@ def library_home(startup, baseline):
             have_user = key in user_cfg["inbound"] and user_origin == str(home)
             have_project = key in project_cfg["inbound"]
             origin = project_cfg["origins"]["inbound"].get(key)
-            new = before is not None and key not in before.get("assets", [])
-            updated = (have_user or have_project) and (kind, name) in changed
+            last = made.get((kind, name)) or {}
+            mine = bool(own_email) and last.get("email") == own_email
+            new = before is not None and key not in before.get("assets", []) and not mine
+            updated = (have_user or have_project) and (kind, name) in changed and not mine
             info["new"] += int(new)
             info["updated"] += int(updated)
             author = made.get((kind, name))

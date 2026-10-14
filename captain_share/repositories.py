@@ -408,7 +408,7 @@ def history(repo, prefix):
         repo,
         "log",
         "--no-renames",
-        f"--format={marker}%an\x1f%aI",
+        f"--format={marker}%an\x1f%aI\x1f%ae",
         "--name-only",
         "--",
         prefix or ".",
@@ -418,8 +418,9 @@ def history(repo, prefix):
     # Not splitlines(): it also splits on the record and unit separators used here.
     for line in out.split("\n"):
         if line.startswith(marker):
-            author, _, when = line[1:].partition("\x1f")
-            who = {"by": author, "at": iso(when)}
+            author, _, rest = line[1:].partition("\x1f")
+            when, _, email = rest.partition("\x1f")
+            who = {"by": author, "at": iso(when), "email": email.strip().lower()}
             continue
         key = asset_of(prefix, line) if line and who else None
         if key and key not in found:
@@ -514,11 +515,33 @@ def freshness(source, head, at=None):
     return row["checked_at"], fresh, row
 
 
+def default_branch(repo):
+    """The library's main branch on origin (origin/HEAD, else main or master), or None
+    when the checkout has no such remote (for example the personal library)."""
+    ref = quiet(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD").strip()
+    if ref.startswith("origin/"):
+        return ref[len("origin/") :]
+    for name in ("main", "master"):
+        if quiet(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}").strip():
+            return name
+    return None
+
+
 def commit_blockers(repo):
-    """Reasons a partial commit of shared paths cannot be made in this checkout."""
+    """Reasons a direct commit of shared paths cannot be made in this checkout."""
     problems = []
     if e.git(repo, "symbolic-ref", "--quiet", "HEAD", check=False).returncode:
         problems.append("Check out a branch in the library before sharing")
+    else:
+        # A direct share belongs on the library's main branch; a leftover review branch
+        # would mix unrelated changes into its merge request.
+        current = quiet(repo, "symbolic-ref", "--quiet", "--short", "HEAD").strip()
+        main = default_branch(repo)
+        if main and current and current != main:
+            problems.append(
+                f"Your library checkout is on branch {current}, not {main}. Switch back "
+                f"with: git -C {repo} switch {main}  (or use Ask for review)"
+            )
     if e.git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode == 0:
         problems.append("The library has an unfinished merge; finish it first")
     if e.git(repo, "var", "GIT_COMMITTER_IDENT", check=False).returncode:
