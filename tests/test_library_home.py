@@ -304,8 +304,11 @@ class ShareApiTests(LibraryFixture):
         self.assertEqual(
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
-            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"},
+            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
+            | {"library", "landed_on"},
         )
+        # The result says where the commit went.
+        self.assertEqual((result["library"], result["landed_on"]), ("team", "main"))
         self.assertEqual((result["adopted"], result["adopt_error"]), (False, None))
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(result["get_command"], "captain-share get mine")
@@ -346,6 +349,32 @@ class ShareApiTests(LibraryFixture):
         self.assertEqual(
             e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip(), result["commit"]
         )
+
+    def test_a_commit_whose_signature_does_not_verify_is_not_pushed(self):
+        remote = self.remote()
+        self.skill(self.repo / "skills/mine")
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        _, plan = self.request("/api/share-plan", body)
+        quiet = r.quiet
+
+        def bad(repo, *args):
+            # Git reports a bad signature (%G? = B) for the new commit.
+            return "B" if args[:2] == ("log", "-1") else quiet(repo, *args)
+
+        with patch.object(r, "quiet", side_effect=bad):
+            code, result = self.request(
+                "/api/share-apply",
+                {"fingerprint": plan["fingerprint"], "note": "Share mine", "push": True},
+            )
+        self.assertEqual(code, 200, result)
+        self.assertFalse(result["pushed"])
+        self.assertIn("signature does not verify", result["push_error"])
+        self.assertIn("verify-commit", result["push_error_command"])
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip()
+        self.assertEqual(result["commit"], head)
+        # The commit stays local; the remote does not have it.
+        self.assertNotEqual(e.git(remote, "rev-parse", "main").stdout.decode().strip(), head)
 
     def test_share_into_an_existing_name_or_plain_folder_is_blocked(self):
         self.skill(self.repo / "skills/hello")
@@ -641,7 +670,8 @@ class AdoptTests(LibraryFixture):
         self.assertEqual(
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
-            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"},
+            | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
+            | {"library", "landed_on"},
         )
         self.assertEqual(
             (result["pushed"], result["adopted"], result["adopt_error"]), (True, True, None)

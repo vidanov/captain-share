@@ -66,7 +66,8 @@ class StarterTests(LibraryFixture):
         self.assertEqual(
             set(result),
             {"commit", "pushed", "push_error", "branch", "review_url"}
-            | {"push_error_hint", "push_error_command", "waiting_for_review"},
+            | {"push_error_hint", "push_error_command", "waiting_for_review"}
+            | {"library", "landed_on"},
         )
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(out(remote, "rev-parse", "main"), result["commit"])
