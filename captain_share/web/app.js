@@ -116,6 +116,8 @@ function commandLine(command) {
 }
 $("message").title = "Dismiss";
 $("message").onclick = () => message("");
+// Rows of the Library view's "Behind the team" list; null until loaded.
+let behind = null;
 let currentTarget = "",
   projects = [],
   pendingBatch = null;
@@ -237,6 +239,7 @@ async function refresh(keepDrafts = false) {
   $("installed-count").hidden = !state.installed.length;
   bay = await api("matrix");
   home = await api("home").catch(() => null);
+  behind = null; // Recomputed with the next Library view.
   await loadRepository();
   if (!keepDrafts) drafts = {};
   invalidate();
@@ -452,6 +455,21 @@ function render() {
             "Show original in " + state.file_manager,
           ),
         );
+      if (installed) {
+        const from = el("button", "Where from?", "quiet");
+        from.type = "button";
+        from.onclick = () =>
+          task(async () => {
+            const found = await api(
+              "why?path=" +
+                encodeURIComponent(state.target + "/" + row.path) +
+                "&target=" +
+                encodeURIComponent(state.target),
+            );
+            message(whyText(found));
+          });
+        main.append(from);
+      }
       const button = el("button", installed ? "Archive" : "Restore", "quiet");
       button.onclick = () =>
         task(() =>
@@ -2005,6 +2023,7 @@ function libraryStrip(lib) {
         if (!lib.behind) {
           const status = await api("fetch", { source: lib.source });
           home = await api("home");
+          behind = null;
           renderHome();
           message(
             status.behind
@@ -2296,8 +2315,109 @@ function renderHome() {
     lists.push(
       el("p", query ? "Nothing matches." : "This library is empty.", "hint"),
     );
+  const late = behindSection();
+  if (late && !query) lists.unshift(late);
   $("home-lists").replaceChildren(...lists);
   $("home-lists").querySelectorAll(".lib-row").forEach(expandable);
+  if (behind === null) loadBehind();
+}
+// What is behind the team version (ADR 011), from the commits last fetched.
+async function loadBehind() {
+  behind = [];
+  try {
+    const report = await api(
+      "outdated?target=" + encodeURIComponent(home.project),
+    );
+    behind = report.rows.filter((row) =>
+      ["newer", "edited", "older-copy", "kept-behind"].includes(row.state),
+    );
+  } catch (error) {
+    behind = [];
+  }
+  if (behind.length && view === "home") renderHome();
+}
+// One readable sentence for `why` (the CLI prints the same facts as lines).
+function whyText(found) {
+  const parts = [];
+  if (found.source)
+    parts.push(
+      "From " +
+        found.source +
+        " (" +
+        found.kind +
+        "/" +
+        (found.library_name || found.name) +
+        ")",
+    );
+  if (found.status === "linked")
+    parts.push(
+      found.managed
+        ? "installed by Captain Share"
+        : "a link made by another tool",
+    );
+  if (found.selected_in)
+    parts.push("selected in " + shortPath(found.selected_in) + "/.captain");
+  if (found.note) parts.push(found.note.replace(/\.$/, ""));
+  return parts.join(" · ") + ".";
+}
+function openTab(tab) {
+  document
+    .querySelector('.faceplate-nav button[data-tab="' + tab + '"]')
+    ?.click();
+}
+function behindSection() {
+  if (!behind?.length) return null;
+  const rows = behind.map((item) => {
+    const wrap = el("div", undefined, "lib-row");
+    const name = el("div", undefined, "lib-name");
+    const where =
+      item.place === "Global" ? "Global" : item.place.split("/").pop();
+    name.append(
+      el("span", item.path ? item.path.split("/").pop() : item.name),
+      el("span", KIND_LABELS[item.kind] || item.kind, "kind-tag"),
+    );
+    wrap.append(name);
+    const act = el("div", undefined, "lib-act");
+    const link = (text, fn) => {
+      const button = el("button", text, "quiet");
+      button.type = "button";
+      button.onclick = fn;
+      act.append(button);
+    };
+    let text = "";
+    if (item.state === "newer") {
+      text =
+        item.newer +
+        (item.newer === 1 ? " newer version" : " newer versions") +
+        " on the server · Update library above to get " +
+        (item.newer === 1 ? "it" : "them");
+    } else if (item.state === "edited") {
+      text = "Edited in your library folder, not shared yet";
+      link("Send changes…", () => openTab("share"));
+    } else if (item.state === "older-copy") {
+      text =
+        "A copy of the team version from " + ago(item.older.at) + " · " + where;
+      link("Update to team version…", () =>
+        task(() =>
+          adoptAsset(
+            {
+              source: item.source,
+              kind: item.kind,
+              name: item.name,
+              target: item.place === "Global" ? home.user : item.place,
+            },
+            true,
+          ),
+        ),
+      );
+    } else if (item.state === "kept-behind") {
+      text = "Your version of " + item.of + "; the team changed it since";
+      link("Compare…", () => openTab("share"));
+    }
+    wrap.append(el("p", text, "lib-meta"), act);
+    return wrap;
+  });
+  return listSection("Behind the team · " + rows.length, rows, "home-behind");
 }
 $("home-search").oninput = () => renderHome();
 async function getAsset(a, where) {

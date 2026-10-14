@@ -276,6 +276,15 @@ def asset_preview(target, source, kind, name, local=None):
     }
 
 
+def why_inside(target, value):
+    """`why` for a path in this window's folder or the home folder's agent folders."""
+    path = Path(os.path.abspath(Path(value).expanduser())) if value else None
+    roots = [c.root(target), c.global_dir().parent]
+    if path is None or not any(path == base or base in path.parents for base in roots):
+        raise c.ShareError("Choose a file in this project or your home folder")
+    return e.why(path)
+
+
 def reveal_path(target, value):
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -905,6 +914,11 @@ def make_server(target, port=0):
                             query.get("local", [""])[0] or None,
                         )
                     )
+                elif parsed.path == "/api/outdated":
+                    # Read-only: compares with the commits last fetched (ADR 011).
+                    self.respond(r.outdated(target))
+                elif parsed.path == "/api/why":
+                    self.respond(why_inside(target, parse_qs(parsed.query).get("path", [""])[0]))
                 elif parsed.path == "/api/share-candidates":
                     self.respond(share_candidates(target))
                 elif parsed.path == "/api/diff":
