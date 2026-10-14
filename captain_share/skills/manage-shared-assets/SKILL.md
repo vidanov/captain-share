@@ -50,6 +50,9 @@ when they are explicitly synced, not automatically to every child repository.
 - **Starter set:** `starter SOURCE` lists a library's starter set; `--set`,
   `--add`, `--remove` (each `kind/name`) or `--clear` preview the new manifest, and
   `--note TEXT --apply` commits only that file (`--push` to push).
+- **What is behind:** `outdated` (add `--fetch` to check the servers) lists newer
+  library versions, unshared library edits, older or changed copies and kept
+  versions that fell behind, each with its next step.
 - **A copy that extends the team version:** `diff KIND NAME --source NAME` shows
   the changes. Ask the user which they mean: `propose … --note TEXT --apply`
   updates the library version (add `--review` for a pushed review branch when the

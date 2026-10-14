@@ -36,6 +36,73 @@ def pushed_lines(result):
             print(f"Open the review: {result['review_url']}")
 
 
+def outdated_text(report):
+    """Readable groups for `outdated`, each with what to do about it."""
+    rows = report["rows"]
+
+    def ref(row):
+        return f"{row['source']}/{row['kind']}/{row['name']}"
+
+    def where(row):
+        return "" if row["place"] == "Global" or "path" in row else f"  (in {row['place']})"
+
+    def path(row):
+        base = "~" if row["place"] == "Global" else row["place"]
+        return f"{base}/{row['path']}"
+
+    def have(row):
+        found = row.get("have") or {}
+        return f" · you have {found['commit']}" if found.get("commit") else ""
+
+    groups = [
+        (
+            "newer",
+            "Newer in the library on the server (Update library, or captain-share fetch/pull):",
+            lambda x: f"{ref(x)} · {x['newer']} newer commit{'s' if x['newer'] != 1 else ''}{have(x)}",
+        ),
+        (
+            "edited",
+            "Edited in your library checkout, not shared yet (Share → Send changes):",
+            lambda x: ref(x) + have(x),
+        ),
+        (
+            "older-copy",
+            "Copies of an older team version (captain-share adopt KIND NAME --source S --replace):",
+            lambda x: f"{path(x)} = {x['source']} version from {x['older']['at'][:10]}",
+        ),
+        (
+            "changed-copy",
+            "Copies you changed (captain-share diff KIND NAME --source S):",
+            lambda x: f"{path(x)} differs from {x['source']}",
+        ),
+        (
+            "kept-behind",
+            "Your kept versions whose team original changed since:",
+            lambda x: f"{x['kind']}/{x['name']} (from {x['source']}/{x['of']})",
+        ),
+        ("unknown", "Could not check:", lambda x: f"{ref(x)}: {x.get('detail', '')}"),
+    ]
+    lines = []
+    for state, title, show in groups:
+        found = [x for x in rows if x["state"] == state]
+        if found:
+            lines.append(title)
+            lines.extend(f"  {show(x)}{where(x)}" for x in found)
+            lines.append("")
+    current = sum(1 for x in rows if x["state"] in ("current", "copy-current"))
+    lines.append(f"Up to date: {current}" if lines else f"Everything is up to date ({current}).")
+    if report["checked"]:
+        when = ", ".join(
+            f"{source} {(at or 'never')[:16].replace('T', ' ')}"
+            for source, at in sorted(report["checked"].items())
+        )
+        lines.append(f"Last checked with the server: {when} (--fetch to check now)")
+    else:
+        lines.append("Compared with the commits last fetched; --fetch checks the server now.")
+    lines.extend(f"Problem: {x}" for x in report["problems"])
+    return "\n".join(lines)
+
+
 def why_text(found):
     """Readable lines for `why`."""
     home = str(Path.home())
@@ -191,6 +258,12 @@ def parser():
         "--adopt",
         action="store_true",
         help="Afterwards link this folder to the library original instead of its copy",
+    )
+    out = sub.add_parser(
+        "outdated", help="Show what has a newer or different version than the library"
+    )
+    out.add_argument(
+        "--fetch", action="store_true", help="Fetch each library first (reads the server)"
     )
     why = sub.add_parser(
         "why", help="Show which library and asset a file in an agent folder came from"
@@ -815,6 +888,11 @@ def main(argv=None):
                 or result.get("errors")
             )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
+        elif command == "outdated":
+            result = r.outdated(target, args.fetch)
+            if not args.json:
+                print(outdated_text(result))
+                return 0
         elif command == "why":
             result = e.why(args.path)
             if not args.json:

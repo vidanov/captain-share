@@ -736,3 +736,53 @@ class AdoptCliTests(LibraryFixture):
         self.assertIn("now uses the library version", out)
         self.assertFalse((self.repo / "skills/mine").exists())
         self.assertTrue((self.repo / ".kiro/skills/mine").is_symlink())
+
+
+class OutdatedTests(LibraryFixture):
+    def states(self, report):
+        return {(row["state"], row.get("path") or row["name"]) for row in report["rows"]}
+
+    def test_outdated_reports_newer_edited_and_copies(self):
+        import shutil
+
+        remote = self.remote()
+        first = (self.lib / "ip/skills/hello/SKILL.md").read_text()
+        self.select()
+        e.apply(e.plan(self.repo))
+        report = r.outdated(self.repo)
+        row = next(x for x in report["rows"] if x["name"] == "hello")
+        self.assertEqual(row["state"], "current")
+        head = e.git(self.lib, "rev-parse", "--short", "HEAD").stdout.decode().strip()
+        self.assertEqual(row["have"]["commit"], head)
+        # A colleague's push shows only after a fetch.
+        self.colleague_push(remote, "ip/skills/hello/SKILL.md", first + "\nnew line")
+        self.assertIn(("current", "hello"), self.states(r.outdated(self.repo)))
+        report = r.outdated(self.repo, do_fetch=True)
+        row = next(x for x in report["rows"] if x["name"] == "hello")
+        self.assertEqual((row["state"], row["newer"]), ("newer", 1))
+        self.assertTrue(report["checked"]["team"])
+        # After pulling, an uncommitted library edit is reported as not shared yet.
+        e.git(self.lib, "pull", "-q")
+        (self.lib / "ip/skills/hello/notes.md").write_text("mine")
+        self.assertIn(("edited", "hello"), self.states(r.outdated(self.repo)))
+        (self.lib / "ip/skills/hello/notes.md").unlink()
+        # Copies: one equal to the earlier team version, one with the user's changes.
+        older = self.repo / ".agents/skills/hello"
+        older.mkdir(parents=True)
+        (older / "SKILL.md").write_text(first)
+        changed = self.repo / ".claude/skills/hello"
+        shutil.copytree(self.lib / "ip/skills/hello", changed)
+        (changed / "SKILL.md").write_text("my own version")
+        states = self.states(r.outdated(self.repo))
+        self.assertIn(("older-copy", ".agents/skills/hello"), states)
+        self.assertIn(("changed-copy", ".claude/skills/hello"), states)
+        self.assertIn(("current", "hello"), states)
+
+    def test_cli_outdated_text(self):
+        self.select()
+        e.apply(e.plan(self.repo))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["--target", str(self.repo), "outdated"])
+        self.assertEqual(code, 0)
+        self.assertIn("Everything is up to date (1)", out.getvalue())
