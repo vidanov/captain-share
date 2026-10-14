@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
+import time
 import webbrowser
+from collections import deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, cast
@@ -16,10 +19,34 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from . import config as c
 from . import engine as e
+from . import imports as im
 from . import integrations as i
 from . import repositories as r
 
 WEB = Path(__file__).parent / "web"
+# The guided tour is static: its page, script, style and images directly in web/tour/.
+TOUR_FILES = {
+    "/tour": ("tour.html", "text/html; charset=utf-8"),
+    "/tour.js": ("tour.js", "text/javascript"),
+    "/tour.css": ("tour.css", "text/css"),
+}
+TOUR_IMAGE = re.compile(r"[a-z0-9-]+\.(jpg|png|webp)\Z")
+IMAGE_TYPES = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+# Finding libraries on this machine: bounded, cached briefly per window session.
+DISCOVER_DEPTH = 3
+DISCOVER_BUDGET = 3000
+DISCOVER_SECONDS = 2.0
+DISCOVER_CACHE = 60.0
+DISCOVER_SKIP = {
+    "Library",
+    "Applications",
+    "Pictures",
+    "Movies",
+    "Music",
+    "node_modules",
+    "venv",
+    "__pycache__",
+}
 
 
 def folder_listing(target, value="", show_hidden=False):
@@ -78,6 +105,114 @@ def library_info(target, value):
         "name": connected or c.suggest_name(path, taken=set(sources)),
         "connected_as": connected,
     }
+
+
+def library_assets(path, layout):
+    """Asset counts per kind of a library folder, and whether one asset is valid."""
+    base = path / "ip" if layout == "ip" else path
+    counts: dict[str, int] = {}
+    valid = False
+    for kind in c.KINDS:
+        folder = base / kind
+        if folder.is_symlink() or not folder.is_dir():
+            continue
+        for item in folder.iterdir():
+            if not e.candidate(item, kind):
+                continue
+            try:
+                c.asset_name(kind, item.name)
+            except c.ShareError:
+                continue
+            counts[kind] = counts.get(kind, 0) + 1
+            if not valid:
+                try:
+                    e.validate_asset(item, kind)
+                    valid = True
+                except (c.ShareError, OSError):
+                    pass
+    return counts, valid
+
+
+def discover(startup):
+    """Libraries on this machine: the home folder and folders up to DISCOVER_DEPTH
+    below it, skipping hidden, system and generated folders, within a directory
+    budget and a time limit. Read-only; nothing is connected."""
+    home = c.global_dir().parent
+    deadline = time.monotonic() + DISCOVER_SECONDS
+    connected: dict[str, str] = {}
+    for place in (home, startup):
+        try:
+            sources = c.effective(place)["sources"]
+        except c.ShareError:
+            continue
+        for sid, spec in sorted(sources.items()):
+            if spec.get("path"):
+                connected.setdefault(str(Path(spec["path"]).expanduser().resolve()), sid)
+    taken = set(connected.values())
+    found: list[dict[str, Any]] = []
+    queue, visited, truncated = deque([(home, 0)]), 0, False
+    while queue:
+        if visited >= DISCOVER_BUDGET or time.monotonic() > deadline:
+            truncated = True
+            break
+        path, depth = queue.popleft()
+        visited += 1
+        if path != home:
+            layout = c.detect_layout(path)
+            if layout:
+                try:
+                    counts, valid = library_assets(path, layout)
+                except OSError:
+                    counts, valid = {}, False
+                if valid:
+                    found.append({"path": path, "layout": layout, "counts": counts})
+                    continue  # A library's folders are its assets, not more libraries.
+        if depth >= DISCOVER_DEPTH:
+            continue
+        try:
+            children = sorted(path.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            name = child.name
+            if name.startswith(".") or name in DISCOVER_SKIP:
+                continue
+            try:
+                if child.is_symlink() or not child.is_dir():
+                    continue
+            except OSError:
+                continue
+            queue.append((child, depth + 1))
+    libraries = []
+    for row in found:
+        path = row["path"]
+        source = connected.get(str(path))
+        if source is None:
+            name = c.suggest_name(path, taken=taken)
+            taken.add(name)
+        else:
+            name = source
+        repo = e.git_root(path)
+        remote_url = None
+        if repo is not None:
+            remotes = r.quiet(repo, "remote").split()
+            remote = "origin" if "origin" in remotes else (remotes[0] if remotes else "")
+            if remote:
+                remote_url = r.quiet(repo, "remote", "get-url", remote).strip() or None
+        libraries.append(
+            {
+                "path": str(path),
+                "name": name,
+                "layout": row["layout"],
+                "is_repo": repo is not None,
+                "remote_url": remote_url,
+                "counts": row["counts"],
+                "total": sum(row["counts"].values()),
+                "connected": source,
+            }
+        )
+    libraries.sort(key=lambda x: (x["connected"] is not None, -x["total"], x["path"]))
+    return {"libraries": libraries, "searched": [str(home)], "truncated": truncated}
 
 
 def reveal_path(target, value):
@@ -439,10 +574,25 @@ def share_candidates(target):
     return {"local": local, "edited": edited, "libraries": names}
 
 
+class Server(HTTPServer):
+    """Removes the session's staged uploads when it closes."""
+
+    stages: im.Stages | None = None
+
+    def server_close(self):
+        try:
+            super().server_close()
+        finally:
+            if self.stages is not None:
+                self.stages.close()
+
+
 def make_server(target, port=0):
     startup = c.root(target)
     token = secrets.token_urlsafe(32)
     plans: dict[str, dict[str, Any]] = {}
+    # Zips and folders staged for "add from outside" (ADR 006).
+    stages = im.Stages()
     # "New since last looked" compares against seen.json as it was when this
     # window first asked, so marks stay put while the window is open.
     session: dict[str, Any] = {}
@@ -551,6 +701,21 @@ def make_server(target, port=0):
                         if row["kind"] == "powers" and row["status"] == "available":
                             row["kiro"] = i.power_state(Path(row["path"]))
                     self.respond(rows)
+                elif parsed.path == "/api/discover":
+                    cached = session.get("discover")
+                    if cached is None or time.monotonic() - cached[0] > DISCOVER_CACHE:
+                        cached = (time.monotonic(), discover(startup))
+                        session["discover"] = cached
+                    self.respond(cached[1])
+                elif parsed.path in TOUR_FILES:
+                    filename, mime = TOUR_FILES[parsed.path]
+                    self.static(WEB / filename, mime)
+                elif parsed.path.startswith("/tour/"):
+                    match = TOUR_IMAGE.fullmatch(parsed.path[len("/tour/") :])
+                    if match:
+                        self.static(WEB / "tour" / match.group(0), IMAGE_TYPES[match.group(1)])
+                    else:
+                        self.respond({"error": "Not found"}, 404)
                 elif parsed.path in ("/", "/about", "/app.js", "/style.css"):
                     filename = {
                         "/": "index.html",
@@ -573,8 +738,44 @@ def make_server(target, port=0):
             except (c.ShareError, OSError, ValueError) as exc:
                 self.respond({"error": str(exc)}, 400)
 
+        def static(self, path, mime):
+            if path.is_symlink() or not path.is_file():
+                self.respond({"error": "Not found"}, 404)
+                return
+            content = path.read_bytes()
+            if mime.startswith("text/html"):
+                content = content.replace(b"__APP_VERSION__", __version__.encode())
+            self.respond(content, content_type=mime)
+
+        def upload(self):
+            """A zip as the raw request body, staged in this session's temporary folder."""
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = -1
+            if self.headers.get("Content-Type") != "application/zip":
+                self.close_connection = True
+                self.respond({"error": "Expected a zip file (application/zip)"}, 400)
+                return
+            if length <= 0 or length > im.MAX_UPLOAD:
+                # The body is not read; close rather than reuse the connection.
+                self.close_connection = True
+                self.respond({"error": "The zip file must be at most 20 MB"}, 400)
+                return
+            try:
+                data = self.rfile.read(length)
+                if len(data) != length:
+                    raise c.ShareError("The upload was incomplete")
+                name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
+                self.respond(stages.upload(data, name))
+            except (c.ShareError, OSError, ValueError) as exc:
+                self.respond({"error": str(exc)}, 400)
+
         def do_POST(self):
             if not self.authorized():
+                return
+            if urlparse(self.path).path == "/api/import-upload":
+                self.upload()
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -625,6 +826,33 @@ def make_server(target, port=0):
                         raise c.ShareError("Preview the share again before applying")
                     plans.pop(fingerprint)
                     result = r.share_apply(saved, data["note"], bool(data.get("push")))
+                elif path == "/api/import-folder":
+                    result = stages.open_folder(data.get("path"))
+                elif path == "/api/import-plan":
+                    stage = stages.get(data.get("stage"))
+                    result = im.plan(
+                        target,
+                        data["source"],
+                        stage["root"],
+                        data["items"],
+                        stage=data["stage"],
+                        label=stage["label"],
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/import-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "import" not in saved:
+                        raise c.ShareError("Preview the import again before applying")
+                    # The staged files must still be the ones this session previewed.
+                    if stages.get(saved["import"]["stage"])["root"] != saved["import"]["root"]:
+                        raise c.ShareError("Preview the import again before applying")
+                    plans.pop(fingerprint)
+                    result = im.apply(saved, data["note"], bool(data.get("push")))
                 elif path == "/api/commit-edits":
                     result = r.commit_edits(
                         target,
@@ -743,9 +971,9 @@ def make_server(target, port=0):
                     saved = plans.get(fingerprint)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
-                    if "share" in saved:
-                        # A share also commits; it is applied only with its note.
-                        raise c.ShareError("Apply a share preview with its note")
+                    if "share" in saved or "import" in saved:
+                        # A share or import also commits; it is applied only with its note.
+                        raise c.ShareError("Apply a share or import preview with its note")
                     plans.pop(fingerprint)
                     is_power = saved["spec"].get("type") == "power"
                     result = i.power_apply(saved) if is_power else e.apply(saved)
@@ -756,8 +984,9 @@ def make_server(target, port=0):
             except (c.ShareError, OSError, ValueError, KeyError, TypeError) as exc:
                 self.respond({"error": str(exc)}, 400)
 
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    server = Server(("127.0.0.1", port), Handler)
     server.timeout = 1
+    server.stages = stages
     return server, token
 
 

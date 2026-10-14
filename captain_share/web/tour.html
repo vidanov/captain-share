@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Captain Share tour</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/tour.css" />
+    <script src="/tour.js" defer></script>
+  </head>
+  <body class="tour-page">
+    <header class="tour-head">
+      <a href="/" class="wordmark"
+        ><span class="wordmark-jack" aria-hidden="true"></span>Captain Share</a
+      >
+      <span class="tour-label">Tour</span>
+      <a href="/" class="tour-exit">Open Captain Share</a>
+    </header>
+    <main class="tour">
+      <figure class="tour-stage" aria-live="polite">
+        <div class="tour-chrome" aria-hidden="true">
+          <i></i><i></i><i></i><span>127.0.0.1 · Captain Share</span>
+        </div>
+        <div class="tour-screen">
+          <img id="tour-a" alt="" />
+          <img id="tour-b" alt="" />
+          <pre id="tour-term" class="tour-term" hidden></pre>
+          <svg
+            id="tour-cursor"
+            class="tour-cursor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M4 2.5 18.5 16h-7.2l4.2 8.3-2.6 1.3-4.2-8.4L4 22z"
+              fill="#ffffff"
+              stroke="#111316"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span id="tour-ripple" class="tour-ripple" aria-hidden="true"></span>
+        </div>
+      </figure>
+      <section class="tour-caption">
+        <p id="tour-count" class="tour-count"></p>
+        <h1 id="tour-title"></h1>
+        <p id="tour-text"></p>
+        <div class="tour-controls">
+          <button id="tour-prev" type="button" class="quiet">Back</button
+          ><button id="tour-play" type="button">Pause</button
+          ><button id="tour-next" type="button" class="quiet">Next</button
+          ><button id="tour-replay" type="button" class="link">Replay</button>
+        </div>
+        <ol id="tour-steps" class="tour-steps" aria-label="Steps"></ol>
+      </section>
+    </main>
+  </body>
+</html>

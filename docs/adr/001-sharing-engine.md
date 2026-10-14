@@ -15,6 +15,8 @@ conflicts and filesystem transactions, and may import only `config` from this
 package. `integrations.py` may use those two modules for a Kiro handoff or Captain
 connection import. CLI and web are callers of this engine. `repositories.py` uses config and engine
 for explicit Git operations and status; it does not depend on either interface.
+`imports.py` stages zips and folders from outside (ADR 006) and uses config, engine and
+repositories; it does not depend on either interface either.
 
 `scripts/check_repository.py` enforces these static Python import directions and
 runs in full and fast verification. Its tests permit the real graph, plant a

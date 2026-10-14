@@ -24,6 +24,14 @@
         ><button data-tab="patch" class="minor">Where installed</button
         ><button data-tab="libraries" class="minor">Settings</button>
       </nav>
+      <button
+        id="theme-switch"
+        class="theme-switch"
+        type="button"
+        title="Theme: follow the system, light, or dark"
+      >
+        Auto
+      </button>
       <a href="/about" id="about-link" class="faceplate-about">About</a>
     </header>
 
@@ -34,6 +42,7 @@
           About a minute, once. After that you open it only to get something new
           or to share something.
         </p>
+        <p><a href="/tour" class="setup-tour">Watch the one-minute tour</a></p>
         <ol class="setup-steps">
           <li id="setup-agents-step">
             <strong>Which agents do you use?</strong>
@@ -45,6 +54,7 @@
           </li>
           <li id="setup-library-step">
             <strong>Add your team library</strong>
+            <div id="setup-found" class="found"></div>
             <form id="setup-clone">
               <label for="setup-url" class="visually-hidden"
                 >Repository URL</label
@@ -102,6 +112,28 @@
           Skills you made or changed that are not in the team library yet.
           Sharing copies them into the library, commits, and pushes.
         </p>
+        <section class="strip import-strip" aria-labelledby="import-title">
+          <p>
+            <span id="import-title">Add a skill from elsewhere</span>
+            <small
+              >A zip you downloaded or a folder a colleague sent. It is checked,
+              copied into your library, and committed.</small
+            >
+          </p>
+          <input
+            id="import-file"
+            type="file"
+            accept=".zip,application/zip"
+            hidden
+          />
+          <input id="import-path" type="hidden" />
+          <button id="import-zip" type="button" class="quiet">
+            Upload a zip…</button
+          ><button id="import-folder" type="button" class="quiet">
+            Choose a folder…
+          </button>
+        </section>
+        <div id="import-panel"></div>
         <div id="share-lists"></div>
       </section>
 
@@ -185,6 +217,7 @@
           </section>
           <h2 class="settings-title">Libraries</h2>
           <div id="library-list" class="library-list"></div>
+          <div id="settings-found" class="found"></div>
           <details id="add-library" class="panel-block">
             <summary>Add a library folder</summary>
             <label for="source-scope" class="engraved"
@@ -341,352 +374,187 @@
 
     <main id="about-page" class="about" hidden>
       <section class="about-hero">
-        <h2 id="about-title" tabindex="-1">
-          One library. Many independent projects.
-        </h2>
+        <h1 id="about-title" tabindex="-1">Captain Share</h1>
         <p>
-          A local tool for sharing skills, agents, prompts, and instructions
-          across repositories. Each library owns its originals and keeps its own
-          access rights. Each project chooses what to use and contribute.
+          Your team keeps agent skills in one Git library. Captain Share links
+          them into every agent and project on this machine, and shares yours
+          back. It runs only on this computer; nothing leaves it except your own
+          Git pushes.
         </p>
-        <div class="about-facts">
-          <span class="badge">Version __APP_VERSION__</span
-          ><span class="badge">MIT license</span
-          ><span class="badge">macOS &amp; Linux</span
-          ><span class="badge">CLI + local web UI</span>
-        </div>
+        <p class="about-actions">
+          <a class="about-tour" href="/tour">Watch the one-minute tour</a>
+          <span class="about-meta"
+            >Version __APP_VERSION__ · MIT license · macOS and Linux</span
+          >
+        </p>
       </section>
-      <div class="about-grid">
-        <section class="card">
-          <h3>Start here</h3>
-          <ol>
-            <li>
-              <strong>Set up once.</strong> Pick the agents you use, add your
-              team library, and take the starter set if it has one.
-            </li>
-            <li>
-              <strong>Get what you need.</strong> Library shows what is new
-              since you last looked, what you have, and the rest. Get installs
-              everywhere for you, or only in this project.
-            </li>
-            <li>
-              <strong>Share what works.</strong> Share lists skills you made or
-              edited. Sharing copies them into the library, commits with your
-              note, and pushes. Paste the line it gives you in chat; teammates
-              run <code>captain-share get NAME</code>.
-            </li>
-            <li>
-              <strong>Where installed</strong> shows the full grid of projects,
-              folders and your user, plus Projects, Local files and Archive.
-            </li>
-          </ol>
-        </section>
-        <section class="card">
-          <h3>What “current folder” means</h3>
+      <div class="about-steps">
+        <section>
+          <h2>Get</h2>
           <p>
-            The exact directory where you start the CLI is the target. The web
-            interface stays attached to that directory for its whole session.
-          </p>
-          <pre><code>cd /path/to/project
-captain-share serve --open</code></pre>
-          <p>Choose another target explicitly:</p>
-          <pre><code>captain-share --target /path/to/project serve --open</code></pre>
-          <p>
-            The folder picker browses the computer running Captain Share. It
-            fills the path field; choosing a folder does not connect, install,
-            or clone anything.
+            Library shows what is new since you last looked. Get links a skill
+            everywhere for you, or only in one project.
           </p>
         </section>
-        <section class="card">
-          <h3>How sharing works</h3>
-          <dl>
-            <dt>Install</dt>
-            <dd>
-              Creates live symbolic links to library originals. Editing an
-              original, or pulling updates into its checkout, updates every
-              project linked to it.
-            </dd>
-            <dt>Share back</dt>
-            <dd>
-              Copies selected local originals into a library checkout. Review
-              and commit those changes before pushing. Deselecting outbound
-              content leaves the library copy in place.
-            </dd>
-            <dt>Tools</dt>
-            <dd>
-              Each installed asset gets one live link per enabled agent that
-              reads its kind, all pointing at the same original. Kiro and
-              Copilot are on by default; light Claude or Codex in a column head
-              to also link skills into
-              <code>.claude/skills/</code> or <code>.agents/skills/</code>.
-              There is no copying back and forth between tool folders.
-            </dd>
-            <dt>Aliases</dt>
-            <dd>
-              Change the local file or folder name; set them with the CLI (<code
-                >select inbound … --alias NAME</code
-              >). They do not rewrite skill frontmatter or references inside
-              agents.
-            </dd>
-            <dt>Source of truth</dt>
-            <dd>
-              The library holds the maintained original. To move ownership
-              there, share the original back, archive the local copy, then
-              install the library version.
-            </dd>
-          </dl>
-        </section>
-        <section class="card">
-          <h3>Archive and restore</h3>
+        <section>
+          <h2>Share</h2>
           <p>
-            Archiving preserves a local file, directory, or link and disables
-            its managed inbound selection. A shared original remains in its
-            library.
-          </p>
-          <p>
-            Restore puts the asset back if its destination is free. Completed
-            restores are grouped under Restore history. Check Installed for the
-            current link status.
-          </p>
-          <p>
-            Archives live in the owning folder’s <code>.captain/archive/</code>.
-            Replaced outbound copies are archived in the library. There is no
-            permanent-delete command.
+            Share copies a skill you made, or one from a zip, into the library,
+            commits it with your note, and pushes. Teammates run
+            <code>captain-share get NAME</code>.
           </p>
         </section>
-        <section class="card about-wide">
-          <h3>Supported assets and destinations</h3>
+        <section>
+          <h2>Stay in control</h2>
           <p>
-            Libraries can store these asset groups under <code>ip/</code> or
-            directly at their root. Choose the matching layout when connecting.
-          </p>
-          <div class="about-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Asset group</th>
-                  <th>Expected format</th>
-                  <th>Project destination</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Skills</td>
-                  <td>Folder containing <code>SKILL.md</code></td>
-                  <td>
-                    <code>.kiro/skills/</code> (Kiro),
-                    <code>.claude/skills/</code> (Claude Code),
-                    <code>.agents/skills/</code> (Codex)
-                  </td>
-                </tr>
-                <tr>
-                  <td>Agents</td>
-                  <td><code>.json</code> files</td>
-                  <td><code>.kiro/agents/</code></td>
-                </tr>
-                <tr>
-                  <td>Prompts</td>
-                  <td><code>.md</code> files</td>
-                  <td><code>.kiro/prompts/</code></td>
-                </tr>
-                <tr>
-                  <td>Steering</td>
-                  <td><code>.md</code> files</td>
-                  <td><code>.kiro/steering/</code></td>
-                </tr>
-                <tr>
-                  <td>Kiro powers</td>
-                  <td>
-                    Folder with <code>plugin.json</code> or
-                    <code>POWER.md</code>
-                  </td>
-                  <td>
-                    Installed user-wide by <code>kiro-cli</code> into
-                    <code>~/.kiro/powers/installed/</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Copilot repository instructions</td>
-                  <td><code>copilot-instructions.md</code></td>
-                  <td><code>.github/</code></td>
-                </tr>
-                <tr>
-                  <td>Copilot scoped instructions</td>
-                  <td><code>.instructions.md</code> files</td>
-                  <td><code>.github/instructions/</code></td>
-                </tr>
-                <tr>
-                  <td>Copilot prompts</td>
-                  <td><code>.prompt.md</code> files</td>
-                  <td><code>.github/prompts/</code></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Housekeeping files such as <code>.DS_Store</code>,
-            <code>.gitkeep</code>, and <code>__pycache__</code> are omitted from
-            discovery and shared copies. Unrelated file types and prompt
-            subfolders are not listed.
+            Every change is shown before it happens. Nothing is deleted: removed
+            files go to the Archive and can be restored.
           </p>
         </section>
-        <section class="card">
-          <h3>Repository controls</h3>
-          <p>
-            Switch repository status between the selected library and the
-            current project’s Git root. It shows new, modified, staged, and
-            deleted files, the branch, and ahead/behind counts from the last
-            fetch.
-          </p>
-          <ul>
-            <li>
-              <strong>Clone:</strong> uses existing Git credentials. Choose a
-              new folder under an existing parent. Submodules are not cloned.
-            </li>
-            <li>
-              <strong>Pull:</strong> requires a clean checkout and accepts
-              fast-forward updates only.
-            </li>
-            <li>
-              <strong>Push:</strong> sends committed changes to the displayed
-              destination after confirmation. Commit edited files in your Git
-              client first.
-            </li>
-          </ul>
-          <p>
-            Git operations are explicit. They preserve existing hooks, do not
-            force-push, and do not resolve conflicts or make commits
-            automatically.
-          </p>
-        </section>
-        <section class="card">
-          <h3>Configuration and access</h3>
-          <p>
-            Settings are inherited in this order: global defaults, ancestor
-            project folders, then the target folder. A more specific selection
-            wins.
-          </p>
-          <dl>
-            <dt><code>~/.captain/sharing.json</code></dt>
-            <dd>Global defaults.</dd>
-            <dt><code>.captain/sharing.json</code></dt>
-            <dd>Portable library choices and selections for a folder.</dd>
-            <dt><code>.captain/sharing.local.json</code></dt>
-            <dd>Machine-local checkout paths, kept out of Git.</dd>
-            <dt><code>.captain/sharing-state.json</code></dt>
-            <dd>Local installation and copy records.</dd>
-          </dl>
-          <p>
-            Use the CLI for global/folder scopes, imports, and target
-            registration. Each target must be synced explicitly. Connecting a
-            library does not grant repository access or change its permissions.
-          </p>
-        </section>
-        <section class="card">
-          <h3>Local operation and limits</h3>
-          <p>
-            The interface runs on <code>127.0.0.1</code> with a per-launch
-            access token. It has no analytics, CDN assets, or automatic model
-            calls. Remote Git actions use your existing authentication.
-          </p>
-          <p>
-            Previews are checked again before changes are applied. Unowned
-            files, changed copies, occupied restore destinations, and retargeted
-            links produce conflicts.
-          </p>
-          <p>
-            Outbound checks flag recognizable credentials and personal paths;
-            review private or customer material yourself before contributing it
-            to a wider library.
-          </p>
-          <p>
-            Links are live, not pinned to commits. Agent dependencies must be
-            selected explicitly. File placement does not prove skill activation
-            in an IDE or CLI. Windows is not currently supported.
-          </p>
-        </section>
-        <section class="card">
-          <h3>CLI, setup, and assistance</h3>
-          <p>
-            Requires Python 3.9+, Git, and macOS or Linux. The installed tool
-            has no third-party runtime packages and needs no frontend build
-            step. Captain is not a runtime dependency.
-          </p>
-          <p>From the source checkout:</p>
-          <pre><code>./bin/captain-share --help
-./bin/captain-share --target /path/to/project serve --open</code></pre>
-          <p>Install in a virtual environment:</p>
-          <pre><code>python3 -m venv .venv
-.venv/bin/pip install .
-.venv/bin/captain-share --help</code></pre>
-          <p>
-            The bundled <code>manage-shared-assets</code> skill guides setup and
-            maintenance.
-            <code>captain-share assist "your request"</code> prepares a handoff;
-            adding <code>--run</code> explicitly starts Kiro CLI with its normal
-            approval behavior.
-          </p>
-        </section>
-        <section class="card">
-          <h3>When something needs attention</h3>
-          <ul>
-            <li>
-              <strong>Connection expired:</strong> open the complete URL printed
-              by the running server.
-            </li>
-            <li>
-              <strong>Missing library:</strong> check the local checkout path
-              and selected layout.
-            </li>
-            <li>
-              <strong>Pull unavailable:</strong> commit or stash local changes
-              in your Git client.
-            </li>
-            <li>
-              <strong>Authentication failed:</strong> verify repository access
-              in your Git client; the web UI does not prompt for credentials.
-            </li>
-            <li>
-              <strong>Preview became stale:</strong> preview again after the
-              files or configuration change.
-            </li>
-            <li>
-              <strong>Missing link:</strong> preview and apply to repair it. A
-              replaced or retargeted link needs review.
-            </li>
-          </ul>
-          <pre><code>captain-share status
-captain-share config
+      </div>
+      <section class="about-section">
+        <h2>Words used here</h2>
+        <dl class="about-map about-terms">
+          <dt>Library</dt>
+          <dd>
+            A Git repository where your team keeps shared assets, for example
+            <code>team-skills</code>. You clone it once; Update library pulls
+            what others pushed.
+          </dd>
+          <dt>Asset</dt>
+          <dd>
+            Anything a library holds: a <strong>skill</strong> (a folder with
+            <code>SKILL.md</code>), an <strong>agent</strong> (a
+            <code>.json</code> file), a <strong>prompt</strong> or
+            <strong>steering</strong> file (<code>.md</code>), or a
+            <strong>Kiro power</strong>.
+          </dd>
+          <dt>Agent you use</dt>
+          <dd>
+            The coding assistant that reads the asset: Kiro (IDE and CLI),
+            Claude Code, Codex, or Copilot. Settings chooses which ones get
+            links.
+          </dd>
+          <dt>Get · Remove</dt>
+          <dd>
+            Get links an asset from the library into your agents' folders.
+            Remove takes the link away and keeps a copy in the Archive.
+          </dd>
+          <dt>Everywhere for me · This project</dt>
+          <dd>
+            Where a Get applies: your home folder, so every project sees it, or
+            only the project this window opened on.
+          </dd>
+          <dt>Link · original</dt>
+          <dd>
+            Your agents' folders hold links, not copies. The one original stays
+            in the library, so a library update reaches every project at once.
+          </dd>
+          <dt>Share</dt>
+          <dd>
+            Copy a skill you made or edited into the library, commit it with a
+            note, and push it for the team.
+          </dd>
+          <dt>Starter set · profile</dt>
+          <dd>
+            A list of assets a library suggests together. The starter set is the
+            profile named <code>starter</code>, kept in the library as
+            <code>profiles/starter.manifest</code>; first setup offers it.
+          </dd>
+          <dt>Folder above</dt>
+          <dd>
+            Under Where installed: a folder that holds several projects. What
+            you choose there applies to every project inside it.
+          </dd>
+          <dt>Archive</dt>
+          <dd>
+            Where removed or replaced files go. Nothing is deleted; you can
+            restore from it.
+          </dd>
+          <dt>Layout</dt>
+          <dd>
+            How a library is arranged: assets under <code>ip/skills</code>,
+            <code>ip/agents</code>, … or directly under <code>skills</code>,
+            <code>agents</code>, …. It is detected for you.
+          </dd>
+        </dl>
+      </section>
+      <section class="about-section">
+        <h2>Where files go</h2>
+        <dl class="about-map">
+          <dt>Skills</dt>
+          <dd>
+            <code>.kiro/skills</code> · <code>.claude/skills</code> ·
+            <code>.agents/skills</code> (Codex)
+          </dd>
+          <dt>Agents, prompts, steering</dt>
+          <dd>
+            <code>.kiro/agents</code> · <code>.kiro/prompts</code> ·
+            <code>.kiro/steering</code>
+          </dd>
+          <dt>Kiro powers</dt>
+          <dd>installed for you by <code>kiro-cli</code></dd>
+          <dt>Copilot</dt>
+          <dd><code>.github/</code> instructions and prompts</dd>
+        </dl>
+        <p class="hint">
+          In a project folder, or in your home folder when you get something
+          everywhere for you. Each is a link to the one original in the library.
+        </p>
+      </section>
+      <details class="about-more">
+        <summary>Start from a terminal</summary>
+        <pre><code>captain-share serve --open
+captain-share get NAME
 captain-share --help</code></pre>
-          <p>
-            When reporting a problem, include the version, operating system,
-            action, and error message. Remove credentials and private paths from
-            shared reports.
-          </p>
-        </section>
-        <section class="card">
-          <h3>Development and license</h3>
-          <p>
-            Captain Share contributors maintain this standalone sharing tool.
-            Library content retains its own ownership, permissions, and
-            licensing.
-          </p>
-          <p>
-            Source documentation includes README.md, CONTRIBUTING.md, and the
-            configuration, migration, and design guides in docs/. Development
-            requires Node 22+ in addition to Python and Git.
-          </p>
-          <pre><code>make bootstrap
-make verify-fast
-make verify</code></pre>
-          <p>
-            Local and CI checks share the same verification entrypoint and use
-            disposable repositories. A passing installation check does not
-            measure agent performance.
-          </p>
-          <details>
-            <summary>Read the MIT license</summary>
-            <pre class="license-text">
+        <p>
+          The window works for the folder you start it in, the folders above it,
+          your user, and projects you register.
+        </p>
+      </details>
+      <details class="about-more">
+        <summary>When something needs attention</summary>
+        <ul>
+          <li>
+            <strong>Connection expired:</strong> open the complete URL printed
+            by the running server.
+          </li>
+          <li>
+            <strong>Missing library:</strong> check the local checkout path and
+            selected layout.
+          </li>
+          <li>
+            <strong>Pull unavailable:</strong> commit or stash local changes in
+            your Git client.
+          </li>
+          <li>
+            <strong>Authentication failed:</strong> verify repository access in
+            your Git client; the web UI does not prompt for credentials.
+          </li>
+          <li>
+            <strong>Preview became stale:</strong> preview again after the files
+            or configuration change.
+          </li>
+          <li>
+            <strong>Missing link:</strong> preview and apply to repair it. A
+            replaced or retargeted link needs review.
+          </li>
+        </ul>
+      </details>
+      <details class="about-more">
+        <summary>Settings files</summary>
+        <dl>
+          <dt><code>~/.captain/sharing.json</code></dt>
+          <dd>Your defaults, agents, and libraries for every project.</dd>
+          <dt><code>.captain/sharing.json</code></dt>
+          <dd>A folder's choices; safe to commit for your team.</dd>
+          <dt><code>.captain/sharing.local.json</code></dt>
+          <dd>This machine's checkout paths; kept out of Git.</dd>
+        </dl>
+      </details>
+      <details class="about-more">
+        <summary>MIT license</summary>
+        <pre class="license-text">
 MIT License
 
 Copyright (c) 2026 captain-share contributors
@@ -709,10 +577,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre
-            >
-          </details>
-        </section>
-      </div>
+        >
+      </details>
     </main>
     <!-- Messages and pending changes share one dock, so neither covers the other. -->
     <div id="dock" class="dock">
