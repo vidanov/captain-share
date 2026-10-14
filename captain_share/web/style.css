@@ -1727,16 +1727,46 @@ summary {
   background: var(--panel-2);
   margin-bottom: 18px;
 }
+.library-item {
+  border-bottom: 1px solid var(--rule);
+}
+.library-item:last-child {
+  border-bottom: 0;
+}
 .library-row {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 4px 14px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--rule);
 }
-.library-row:last-child {
-  border-bottom: 0;
+/* One team library's options, aligned with its row (Settings). */
+.library-options {
+  margin: -6px 16px 14px;
+}
+.library-options > summary {
+  width: fit-content;
+  font-size: 12.5px;
+  font-weight: 560;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.library-options > summary .options-state {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.library-options[open] > summary {
+  margin-bottom: 4px;
+}
+.library-options .sign-option {
+  margin: 10px 0;
+  padding: 0;
+}
+.library-options .starter-editor {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .library-row .reveal-button {
   margin: 0;
@@ -2106,21 +2136,30 @@ summary {
 
 /* Library check before sharing (Settings) */
 .check-editor {
-  margin: 6px 0 10px;
+  margin: 10px 0;
 }
 .check-editor label {
   display: block;
   font-size: 12.5px;
+  font-weight: 500;
   color: var(--ink-2);
 }
-.check-editor input {
-  width: 100%;
+.check-line {
+  display: flex;
+  gap: 8px;
   margin-top: 4px;
+}
+.check-line input {
+  flex: 1;
+  min-width: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
 }
-.check-editor button {
-  margin-top: 6px;
+.check-line button {
+  flex: none;
+}
+.check-editor .hint {
+  margin: 4px 0 0;
 }
 .message-detail {
   max-height: 160px;
@@ -2135,4 +2174,26 @@ summary {
 .copy-line > button {
   flex: none;
   white-space: nowrap;
+}
+
+/* Libraries on the Library view: one panel, one line per library. */
+.library-strips-panel {
+  margin: 16px 0 0;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.library-strips-panel > .strip {
+  margin: 0;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+}
+.library-strips-panel > .strip:last-child {
+  border-bottom: 0;
+}
+.library-strips-panel .strip p strong {
+  font-weight: 620;
 }

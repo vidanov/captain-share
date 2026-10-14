@@ -1738,7 +1738,15 @@ function renderLibraries() {
   list.replaceChildren();
   const sources = Object.entries(state.config.sources);
   if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
+  // Your own library (ADR 008) is never pushed: signing, checks and a starter set
+  // belong to team libraries only.
+  const personal = new Set(
+    (home?.libraries || [])
+      .filter((lib) => lib.personal)
+      .map((lib) => lib.source),
+  );
   for (const [name, spec] of sources) {
+    const item = el("div", undefined, "library-item");
     const row = el("div", undefined, "library-row");
     const count = bay.rows.filter((r) => r.source === name).length;
     row.append(
@@ -1756,33 +1764,52 @@ function renderLibraries() {
     disconnect.type = "button";
     disconnect.onclick = () => task(() => previewDisconnect(name));
     row.append(disconnect);
-    list.append(row);
-    if (spec.path) {
-      const sign = el("label", undefined, "check sign-option");
-      const box = el("input");
-      box.type = "checkbox";
-      box.checked = !!spec.sign;
-      box.onchange = () =>
-        task(async () => {
-          await api("library-settings", { source: name, sign: box.checked });
-          state.config.sources[name].sign = box.checked;
-          message(
-            box.checked
-              ? "Commits to " + name + " are signed from now on."
-              : "Commits to " +
-                  name +
-                  " are no longer signed by Captain Share.",
-          );
-        });
-      sign.append(
-        box,
-        " Sign my commits to " +
-          name +
-          " (for libraries that require signed commits)",
-      );
-      list.append(sign, checkEditor(name, spec), starterEditor(name));
-    }
+    item.append(row);
+    if (spec.path && !personal.has(name))
+      item.append(libraryOptions(name, spec));
+    list.append(item);
   }
+}
+// Signing, the check before sharing and the starter set of one team library.
+function libraryOptions(name, spec) {
+  const box = el("details", undefined, "library-options");
+  const summary = el("summary");
+  const showState = () => {
+    const on = [];
+    if (spec.sign) on.push("signed");
+    if ((spec.check || []).length) on.push("checked before sharing");
+    summary.replaceChildren(
+      "Options",
+      el("span", on.length ? " · " + on.join(" · ") : "", "options-state"),
+    );
+  };
+  showState();
+  const sign = el("label", undefined, "check sign-option");
+  const tick = el("input");
+  tick.type = "checkbox";
+  tick.checked = !!spec.sign;
+  tick.onchange = () =>
+    task(async () => {
+      await api("library-settings", { source: name, sign: tick.checked });
+      spec.sign = tick.checked;
+      showState();
+      message(
+        tick.checked
+          ? "Commits to " + name + " are signed from now on."
+          : "Commits to " + name + " are no longer signed by Captain Share.",
+      );
+    });
+  sign.append(
+    tick,
+    " Sign my commits (for libraries that require signed commits)",
+  );
+  box.append(
+    summary,
+    sign,
+    checkEditor(name, spec, showState),
+    starterEditor(name),
+  );
+  return box;
 }
 // Maintainers choose the starter set offered to new teammates (profiles/starter.manifest).
 function starterEditor(source) {
@@ -1963,11 +1990,14 @@ function owned(a) {
 }
 function libraryStrip(lib) {
   if (lib.personal) {
-    const strip = el("div", undefined, "strip");
+    // Your own library shows only once something is in it.
     const count = home.assets.filter((a) => a.source === lib.source).length;
+    if (!count) return null;
+    const strip = el("div", undefined, "strip");
     const text = el("p");
     text.append(
-      "Your own library · " + count + (count === 1 ? " asset" : " assets"),
+      el("strong", "Your own library"),
+      " · " + count + (count === 1 ? " asset" : " assets"),
       el(
         "small",
         "Only on this machine. Share an asset from Share when it is ready.",
@@ -1980,32 +2010,23 @@ function libraryStrip(lib) {
   const waiting = lib.behind || lib.new || lib.updated;
   strip.append(el("span", undefined, "strip-dot" + (waiting ? "" : " ok")));
   const text = el("p");
-  text.append(
-    lib.behind
-      ? lib.behind +
-          (lib.behind === 1 ? " update" : " updates") +
-          " waiting for " +
-          lib.source
-      : lib.new || lib.updated
-        ? [
-            lib.new ? lib.new + " new" : "",
-            lib.updated ? lib.updated + " updated" : "",
-          ]
-            .filter(Boolean)
-            .join(" and ") + " since you last looked"
-        : lib.source +
-          " is up to date" +
-          (lib.checked_at ? " · checked " + agoTime(lib.checked_at) : ""),
-    el(
-      "small",
-      lib.source +
-        (lib.checked_at ? " · checked " + agoTime(lib.checked_at) : "") +
-        (lib.last_commit_at
-          ? " · last change " + ago(lib.last_commit_at)
-          : "") +
-        (lib.is_repo ? "" : " · not a Git checkout"),
-    ),
-  );
+  const status = lib.behind
+    ? lib.behind + (lib.behind === 1 ? " update waiting" : " updates waiting")
+    : lib.new || lib.updated
+      ? [
+          lib.new ? lib.new + " new" : "",
+          lib.updated ? lib.updated + " updated" : "",
+        ]
+          .filter(Boolean)
+          .join(" and ") + " since you last looked"
+      : "up to date";
+  const details = [
+    lib.checked_at ? "checked " + agoTime(lib.checked_at) : "",
+    lib.last_commit_at ? "last change " + ago(lib.last_commit_at) : "",
+    lib.is_repo ? "" : "not a Git checkout",
+  ].filter(Boolean);
+  text.append(el("strong", lib.source), " · " + status);
+  if (details.length) text.append(el("small", details.join(" · ")));
   strip.append(text);
   if (lib.is_repo) {
     const button = el(
@@ -2285,8 +2306,11 @@ function renderHome() {
         home.libraries[0].source.slice(1) +
         " library"
       : "Your libraries";
+  // All libraries in one panel, one line each; the starter offer stays its own card.
+  const strips = el("div", undefined, "library-strips-panel");
+  strips.append(...home.libraries.map(libraryStrip).filter(Boolean));
   $("library-strips").replaceChildren(
-    ...home.libraries.map(libraryStrip),
+    ...(strips.children.length ? [strips] : []),
     ...[starterBanner()].filter(Boolean),
   );
   const query = $("home-search").value.toLowerCase();
@@ -3963,15 +3987,18 @@ function reviewChoice(source, onChange) {
 // What happened after a commit: waiting for review, pushed, or why the push failed.
 // The command that checks a library before Captain Share commits to it. Set per
 // machine; Captain Share never runs a command the library itself asks for.
-function checkEditor(name, spec) {
+function checkEditor(name, spec, changed = () => {}) {
   const box = el("div", undefined, "check-editor");
-  const label = el("label", "Check before sharing to " + name);
+  const id = "check-" + name;
+  const label = el("label", "Check before sharing");
+  label.htmlFor = id;
+  const line = el("div", undefined, "check-line");
   const input = el("input");
+  input.id = id;
   input.placeholder = "e.g. python3 scripts/check_library.py";
   input.value = (spec.check || [])
     .map((arg) => (/[\s"']/.test(arg) ? JSON.stringify(arg) : arg))
     .join(" ");
-  label.append(input);
   const save = el("button", "Save", "quiet");
   save.type = "button";
   save.onclick = () =>
@@ -3980,16 +4007,19 @@ function checkEditor(name, spec) {
         source: name,
         check: input.value.trim(),
       });
-      state.config.sources[name].check = result.check || undefined;
+      spec.check = result.check || undefined;
+      state.config.sources[name].check = spec.check;
+      changed();
       message(
         result.check
           ? "Shares to " + name + " run “" + result.check.join(" ") + "” first."
           : "Shares to " + name + " no longer run a check.",
       );
     });
+  line.append(input, save);
   box.append(
     label,
-    save,
+    line,
     el(
       "p",
       "Runs in the library folder after the files are copied and before the commit; files it changes are committed too. If it fails, nothing is committed.",
