@@ -222,14 +222,20 @@ PREVIEW_FILES = 200
 MAIN_FILES = ("SKILL.md", "POWER.md", "README.md")
 
 
-def asset_preview(target, source, kind, name):
-    """Read-only look inside one library asset: its files and its main text."""
+def asset_preview(target, source, kind, name, local=None):
+    """Read-only look inside one library asset, or with `local` one asset in the
+    project (a path inside it): its files and its main text."""
     if kind not in c.KINDS:
         raise c.ShareError("Unknown asset kind")
     c.asset_name(kind, name)
-    path = e.source_path(c.effective(target), source, kind, name)
-    if not os.path.lexists(path):
-        raise c.ShareError(f"{source} has no {kind} named {name}")
+    if local:
+        path = c.safe_path(c.root(target), local)
+        if not os.path.lexists(path):
+            raise c.ShareError(f"{local} is no longer here. Refresh to check.")
+    else:
+        path = e.source_path(c.effective(target), source, kind, name)
+        if not os.path.lexists(path):
+            raise c.ShareError(f"{source} has no {kind} named {name}")
     if path.is_dir():
         inside = path.resolve()
 
@@ -870,6 +876,7 @@ def make_server(target, port=0):
                             query.get("source", [""])[0],
                             query.get("kind", [""])[0],
                             query.get("name", [""])[0],
+                            query.get("local", [""])[0] or None,
                         )
                     )
                 elif parsed.path == "/api/share-candidates":
@@ -1277,7 +1284,13 @@ def make_server(target, port=0):
                     plans.clear()
                     result = {"restored": len(previous)}
                 elif path == "/api/plan" and data.get("power"):
-                    result = i.power_plan(target, data["action"], data["source"], data["name"])
+                    result = i.power_plan(
+                        target,
+                        data["action"],
+                        data["source"],
+                        data["name"],
+                        bool(data.get("allow_code")),
+                    )
                     if not data.get("batch"):
                         plans.clear()
                     plans[result["fingerprint"]] = result

@@ -531,6 +531,10 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     if (change.edit) div.append(el("div", change.edit, "change-from"));
     if (change.command)
       div.append(el("code", "Runs " + change.command.join(" "), "command"));
+    if ((change.runs || []).length) {
+      div.append(el("div", "Starts on your computer:", "change-from"));
+      change.runs.forEach((line) => div.append(el("code", line, "command")));
+    }
     $("changes").append(div);
   });
   if (!pending.changes.length)
@@ -550,8 +554,11 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     ),
   );
   // The generic conflict advice does not fit adopting; its conflicts carry their own choices.
+  // A power waiting for approval has its own choices too.
   $("conflict-help").hidden =
-    !pending.conflicts.length || endpoint === "adopt-plan";
+    !pending.conflicts.length ||
+    endpoint === "adopt-plan" ||
+    pending.conflicts.every((conflict) => conflict.reason === "approval");
   $("apply").disabled = !pending.can_apply;
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -689,6 +696,17 @@ async function previewMany(rows) {
 function conflictRow(conflict, spec) {
   const div = el("div", undefined, "conflict");
   div.append(el("p", conflict.message));
+  // A power with MCP servers or hooks installs only after the person allows them.
+  if (conflict.reason === "approval" && spec.power) {
+    const allow = el("button", "I trust these, allow them", "quiet");
+    allow.type = "button";
+    allow.onclick = () => task(() => preview({ ...spec, allow_code: true }));
+    const cancel = el("button", "Don't install", "link");
+    cancel.type = "button";
+    cancel.onclick = () => task(cancelReview);
+    div.append(allow, cancel);
+    return div;
+  }
   const [source, kind, name] = (conflict.key || "").split("/");
   if (conflict.reason === "unmanaged" && conflict.path) {
     const archive = el("button", "Archive local copy", "quiet");
@@ -2123,7 +2141,8 @@ function assetRow(a) {
   }
   return row;
 }
-// Read-only look inside an asset, with a way to open its folder.
+// Read-only look inside an asset, with a way to open its folder. `a.local` is a
+// path inside the project (Share view); otherwise the library asset is shown.
 function assetPreview(a) {
   const panel = el("div", undefined, "share-panel asset-preview");
   panel.append(el("p", "Loading…", "hint"));
@@ -2131,9 +2150,10 @@ function assetPreview(a) {
     "asset?" +
       query({
         target: home.project,
-        source: a.source,
+        source: a.source || "",
         kind: a.kind,
         name: a.name,
+        local: a.local || "",
       }),
   )
     .then((view) => {
@@ -2407,6 +2427,33 @@ async function renderShare() {
   box.replaceChildren(...lists);
   box.querySelectorAll(".lib-row").forEach(expandable);
 }
+// Preview and Show in Finder for a Share row. `spec` names a library asset
+// (source, kind, name) or a project path (local).
+let sharePreview = null;
+function shareLooks(wrap, act, id, spec) {
+  const open = sharePreview === id;
+  const look = el("button", open ? "Hide preview" : "Preview", "link");
+  look.type = "button";
+  look.onclick = () => {
+    sharePreview = open ? null : id;
+    renderShare();
+  };
+  act.append(look);
+  // An open preview has its own Show in Finder button.
+  if (spec.local && !open) {
+    const show = revealButton(
+      home.project + "/" + spec.local,
+      "Show in " + (state.file_manager || "folder"),
+    );
+    show.className = "link";
+    act.append(show);
+  }
+  return () => {
+    if (!open) return;
+    wrap.classList.add("open");
+    wrap.append(assetPreview(spec));
+  };
+}
 function shareRow(row, type) {
   if (type === "local" && row.exists_in && row.differs && row.older)
     return olderRow(row);
@@ -2434,6 +2481,15 @@ function shareRow(row, type) {
     ),
   );
   const act = el("div", undefined, "lib-act");
+  const looks = (extra) =>
+    shareLooks(
+      wrap,
+      extra,
+      id,
+      type === "local"
+        ? { kind: row.kind, name: row.name, local: row.path }
+        : { source: row.source, kind: row.kind, name: row.name },
+    );
   if (type === "local" && row.exists_in) {
     // Already in a library: swap this copy for the library original.
     const use = el("button", "Use team version…", "quiet");
@@ -2441,7 +2497,9 @@ function shareRow(row, type) {
     use.onclick = () =>
       task(() => adoptAsset({ ...row, source: row.exists_in }, false));
     act.append(use);
+    const preview = looks(act);
     wrap.append(act);
+    preview();
     return wrap;
   }
   const open = el(
@@ -2455,7 +2513,9 @@ function shareRow(row, type) {
     renderShare();
   };
   act.append(open);
+  const preview = looks(act);
   wrap.append(act);
+  preview();
   if (shareOpen === id) wrap.append(sharePanel(row, type));
   return wrap;
 }
@@ -3179,7 +3239,13 @@ function extendedRow(row) {
   show.type = "button";
   show.onclick = () => toggleVersionPanel(id + "/diff");
   act.append(show);
+  const preview = shareLooks(wrap, act, id, {
+    kind: row.kind,
+    name: row.name,
+    local: row.path,
+  });
   wrap.append(act);
+  preview();
   const spec = {
     target: home.project,
     source: row.exists_in,
@@ -3517,7 +3583,13 @@ function personalRow(row) {
   open.type = "button";
   open.onclick = () => toggleVersionPanel(id);
   act.append(open);
+  const preview = shareLooks(wrap, act, id, {
+    source: row.source || "my-skills",
+    kind: row.kind,
+    name: row.name,
+  });
   wrap.append(act);
+  preview();
   if (versionPanel === id) wrap.append(promotePanel(row));
   return wrap;
 }
@@ -3802,7 +3874,13 @@ function olderRow(row) {
   show.type = "button";
   show.onclick = () => toggleVersionPanel(id);
   act.append(update, show);
+  const preview = shareLooks(wrap, act, id, {
+    kind: row.kind,
+    name: row.name,
+    local: row.path,
+  });
   wrap.append(act);
+  preview();
   if (versionPanel === id)
     wrap.append(
       diffPanel("diff", {

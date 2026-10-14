@@ -186,7 +186,10 @@ captain-share --target /path/to/project import ./notes --source team --kind stee
 With `select outbound` and `sync`, outbound copies go into the local library
 checkout. Review that diff, run the library's checks, and commit normally. Push is available as an explicit, confirmed
 UI action. Sharing never copies whole projects. It refuses nested symlinks, local/generated folders,
-recognizable credentials, and personal absolute paths in selected content. These
+recognizable credentials, and personal absolute paths in selected content. Sharing,
+importing and installing all refuse text with hidden characters (bidirectional
+overrides, zero-width characters, Unicode tags), which can change what an agent reads
+without showing in an editor; the message names the file, line and character. These
 checks are heuristics, not a confidentiality or licensing certification. Review
 what you select before sharing it with a broader audience.
 
@@ -244,6 +247,17 @@ local paths. This is a convenience boundary, not access control or IP isolation.
 
 See [configuration format](docs/configuration.md) for examples and [migration](docs/migration.md)
 for existing Captain and toolkit installations.
+
+## Where did this come from?
+
+```bash
+captain-share why ~/.kiro/skills/review/SKILL.md
+```
+
+`why` names the asset a file belongs to, the library original it links to, whether
+Captain Share installed that link, and which `.captain/sharing.json` selected it. For
+a copy it says whether it matches the library version; it also recognizes library
+originals and powers installed by Kiro. It reads only.
 
 ## Remove, archive, restore
 
