@@ -554,8 +554,11 @@ async function preview(spec = { direction: view }, endpoint = "plan") {
     ),
   );
   // The generic conflict advice does not fit adopting; its conflicts carry their own choices.
+  // A power waiting for approval has its own choices too.
   $("conflict-help").hidden =
-    !pending.conflicts.length || endpoint === "adopt-plan";
+    !pending.conflicts.length ||
+    endpoint === "adopt-plan" ||
+    pending.conflicts.every((conflict) => conflict.reason === "approval");
   $("apply").disabled = !pending.can_apply;
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
 }
