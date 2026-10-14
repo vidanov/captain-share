@@ -227,6 +227,60 @@ CONVERTERS: dict[tuple[str, str], Callable[..., Conversion]] = {
 }
 
 
+def rule_to_steering(text):
+    """A Claude Code rule back to Kiro steering: `paths` becomes fileMatch with the
+    same globs (a list or a comma-separated string); a rule without paths is
+    always-included steering."""
+    fields, body = split_frontmatter(text)
+    if fields is None:
+        return Conversion(text, [])
+    raw = fields.get("paths", [])
+    globs = patterns(raw)
+    if len(globs) == 1 and raw and not raw[0].startswith(("[", "- ")) and "," in globs[0]:
+        globs = [x.strip() for x in globs[0].split(",") if x.strip()]
+    notes = []
+    dropped = [key for key in fields if key != "paths"]
+    if dropped:
+        notes.append("Kiro steering does not read " + ", ".join(dropped) + "; dropped")
+    body = body.lstrip("\n")
+    if not globs:
+        return Conversion("---\ninclusion: always\n---\n" + body, notes)
+    head = "---\ninclusion: fileMatch\nfileMatchPattern: " + json.dumps(globs) + "\n---\n"
+    return Conversion(head + body, notes)
+
+
+CLAUDE_ARGUMENT = re.compile(r"\$ARGUMENTS\[(\d)\]|\$(\d)(?!\d)")
+
+
+def command_to_prompt(text):
+    """A Claude Code command back to a Kiro prompt: arguments are numbered from
+    ${1} again; frontmatter (name, description) stays, as Kiro prompts use it too."""
+
+    def replace(match):
+        index = int(match.group(1) if match.group(1) is not None else match.group(2))
+        return "${" + str(index + 1) + "}"
+
+    notes = []
+    if re.search(r"\$ARGUMENTS\[\d{2,}\]|\$\d{2,}", text):
+        notes.append("arguments above the tenth stay as Claude wrote them")
+    return Conversion(CLAUDE_ARGUMENT.sub(replace, text), notes)
+
+
+# Claude folders that can be shared back into a library, with the kind they become.
+TO_KIRO = {
+    ".claude/rules": ("steering", rule_to_steering),
+    ".claude/commands": ("prompts", command_to_prompt),
+}
+
+
+def to_kiro(rel, text):
+    """The library (Kiro) form of a file in a Claude folder, or None when that folder
+    cannot be shared back (subagents, for example)."""
+    folder = rel.rpartition("/")[0]
+    found = TO_KIRO.get(folder)
+    return found[1](text) if found else None
+
+
 def destinations(kind, name):
     """Destinations a conversion of this asset may use besides folder/name: a Claude
     skill folder (steering) or a renamed Markdown file (agents). Used to validate

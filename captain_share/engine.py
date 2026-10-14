@@ -616,6 +616,42 @@ def plan(
             )
         return link, rel
 
+    def shared_converted(key, row, src, dest, content):
+        """Outbound for a file converted into the library's format: write the content,
+        archiving a library original that changed independently (ADR 014)."""
+        observe(src)
+        existing = observe(dest)
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        previous = old["outbound"].get(key)
+        current = None
+        if existing is not None:
+            if dest.is_symlink() or not dest.is_file():
+                raise c.ShareError(f"Shared original is not a file: {row['name']}")
+            current = hashlib.sha256(dest.read_bytes()).hexdigest()
+        if current != digest:
+            if current is not None and (
+                not previous
+                or previous.get("path") != str(dest)
+                or previous.get("rendered") != current
+            ):
+                raise c.ShareError(
+                    f"Shared original already exists or was edited independently: {row['name']}"
+                )
+            if current is not None:
+                owner = c.root(cfg["sources"][row["source"]]["path"])
+                changes.append(
+                    {
+                        "op": "archive",
+                        "path": str(dest),
+                        "archive_root": str(owner),
+                        "selection": None,
+                    }
+                )
+            changes.append(
+                {"op": "render", "path": str(dest), "source": str(src), "content": content}
+            )
+        next_state["outbound"][key] = {"path": str(dest), "rendered": digest}
+
     def same_as(dest, src, linked):
         """Whether a local copy equals what the destination would show."""
         if linked == src:
@@ -809,11 +845,18 @@ def plan(
             for key, row in outbound.items():
                 try:
                     src = c.safe_path(target, row["path"])
+                    converted = None
                     if converted_folder(row["path"]):
-                        raise c.ShareError(
-                            f"{row['path']} is in Claude's format; libraries keep the Kiro "
-                            "format. Share the Kiro original instead (ADR 012)."
-                        )
+                        # Libraries keep Kiro's format: share a Claude file converted
+                        # back (ADR 014), or not at all.
+                        validate_asset(src, row["kind"], outbound=True)
+                        converted = formats.to_kiro(row["path"], src.read_text(encoding="utf-8"))
+                        if converted is None:
+                            raise c.ShareError(
+                                f"{row['path']} cannot be shared back into a library yet; "
+                                "share the Kiro original instead (ADR 012)."
+                            )
+                        notes.extend(f"{key}: {note}" for note in converted.notes)
                     validate_asset(src, row["kind"], outbound=True)
                     dest = source_path(cfg, row["source"], row["kind"], row["name"])
                     if dest in destinations:
@@ -821,6 +864,9 @@ def plan(
                     destinations.add(dest)
                     if src == dest or src in dest.parents or dest in src.parents:
                         raise c.ShareError("Outbound source and destination overlap")
+                    if converted is not None:
+                        shared_converted(key, row, src, dest, converted.content)
+                        continue
                     src_snap, dest_snap = observe(src), observe(dest)
                     previous = old["outbound"].get(key)
                     if dest_snap != src_snap:
@@ -1196,6 +1242,11 @@ def plan(
         result["local_update"] = local_update
     result["fingerprint"] = digest(result)
     return result
+
+
+def shares_back(rel):
+    """Whether a file in a converted folder can be shared into a library (ADR 014)."""
+    return rel.rpartition("/")[0] in formats.TO_KIRO
 
 
 def converted_folder(rel):

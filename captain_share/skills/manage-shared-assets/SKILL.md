@@ -82,7 +82,9 @@ when they are explicitly synced, not automatically to every child repository.
   edit the library original, not the generated file, and relay the preview's notes.
   Manual and auto steering become Claude skills; agents that list their tools become
   Claude subagents (MCP servers, hooks and permissions stay Kiro-only). Do not
-  hand-copy any of them.
+  hand-copy any of them. A Claude rule or command can be shared with `share
+  steering|prompts NAME --path .claude/rules/NAME` (or `.claude/commands/`); it is
+  converted to Kiro's format in the library.
 - **Kiro powers:** library powers live in `ip/powers/NAME/` (`plugin.json` or
   `POWER.md`, name equal to the folder). `powers list --source NAME` shows Kiro's
   install state; `powers install SOURCE POWER` previews and `--apply` runs

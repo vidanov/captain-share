@@ -130,7 +130,9 @@ call as `/name`, auto steering a skill Claude loads when its description fits, a
 agents that list their tools become Claude subagents; the preview lists what a
 conversion leaves out ([ADR 013](docs/adr/013-claude-skills-and-subagents.md)). A
 generated file is archived with the last link to it; `captain-share rendered` lists
-them and `--clean` archives any nothing links. See
+them and `--clean` archives any nothing links. Claude rules and commands that no
+library has can be shared too; they are converted to Kiro's format on the way in
+([ADR 014](docs/adr/014-share-claude-files-back.md)). See
 [ADR 012](docs/adr/012-claude-rules-and-commands.md).
 
 ### Kiro powers
