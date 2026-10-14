@@ -104,6 +104,42 @@ def outdated_text(report):
     return "\n".join(lines)
 
 
+def update_text(found, applied):
+    """Readable lines for `update`."""
+    if applied:
+        if not found["updated"]:
+            return "Captain Share is up to date."
+        return (
+            f"Updated Captain Share from {found['from']} to {found['to']}.\n"
+            "Restart open windows (captain-share serve) to use it."
+        )
+    where = {
+        "checkout": f"Git checkout {found.get('path')}",
+        "pip-folder": f"pip, from {found.get('path')}",
+        "pip-git": f"pip, from {found.get('url')}",
+    }.get(found["kind"], "an unknown way")
+    lines = [
+        f"Captain Share {found['version']}"
+        + (f" · {found['commit']}" if found.get("commit") else "")
+        + (f" ({found['date'][:10]})" if found.get("date") else ""),
+        f"Installed with {where}",
+    ]
+    behind = found.get("behind")
+    if behind:
+        lines.append(f"{behind} update{'s' if behind != 1 else ''} available:")
+        lines.extend(f"  {line}" for line in found.get("incoming", []))
+        lines.append("Run captain-share update --apply to update.")
+    elif behind == 0:
+        lines.append("Up to date.")
+    else:
+        lines.append(f"Update by hand: {found['command']}")
+    if found.get("dirty"):
+        lines.append(
+            "The checkout has local changes; update leaves it alone until they are committed."
+        )
+    return "\n".join(lines)
+
+
 def why_text(found):
     """Readable lines for `why`."""
     home = str(Path.home())
@@ -429,6 +465,8 @@ def parser():
     assist.add_argument("request")
     assist.add_argument("--run", action="store_true")
     assist.add_argument("--agent")
+    upd = sub.add_parser("update", help="Show what is new in Captain Share; --apply updates it")
+    upd.add_argument("--apply", action="store_true", help="Update the way it was installed")
     serve = sub.add_parser("serve", help="Start the local web interface for this target")
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--open", action="store_true")
@@ -931,6 +969,13 @@ def main(argv=None):
                 if spec is None:
                     raise c.ShareError(f"Unknown library {args.source}")
                 result = {"source": args.source, "check": spec.get("check")}
+        elif command == "update":
+            from . import selfupdate as su
+
+            result = su.update() if args.apply else su.status(fetch=True)
+            if not args.json:
+                print(update_text(result, args.apply))
+                return 0
         elif command == "why":
             result = e.why(args.path)
             if not args.json:
