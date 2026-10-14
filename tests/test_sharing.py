@@ -231,6 +231,47 @@ class SharingTests(SharingFixture):
         (src / "SKILL.md").write_text("-----BEGIN " + "PRIVATE KEY-----")
         self.assertFalse(e.plan(self.repo, "outbound")["can_apply"])
 
+    def test_why_names_the_library_asset_and_where_it_was_selected(self):
+        self.select()
+        e.apply(e.plan(self.repo))
+        found = e.why(self.repo / ".kiro/skills/hello/SKILL.md")
+        self.assertEqual(found["status"], "linked")
+        self.assertEqual(
+            (found["source"], found["kind"], found["library_name"]), ("team", "skills", "hello")
+        )
+        self.assertTrue(found["managed"])
+        self.assertEqual(found["selected_in"], str(self.repo))
+        self.assertEqual(found["asset"], str(self.repo / ".kiro/skills/hello"))
+        # A copy says whether it matches the library; an unknown asset says so too.
+        copy = self.repo / ".claude/skills/hello"
+        copy.parent.mkdir(parents=True)
+        import shutil
+
+        shutil.copytree(self.lib / "ip/skills/hello", copy)
+        found = e.why(copy)
+        self.assertEqual((found["status"], found["same_as_library"]), ("local", True))
+        (copy / "SKILL.md").write_text("changed")
+        self.assertFalse(e.why(copy)["same_as_library"])
+        self.skill(self.repo / ".kiro/skills/mine")
+        self.assertIn("no connected library", e.why(self.repo / ".kiro/skills/mine")["note"])
+        # A link someone else made, and a broken one.
+        other = self.repo / ".kiro/skills/elsewhere"
+        other.symlink_to(self.lib / "ip/skills/hello")
+        self.assertFalse(e.why(other)["managed"])
+        gone = self.repo / ".kiro/skills/gone"
+        gone.symlink_to(self.base / "missing")
+        self.assertIn("broken", e.why(gone)["note"])
+        with self.assertRaises(c.ShareError):
+            e.why(self.repo / "README-missing")
+        (self.repo / "notes.txt").write_text("x")
+        with self.assertRaisesRegex(c.ShareError, "not in an agent folder"):
+            e.why(self.repo / "notes.txt")
+
+    def test_why_on_a_library_original(self):
+        c.add_source(c.global_dir().parent, "team", self.lib, scope="global")
+        found = e.why(self.lib / "ip/skills/hello/SKILL.md")
+        self.assertEqual((found["status"], found["source"]), ("library", "team"))
+
     def test_git_exclusion_and_hook_preservation(self):
         self.git("init", "-q")
         hook = self.repo / ".git/hooks/pre-commit"

@@ -1435,3 +1435,127 @@ def guard(target):
         if tracked(target, target / rel):
             problems.append(rel)
     return {"ok": not problems, "tracked_local_paths": problems}
+
+
+def why(value):
+    """Where a file or folder in an agent's folders came from: the asset it belongs
+    to, the library original it links to, and the layer that selected it."""
+    path = Path(os.path.abspath(Path(value).expanduser()))
+    if not os.path.lexists(path):
+        raise c.ShareError(f"Nothing at {path}")
+    folders = sorted(
+        (
+            (kind, tool, folder)
+            for kind, tools in c.DESTINATIONS.items()
+            for tool, folder in tools.items()
+        ),
+        key=lambda row: -len(Path(row[2]).parts),
+    )
+    for asset in [path, *path.parents]:
+        parts = asset.parent.parts
+        if parts[-3:] == (".kiro", "powers", "installed"):
+            return {
+                "path": str(path),
+                "asset": str(asset),
+                "kind": "powers",
+                "name": asset.name,
+                "status": "kiro-power",
+                "note": "Installed by kiro-cli (Kiro owns this copy); update it from its library.",
+            }
+        for kind, tool, folder in folders:
+            depth = len(Path(folder).parts)
+            if parts[-depth:] != Path(folder).parts:
+                continue
+            try:
+                c.asset_name(kind, asset.name)
+            except c.ShareError:
+                continue
+            place = Path(*parts[:-depth])
+            return why_asset(path, place, kind, tool, f"{folder}/{asset.name}")
+        library = library_of(asset)
+        if library is not None:
+            return {
+                "path": str(path),
+                "asset": str(asset),
+                "kind": library[1],
+                "name": asset.name,
+                "status": "library",
+                "source": library[0],
+                "note": f"The original in the {library[0]} library; installs link here.",
+            }
+    raise c.ShareError(f"{path} is not in an agent folder or a connected library")
+
+
+def library_of(asset):
+    """(source, kind) when `asset` is an asset folder or file inside a connected library."""
+    try:
+        cfg = c.effective(c.global_dir().parent)
+    except c.ShareError:
+        return None
+    for sid in sorted(cfg["sources"]):
+        try:
+            base = source_path(cfg, sid)
+        except c.ShareError:
+            continue
+        if asset.parent.parent == base and asset.parent.name in c.KINDS:
+            return sid, asset.parent.name
+    return None
+
+
+def why_asset(path, place, kind, tool, rel):
+    asset = place / rel
+    result = {
+        "path": str(path),
+        "asset": str(asset),
+        "place": str(place),
+        "kind": kind,
+        "tool": tool,
+        "name": asset.name,
+    }
+    try:
+        cfg = c.effective(place)
+    except c.ShareError:
+        cfg = {"sources": {}, "origins": {"inbound": {}}}
+    if asset.is_symlink():
+        original = Path(os.path.abspath(asset.parent / os.readlink(asset)))
+        result["original"] = str(original)
+        result["status"] = "linked"
+        for sid in sorted(cfg["sources"]):
+            try:
+                base = source_path(cfg, sid)
+            except c.ShareError:
+                continue
+            if original.parent.parent == base and original.parent.name == kind:
+                result.update(source=sid, library_name=original.name)
+                key = f"{sid}/{kind}/{original.name}"
+                saved = cfg["origins"]["inbound"].get(key)
+                if saved:
+                    result["selected_in"] = saved
+        try:
+            row = state(place)["inbound"].get(rel)
+        except c.ShareError:
+            row = None
+        result["managed"] = row is not None
+        if not os.path.exists(original):
+            result["note"] = "The link is broken: its original is gone."
+        elif "source" not in result:
+            result["note"] = "Links to a folder that is not a connected library."
+        return result
+    result["status"] = "local"
+    result["managed"] = False
+    found = locate(cfg, asset.name, kind=kind)
+    if found:
+        sid, _, name = found[0]
+        try:
+            same = same_content(asset, source_path(cfg, sid, kind, name))
+        except (c.ShareError, OSError):
+            same = False
+        result.update(source=sid, library_name=name, same_as_library=same)
+        result["note"] = (
+            f"A copy, the same as {sid}'s version."
+            if same
+            else f"A copy that differs from {sid}'s version."
+        )
+    else:
+        result["note"] = "A local asset; no connected library has it."
+    return result

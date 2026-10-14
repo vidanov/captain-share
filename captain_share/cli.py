@@ -36,6 +36,33 @@ def pushed_lines(result):
             print(f"Open the review: {result['review_url']}")
 
 
+def why_text(found):
+    """Readable lines for `why`."""
+    home = str(Path.home())
+
+    def short(value):
+        return "~" + value[len(home) :] if value.startswith(home + "/") else value
+
+    lines = [short(found["asset"])]
+    if found.get("source"):
+        lines[0] += (
+            f"  →  {found['source']}/{found['kind']}/{found.get('library_name', found['name'])}"
+        )
+    if found.get("original"):
+        lines.append(f"  link to {short(found['original'])}")
+    if found["status"] == "linked":
+        lines.append(
+            "  installed by Captain Share"
+            if found.get("managed")
+            else "  a link Captain Share did not create"
+        )
+    if found.get("selected_in"):
+        lines.append(f"  selected in {short(found['selected_in'] + '/.captain/sharing.json')}")
+    if found.get("note"):
+        lines.append(f"  {found['note']}")
+    return "\n".join(lines)
+
+
 def output(value, as_json=False):
     if as_json:
         print(json.dumps(value, indent=2, sort_keys=True))
@@ -160,6 +187,10 @@ def parser():
         action="store_true",
         help="Afterwards link this folder to the library original instead of its copy",
     )
+    why = sub.add_parser(
+        "why", help="Show which library and asset a file in an agent folder came from"
+    )
+    why.add_argument("path")
     dif = sub.add_parser("diff", help="Show how your copy differs from the library version")
     dif.add_argument("kind", choices=list(c.KINDS))
     dif.add_argument("name")
@@ -770,6 +801,11 @@ def main(argv=None):
                 or result.get("errors")
             )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
+        elif command == "why":
+            result = e.why(args.path)
+            if not args.json:
+                print(why_text(result))
+                return 0
         elif command == "diff":
             result = e.diff(target, args.source, args.kind, args.name, args.path)
             if not args.json:
