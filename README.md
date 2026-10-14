@@ -128,7 +128,9 @@ Claude's folders link to these generated files, which every preview checks and
 regenerates when the library changes. Manual steering becomes a Claude skill you
 call as `/name`, auto steering a skill Claude loads when its description fits, and
 agents that list their tools become Claude subagents; the preview lists what a
-conversion leaves out ([ADR 013](docs/adr/013-claude-skills-and-subagents.md)). See
+conversion leaves out ([ADR 013](docs/adr/013-claude-skills-and-subagents.md)). A
+generated file is archived with the last link to it; `captain-share rendered` lists
+them and `--clean` archives any nothing links. See
 [ADR 012](docs/adr/012-claude-rules-and-commands.md).
 
 ### Kiro powers
