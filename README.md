@@ -126,7 +126,9 @@ converted: always-included steering becomes a rule, `fileMatch` steering a rule 
 `paths:` for the same globs, and prompt arguments are renumbered for commands.
 Claude's folders link to these generated files, which every preview checks and
 regenerates when the library changes. Manual and auto steering have no Claude
-equivalent and stay Kiro-only; the preview lists what a conversion leaves out. See
+equivalent and stay Kiro-only; the preview lists what a conversion leaves out. A
+generated file is archived with the last link to it; `captain-share rendered` lists
+them and `--clean` archives any nothing links. See
 [ADR 012](docs/adr/012-claude-rules-and-commands.md).
 
 ### Kiro powers

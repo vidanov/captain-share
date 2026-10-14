@@ -1082,6 +1082,37 @@ def plan(
             config_update["inbound"][previous["key"]] = {
                 k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
             }
+    # Generated files no place links any more are archived with the last link (ADR 012).
+    index_path = rendered_index_path()
+    observe(index_path)
+    index = rendered_index()
+    before = rendered_refs(old["inbound"])
+    after = rendered_refs(next_state["inbound"])
+    for generated in sorted(before - after):
+        others = [place for place in index.get(generated, []) if place != str(target)]
+        dest = Path(generated)
+        if not others and dest.is_file() and not dest.is_symlink() and generated not in renders:
+            observe(dest)
+            changes.append(
+                {
+                    "op": "archive",
+                    "path": generated,
+                    "selection": None,
+                    "archive_root": str(c.global_dir().parent),
+                }
+            )
+    rendered_update = None
+    if before != after:
+        rendered_update = {k: v for k, v in index.items()}
+        for generated in before - after:
+            kept = [x for x in rendered_update.get(generated, []) if x != str(target)]
+            if kept:
+                rendered_update[generated] = kept
+            else:
+                rendered_update.pop(generated, None)
+        for generated in after - before:
+            places = set(rendered_update.get(generated, [])) | {str(target)}
+            rendered_update[generated] = sorted(places)
     exclusion = exclude_change(target, next_state["inbound"])
     # Local records, archives and bindings must never be quietly written over tracked state.
     for rel in (".captain/sharing.local.json", ".captain/sharing-state.json", ".captain/archive"):
@@ -1117,6 +1148,7 @@ def plan(
         "can_apply": not errors,
         "observations": observations,
         "next_state": next_state,
+        "rendered_update": rendered_update,
         "notes": notes,
         "config_update": config_update,
         "exclusion": exclusion,
@@ -1135,6 +1167,73 @@ def converted_folder(rel):
     return any(
         rel.startswith(c.DESTINATIONS[kind][tool] + "/") for kind, tool in formats.CONVERTERS
     )
+
+
+def rendered_index_path():
+    """Machine-local record of which places link each generated file (ADR 012)."""
+    return c.safe_path(c.global_dir(), "rendered/index.json")
+
+
+def rendered_index():
+    try:
+        data = c.read_json(rendered_index_path(), {})
+    except c.ShareError:
+        return {}
+    refs = data.get("refs") if isinstance(data, dict) else None
+    if not isinstance(refs, dict):
+        return {}
+    return {k: [x for x in v if isinstance(x, str)] for k, v in refs.items() if isinstance(v, list)}
+
+
+def rendered_refs(inbound):
+    """Generated files that installation state rows link to."""
+    base = str(c.global_dir() / "rendered") + os.sep
+    return {
+        row["source_path"]
+        for row in inbound.values()
+        if row.get("source_path", "").startswith(base)
+    }
+
+
+def rendered_files(apply=False):
+    """Generated files with the places that link them. With `apply`, files that no
+    known place links any more are archived. A place counts only while its own
+    installation state still links the file."""
+    root = c.global_dir() / "rendered"
+    index = rendered_index()
+    rows, orphans = [], []
+    for path in (
+        sorted(p for p in root.rglob("*") if p.is_file() and p.name != "index.json")
+        if root.is_dir()
+        else []
+    ):
+        places = []
+        for place in index.get(str(path), []):
+            try:
+                if str(path) in rendered_refs(state(Path(place))["inbound"]):
+                    places.append(place)
+            except (c.ShareError, OSError):
+                continue
+        rows.append({"path": str(path), "places": places})
+        if not places:
+            orphans.append(path)
+    archived = []
+    if apply and orphans:
+        owner = c.global_dir().parent
+        with c.locks([c.global_dir()]):
+            tx = Transaction()
+            try:
+                for path in orphans:
+                    archived.append(archive_into(tx, path, owner))
+                kept = {row["path"]: row["places"] for row in rows if row["places"]}
+                tx.write(rendered_index_path(), {"version": 1, "refs": kept})
+            except Exception as exc:
+                issues = tx.rollback()
+                raise c.ShareError(
+                    f"Cleaning failed and was rolled back: {exc}"
+                    + (f"; recovery needed: {issues}" if issues else "")
+                ) from exc
+    return {"files": rows, "unused": [str(p) for p in orphans], "archived": archived}
 
 
 def rendered_path(tool, source, kind, name):
@@ -1500,6 +1599,8 @@ def perform(tx, current, target, archives):
     if current.get("local_update") is not None:
         tx.write(c.safe_path(target, ".captain/sharing.local.json"), current["local_update"])
     tx.write(c.safe_path(target, ".captain/sharing-state.json"), current["next_state"])
+    if current.get("rendered_update") is not None:
+        tx.write(rendered_index_path(), {"version": 1, "refs": current["rendered_update"]})
     ex = current["exclusion"]
     if ex and ex["changed"]:
         tx.write(Path(ex["path"]), ex["text"])

@@ -687,6 +687,39 @@ class SharingTests(SharingFixture):
         e.apply(e.plan(self.repo, action="remove", kind="steering", asset="api.md"))
         self.assertFalse(os.path.lexists(rules / "api.md"))
 
+    def test_generated_files_are_archived_with_their_last_link(self):
+        steering = self.lib / "ip/steering"
+        steering.mkdir(exist_ok=True)
+        (steering / "style.md").write_text("Write short sentences.\n")
+        other = self.base / "project/other"
+        other.mkdir(parents=True)
+        c.add_source(other, "team", self.lib)
+        for place in (self.repo, other):
+            c.set_tools(place, ["kiro", "claude"])
+            c.select(place, "inbound", "team", "steering", "style.md")
+            e.apply(e.plan(place))
+        generated = Path(os.readlink(self.repo / ".claude/rules/style.md"))
+        listed = e.rendered_files()
+        self.assertEqual(listed["files"][0]["places"], sorted([str(self.repo), str(other)]))
+        # Removing it in one place keeps the file the other place still links.
+        e.apply(e.plan(self.repo, action="remove", kind="steering", asset="style.md"))
+        self.assertTrue(generated.is_file())
+        # The last removal archives it, recoverably, with the link.
+        planned = e.plan(other, action="remove", kind="steering", asset="style.md")
+        self.assertIn(str(generated), [x["path"] for x in planned["changes"]])
+        e.apply(planned)
+        self.assertFalse(generated.exists())
+        self.assertEqual(e.rendered_files()["files"], [])
+        # A generated file nothing records (for example from before the index) is
+        # reported and archived only on request.
+        stray = c.global_dir() / "rendered/claude/team/steering/old.md"
+        stray.parent.mkdir(parents=True, exist_ok=True)
+        stray.write_text("old")
+        self.assertEqual(e.rendered_files()["unused"], [str(stray)])
+        self.assertTrue(stray.exists())
+        self.assertEqual(len(e.rendered_files(apply=True)["archived"]), 1)
+        self.assertFalse(stray.exists())
+
     def test_format_conversion_edge_cases(self):
         from captain_share import formats
 
