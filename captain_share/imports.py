@@ -318,6 +318,7 @@ class Stages:
         if path.exists() and not path.is_dir():
             raise c.ShareError("Choose a folder, not a file (a zip file is uploaded instead)")
         root = c.root(path)
+        too_broad(root)
         return self.view(self.add(root, str(root)))
 
     def close(self):
@@ -325,6 +326,18 @@ class Stages:
         if self.folder is not None:
             shutil.rmtree(self.folder, ignore_errors=True)
             self.folder = None
+
+
+def too_broad(root):
+    """A home folder (or anything above it) holds notes and documents, not one
+    skill; scanning it offers unrelated Markdown files as prompts."""
+    home = Path.home().resolve()
+    configured = c.global_dir().parent.resolve()
+    for base in {home, configured}:
+        if root == base or root in base.parents:
+            raise c.ShareError(
+                "Choose the skill's own folder (or a folder of skills), not your home folder"
+            )
 
 
 def plan(target, source, root, items, stage="", label=""):
