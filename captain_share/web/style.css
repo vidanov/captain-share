@@ -1023,7 +1023,7 @@ button.link:hover {
 .subnav {
   display: flex;
   gap: 4px;
-  margin: 0 0 18px;
+  margin: 0;
   border-bottom: 1px solid var(--rule);
 }
 .subnav button {
@@ -1087,13 +1087,20 @@ button.link:hover {
 }
 
 /* Bay */
+/* Title, then the section tabs, then the tools right above the list or grid. */
+.bay {
+  max-width: 76rem;
+  margin: 0 auto;
+}
 .bay-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.bay-head h1 {
+  margin-bottom: 4px;
 }
 .bay-head p {
   max-width: 44rem;
