@@ -30,6 +30,11 @@ python3 -m venv .venv
 .venv/bin/captain-share --target /path/to/project serve --open
 ```
 
+To update later, run `captain-share update` (shows what is new) and
+`captain-share update --apply`, or use About → Update Captain Share in the window,
+then Restart window. A checkout is fast-forwarded only when it has no local changes
+([ADR 015](docs/adr/015-update-captain-share.md)).
+
 Without `--target`, every command uses the **current working directory**:
 
 ```bash

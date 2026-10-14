@@ -4490,8 +4490,130 @@ function showPage(path, focus = true) {
       .forEach((b) => b.classList.remove("active"));
     document.querySelector(".faceplate-place").hidden = true;
   } else if (state) render();
+  if (about) renderSelfUpdate();
   if (focus && about) $("about-title").focus();
   if (focus) window.scrollTo(0, 0);
+}
+// Captain Share's own version and updates (ADR 015).
+const INSTALLED_WITH = {
+  checkout: "your Git checkout",
+  "pip-folder": "pip, from a folder",
+  "pip-git": "pip, from Git",
+  unknown: "an unknown way",
+};
+async function renderSelfUpdate(found = null) {
+  const box = $("self-update");
+  if (!found) {
+    try {
+      found = await api("self");
+    } catch (error) {
+      box.replaceChildren(el("p", error.message, "hint"));
+      return;
+    }
+  }
+  const line = el("p", undefined, "self-line");
+  line.append(
+    "Installed with " + INSTALLED_WITH[found.kind],
+    found.path ? el("code", " " + shortPath(found.path)) : "",
+    found.commit
+      ? " · " +
+          found.commit +
+          (found.date ? " (" + friendlyDate(found.date) + ")" : "")
+      : "",
+  );
+  const parts = [line];
+  const actions = el("div", undefined, "actions");
+  if (found.behind) {
+    parts.push(
+      el(
+        "p",
+        found.behind +
+          (found.behind === 1 ? " update available:" : " updates available:"),
+        "self-news",
+      ),
+    );
+    if ((found.incoming || []).length) {
+      const list = el("ul", undefined, "self-incoming");
+      for (const item of found.incoming.slice(0, 8))
+        list.append(el("li", item));
+      parts.push(list);
+    }
+    const go = el("button", "Update Captain Share");
+    go.type = "button";
+    go.onclick = () =>
+      task(async () => {
+        const result = await api("self-update", {});
+        renderUpdated(result);
+      });
+    actions.append(go);
+  } else {
+    const check = el(
+      "button",
+      found.behind === 0 ? "Check again" : "Check for updates",
+      "quiet",
+    );
+    check.type = "button";
+    check.onclick = () =>
+      task(async () => {
+        const result = await api("self-check", {});
+        renderSelfUpdate(result);
+        if (result.behind === 0) message("Captain Share is up to date.");
+      });
+    actions.append(check);
+    if (found.behind === 0) parts.push(el("p", "Up to date.", "hint"));
+  }
+  if (found.dirty)
+    parts.push(
+      el(
+        "p",
+        "The checkout has local changes; updating waits until they are committed.",
+        "hint warn",
+      ),
+    );
+  if (found.kind === "unknown" || found.behind === null)
+    parts.push(el("p", "Update by hand:", "hint"), commandLine(found.command));
+  parts.push(actions);
+  $("self-update").replaceChildren(...parts);
+}
+function renderUpdated(result) {
+  const box = $("self-update");
+  if (!result.updated) {
+    box.replaceChildren(el("p", "Captain Share is up to date.", "hint"));
+    return;
+  }
+  const restart = el("button", "Restart window");
+  restart.type = "button";
+  restart.onclick = () => task(restartWindow);
+  box.replaceChildren(
+    el(
+      "p",
+      "Updated from " +
+        result.from +
+        " to " +
+        result.to +
+        ". Restart this window to use it; it reconnects by itself.",
+      "self-news",
+    ),
+    restart,
+  );
+}
+// The server starts again with the new code on the same address and token.
+async function restartWindow() {
+  await api("restart", {});
+  message("Restarting…");
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    try {
+      await api("self");
+      location.reload();
+      return;
+    } catch (error) {
+      // Not back yet.
+    }
+  }
+  throw new Error(
+    "The window did not come back. Start captain-share serve again.",
+  );
 }
 for (const id of ["about-link", "workspace-link"])
   $(id).onclick = (event) => {

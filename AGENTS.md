@@ -14,6 +14,7 @@ management skill and fictional fixtures are public product code.
 - `captain_share/repositories.py`, `imports.py`, `personal.py`, `disconnect.py`: library Git
   operations, sharing and disconnecting;
   staging zips/folders from outside and adding their assets to a library.
+- `captain_share/selfupdate.py`: how this copy is installed, and updating it (ADR 015).
 - `captain_share/skills/manage-shared-assets/`: reusable management instructions.
 - `scripts/verify.py`: the local and CI verification entrypoint.
 

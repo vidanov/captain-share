@@ -128,6 +128,8 @@ hooks, and toolkit ledgers to their original installer. Inspect any collision
 and disconnect it with that installer before installing a replacement.
 
 For a graphical chooser use `captain-share --target FOLDER serve --open`.
+`captain-share update` shows whether Captain Share itself is behind; update it with
+`--apply` only when the user asks, then tell them to restart open windows.
 `assist "REQUEST"` prepares a Kiro CLI handoff; `--run` starts an interactive
 chat with the user's normal approvals. Avoid granting blanket tool trust.
 

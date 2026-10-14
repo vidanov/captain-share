@@ -9,6 +9,8 @@ import secrets
 import shlex
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import webbrowser
 from collections import deque
@@ -25,6 +27,7 @@ from . import imports as im
 from . import integrations as i
 from . import personal as me
 from . import repositories as r
+from . import selfupdate as su
 
 WEB = Path(__file__).parent / "web"
 # The guided tour is static: its page, script, style and images directly in web/tour/.
@@ -274,6 +277,16 @@ def asset_preview(target, source, kind, name, local=None):
         "text": text,
         "truncated": truncated,
     }
+
+
+def restart(server, port, token):
+    """Start this window again with the code now on disk, keeping address and token."""
+    handle, path = tempfile.mkstemp(prefix="captain-share-restart-", suffix=".json")
+    with os.fdopen(handle, "w") as file:  # mkstemp: readable by this user only
+        json.dump({"port": port, "token": token}, file)
+    server.server_close()
+    argv = su.restart_argv()
+    os.execve(argv[0], argv, {**os.environ, RESTART: path})
 
 
 def why_inside(target, value):
@@ -813,9 +826,9 @@ class Server(HTTPServer):
                 self.stages.close()
 
 
-def make_server(target, port=0):
+def make_server(target, port=0, token=None):
     startup = c.root(target)
-    token = secrets.token_urlsafe(32)
+    token = token or secrets.token_urlsafe(32)
     plans: dict[str, dict[str, Any]] = {}
     # Zips and folders staged for "add from outside" (ADR 006).
     stages = im.Stages()
@@ -919,6 +932,8 @@ def make_server(target, port=0):
                             query.get("local", [""])[0] or None,
                         )
                     )
+                elif parsed.path == "/api/self":
+                    self.respond(su.status())
                 elif parsed.path == "/api/outdated":
                     # Read-only: compares with the commits last fetched (ADR 011).
                     self.respond(r.outdated(target))
@@ -1052,6 +1067,17 @@ def make_server(target, port=0):
                 target = place(startup, data.get("target", ""))
                 if path == "/api/reveal":
                     result = reveal_path(target, data["path"])
+                elif path == "/api/self-check":
+                    result = su.status(fetch=True)
+                elif path == "/api/self-update":
+                    result = su.update()
+                elif path == "/api/restart":
+                    # Answer first, then replace this process with a fresh one on the
+                    # same port and token (ADR 015).
+                    self.respond({"restarting": True})
+                    port = cast(HTTPServer, self.server).server_port
+                    threading.Timer(0.3, restart, (self.server, port, token)).start()
+                    return
                 elif path == "/api/clone":
                     result = r.clone(
                         target,
@@ -1392,8 +1418,38 @@ def make_server(target, port=0):
     return server, token
 
 
+RESTART = "CAPTAIN_SHARE_RESTART"
+
+
+def restarted():
+    """(port, token) handed over by "Restart window" (ADR 015), or (None, None). They
+    come in a private file that is read once and deleted, so neither the process
+    environment nor Git and other programs this server starts ever hold the token."""
+    path = os.environ.pop(RESTART, None)
+    if not path:
+        return None, None
+    file = Path(path)
+    try:
+        if file.parent != Path(tempfile.gettempdir()) or file.is_symlink():
+            return None, None
+        data = json.loads(file.read_text())
+    except (OSError, ValueError):
+        return None, None
+    finally:
+        file.unlink(missing_ok=True)
+    port, token = data.get("port"), data.get("token")
+    if isinstance(port, int) and isinstance(token, str) and token:
+        return port, token
+    return None, None
+
+
 def serve(target, port=0, open_browser=False):
-    server, token = make_server(target, port)
+    # After "Restart window" the same address and token come back, so the open
+    # page reconnects.
+    again, token = restarted()
+    if again is not None:
+        port, open_browser = again, False
+    server, token = make_server(target, port, token)
     url = f"http://127.0.0.1:{server.server_port}/#token={token}"
     print(f"Captain Share\nTarget: {c.root(target)}\n{url}\nPress Ctrl-C to stop.", flush=True)
     if open_browser:
