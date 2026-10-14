@@ -666,7 +666,8 @@ details.lib-section[open] > summary.lib-heading::before {
 }
 .compact .lib-row:not(.open) > .lib-desc,
 .compact .lib-row:not(.open) > .lib-meta,
-.compact .lib-row:not(.open) .lib-act .link {
+.compact .lib-row:not(.open) .lib-act .link,
+.compact .lib-row:not(.open) > .lib-links {
   display: none;
 }
 /* One line at every width: name on the left, status or button on the right. */
@@ -764,6 +765,16 @@ details.lib-section[open] > summary.lib-heading::before {
   margin: 2px 0 0;
   font-size: 12px;
   color: var(--ink-3);
+}
+.lib-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.lib-links .link {
+  font-size: inherit;
 }
 .lib-act {
   grid-column: 2;

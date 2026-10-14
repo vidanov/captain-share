@@ -75,10 +75,10 @@ await shot("06-where.jpg", `document.querySelector('#review-where input[value="u
 await js(`${q("#apply")}.click(); await new Promise(r => setTimeout(r, 2500));`);
 // 7 Look before sharing
 await go("share");
-await js(`${byText("#share-lists .lib-act button", "Preview")}.click(); await new Promise(r => setTimeout(r, 1500));`);
-await shot("07-look.jpg", byText("#share-lists .lib-act button", "Hide preview"), { click: true,
+await js(`${byText("#share-lists .lib-links button", "Preview")}.click(); await new Promise(r => setTimeout(r, 1500));`);
+await shot("07-look.jpg", byText("#share-lists .lib-links button", "Hide preview"), { click: true,
   title: "Look before you share", text: "Share lists skills in this project and in your global folders that no library has yet. Preview shows what is inside; Show in Finder opens the folder." });
-await js(`${byText("#share-lists .lib-act button", "Hide preview")}.click(); await new Promise(r => setTimeout(r, 800));`);
+await js(`${byText("#share-lists .lib-links button", "Hide preview")}.click(); await new Promise(r => setTimeout(r, 800));`);
 // 8 Share
 await js(`${byText("#share-lists .lib-act button", "Share…")}.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector(".share-panel textarea").value = "Explains a slow query plan and suggests indexes. Nice before a performance review.";`);
 await shot("08-share.jpg", byText(".share-panel button", "Share"), { click: true,

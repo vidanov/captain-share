@@ -36,8 +36,8 @@ const STEPS = [
   },
   {
     image: "05-get.jpg",
-    x: 65.2,
-    y: 74.6,
+    x: 75.1,
+    y: 69.9,
     click: true,
     title: "Get what a colleague recommends",
     text: "Someone says “try pr-review”. Find it in Library and click Get.",
@@ -52,8 +52,8 @@ const STEPS = [
   },
   {
     image: "07-look.jpg",
-    x: 74.2,
-    y: 37.6,
+    x: 25.9,
+    y: 43.4,
     click: true,
     title: "Look before you share",
     text: "Share lists skills in this project and in your global folders that no library has yet. Preview shows what is inside; Show in Finder opens the folder.",
@@ -69,7 +69,7 @@ const STEPS = [
   {
     image: "09-shared.jpg",
     x: 72.3,
-    y: 62.5,
+    y: 65.6,
     click: true,
     title: "Tell your team",
     text: "The result says where the commit landed. You get a line to paste in chat; that is all a teammate needs.",
@@ -98,7 +98,7 @@ const STEPS = [
   },
   {
     image: "13-new.jpg",
-    x: 65.2,
+    x: 75.1,
     y: 50,
     click: false,
     title: "New since you last looked",
