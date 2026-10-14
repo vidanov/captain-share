@@ -437,17 +437,28 @@ def plan(
     replace=False,
     new_name=None,
     link_team=False,
+    from_source=None,
 ):
     """Preview changes. `selections` replaces the saved outbound selections for a
     one-off copy (sharing one asset) without writing them to configuration.
     `adopt` swaps local copies of one asset for links to its library original;
-    `keep` renames a local copy into the user's own version (ADR 007)."""
+    `keep` renames a local copy into the user's own version (ADR 007);
+    `relink` moves one selection and its managed links from `from_source` to
+    `source` (promoting an asset from the personal library, ADR 008)."""
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
-    if action not in ("sync", "remove", "restore", "adopt", "keep"):
+    if action not in ("sync", "remove", "restore", "adopt", "keep", "relink"):
         raise c.ShareError("Unknown plan action")
-    if action in ("adopt", "keep"):
+    if action == "relink":
+        c.asset_name(kind, asset)
+        c.name(source)
+        c.name(from_source)
+        if from_source == source:
+            raise c.ShareError("Choose a different library to move the selection to")
+    elif from_source is not None:
+        raise c.ShareError("from_source applies to relink plans only")
+    if action in ("adopt", "keep", "relink"):
         c.asset_name(kind, asset)
         c.name(source)
         for flag in (replace, link_team):
@@ -716,6 +727,57 @@ def plan(
                     conflict(str(exc), row.get("path"), key)
     elif action == "adopt":
         kept = link_original()
+    elif action == "relink":
+        old_key, key = f"{from_source}/{kind}/{asset}", f"{source}/{kind}/{asset}"
+        src = None
+        try:
+            src = source_path(cfg, source, kind, asset)
+            if not os.path.lexists(src):
+                raise c.ShareError(f"The library {source} has no {kind} named {asset}")
+            validate_asset(src, kind)
+            observe(src)
+        except (c.ShareError, OSError) as exc:
+            conflict(str(exc), key=key, reason="missing")
+        for rel, previous in old["inbound"].items():
+            if previous.get("key") != old_key or src is None:
+                continue
+            try:
+                dest = c.safe_path(target, rel, leaf_link=True)
+                existing = observe(dest)
+                if existing is not None:
+                    if existing != {"type": "link", "target": previous["source_path"]}:
+                        raise c.ShareError(f"Managed link changed: {rel}; restore it first")
+                    archive(dest, previous)
+                changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                kept_fields = {
+                    k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
+                }
+                next_state["inbound"][rel] = {
+                    **kept_fields,
+                    "source": source,
+                    "source_path": str(src),
+                    "key": key,
+                    "tool": previous.get("tool"),
+                }
+            except (c.ShareError, OSError) as exc:
+                conflict(str(exc), rel, old_key)
+        if old_key in cfg["inbound"] or old_key in local_cfg["inbound"]:
+            config_update = local_cfg
+            selected = cfg["inbound"].get(old_key)
+            local_cfg["inbound"].pop(old_key, None)
+            # Mask the old selection only when another layer still provides it.
+            inherited = None
+            for layer, data, local in c.layers(target):
+                if local or layer == cfg_path or old_key not in data.get("inbound", {}):
+                    continue
+                if target != c.global_dir().parent and layer.parent == c.global_dir():
+                    continue
+                inherited = data["inbound"][old_key]
+            if inherited is not None and inherited.get("enabled", True):
+                local_cfg["inbound"][old_key] = {"enabled": False}
+            if selected and key not in cfg["inbound"]:
+                row = {k: v for k, v in selected.items() if k != "enabled"}
+                local_cfg["inbound"][key] = {**row, "source": source}
     elif action == "keep":
         rel = path if path is not None else local_copy(target, cfg, old, kind, asset)
         vkey, chosen = f"{kind}/{new_name}", new_name
@@ -879,6 +941,8 @@ def plan(
         spec.update(source=source, replace=replace)
     if action == "keep":
         spec.update(source=source, new_name=new_name, link_team=link_team)
+    if action == "relink":
+        spec.update(source=source, from_source=from_source)
     result = {
         "version": 1,
         "spec": spec,
@@ -916,13 +980,9 @@ def archive_into(tx, dest, owner, selection=None):
     # Archive contents and machine records stay local to their owning repo.
     ig = c.safe_path(owner, ".captain/.gitignore")
     text = ig.read_text() if ig.exists() else ""
-    tx.write(
-        ig,
-        text.rstrip("\n")
-        + "\n"
-        + "\n".join(x for x in c.LOCAL_IGNORE.splitlines() if x not in text.splitlines())
-        + "\n",
-    )
+    missing = [x for x in c.LOCAL_IGNORE.splitlines() if x not in text.splitlines()]
+    if missing:
+        tx.write(ig, text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n")
     return archive_id
 
 

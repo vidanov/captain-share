@@ -272,6 +272,7 @@ function render() {
   $("home-view").hidden = setup || view !== "home";
   $("share-view").hidden = setup || view !== "share";
   $("bay").hidden = setup || !(where || view === "libraries");
+  $("bay").classList.toggle("narrow", view === "libraries");
   $("routing").hidden = true;
   if (setup) return renderSetup();
   if (view === "home") return renderHome();
@@ -291,6 +292,7 @@ function render() {
   $("project-actions").hidden = view !== "projects";
   if (isPatch) return renderMatrix();
   if (view === "libraries") {
+    $("count").textContent = "";
     renderAgents();
     foundList($("settings-found"), "Found on this machine, not added yet:");
     return renderLibraries();
@@ -950,7 +952,7 @@ async function loadRepository() {
     area.append(el("p", error.message));
     return;
   }
-  area.append(el("p", repository.path, "asset-path"));
+  area.append(el("p", shortPath(repository.path), "asset-path"));
   if (!repository.is_repo) {
     area.append(el("p", "This folder is not a Git repository."));
     return;
@@ -1609,8 +1611,6 @@ function renderLibraries() {
   const list = $("library-list");
   list.replaceChildren();
   const sources = Object.entries(state.config.sources);
-  $("count").textContent =
-    sources.length + (sources.length === 1 ? " library" : " libraries");
   if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
   for (const [name, spec] of sources) {
     const row = el("div", undefined, "library-row");
@@ -1790,6 +1790,20 @@ function owned(a) {
   return a.have.user || a.have.project;
 }
 function libraryStrip(lib) {
+  if (lib.personal) {
+    const strip = el("div", undefined, "strip");
+    const count = home.assets.filter((a) => a.source === lib.source).length;
+    const text = el("p");
+    text.append(
+      "Your own library · " + count + (count === 1 ? " asset" : " assets"),
+      el(
+        "small",
+        "Only on this machine. Share an asset from Share when it is ready.",
+      ),
+    );
+    strip.append(el("span", undefined, "strip-dot ok"), text);
+    return strip;
+  }
   const strip = el("div", undefined, "strip");
   const waiting = lib.behind || lib.new || lib.updated;
   strip.append(el("span", undefined, "strip-dot" + (waiting ? "" : " ok")));
@@ -2082,8 +2096,9 @@ function renderHome() {
     );
     return;
   }
+  const teams = home.libraries.filter((lib) => !lib.personal);
   $("home-title").textContent =
-    home.libraries.length === 1
+    teams.length === 1 && home.libraries.length === 1
       ? home.libraries[0].source.charAt(0).toUpperCase() +
         home.libraries[0].source.slice(1) +
         " library"
@@ -2201,6 +2216,14 @@ async function renderShare() {
         "In " + project + " · not in a library",
         fresh.map((row) => shareRow(row, "local")),
         "share-fresh",
+      ),
+    );
+  if ((shareData.personal || []).length)
+    lists.push(
+      listSection(
+        "In your own library",
+        shareData.personal.map(personalRow),
+        "share-personal",
       ),
     );
   if (copies.length)
@@ -2658,10 +2681,10 @@ function renderImport() {
     pick.type = "checkbox";
     pick.checked = !candidate.error;
     pick.disabled = !!candidate.error;
-    pick.setAttribute("aria-label", "Add " + candidate.name);
+    pick.setAttribute("aria-label", "Install " + candidate.name);
     const name = el("input");
     name.value = candidate.name;
-    name.setAttribute("aria-label", "Name in the library");
+    name.setAttribute("aria-label", "Name");
     let kind = null;
     if ((candidate.kinds || []).length > 1) {
       kind = el("select");
@@ -2698,65 +2721,54 @@ function renderImport() {
       ),
     );
   panel.append(list);
-  const libraries = importLibraries();
-  let library = null;
-  if (libraries.length > 1) {
-    library = el("select");
-    for (const lib of libraries) {
-      const option = el("option", lib.source);
-      option.value = lib.source;
-      library.append(option);
-    }
-    const label = el("label", "Library");
-    label.append(library);
-    panel.append(label);
-  }
-  const note = el("textarea");
-  note.rows = 2;
-  note.value =
-    "Add " +
-    importStage.candidates
-      .filter((c) => !c.error)
-      .map((c) => c.name)
-      .join(", ");
-  const noteLabel = el("label", "What is it good for? Teammates see this.");
-  noteLabel.append(note);
-  panel.append(noteLabel);
-  const pushBox = el("label", undefined, "check");
-  const push = el("input");
-  push.type = "checkbox";
-  push.checked = true;
-  pushBox.append(push, " Push to the team now");
-  panel.append(pushBox);
-  const changes = el("div", undefined, "share-changes");
-  panel.append(changes);
+  // Where the tried skill should work; it lives in your own library either way.
+  const modes = el("fieldset", undefined, "where");
+  modes.append(el("legend", "Where should it work?"));
+  const option = (value, title, text, checked) => {
+    const label = el("label", undefined, "where-option");
+    const input = el("input");
+    input.type = "radio";
+    input.name = "install-where";
+    input.value = value;
+    input.checked = checked;
+    const span = el("span");
+    span.append(el("strong", title), " " + text);
+    label.append(input, span);
+    modes.append(label);
+    return input;
+  };
+  const global = option(
+    "user",
+    "Global",
+    "All your projects on this machine.",
+    true,
+  );
+  option(
+    "project",
+    "Only in " + projectName(),
+    "The project this window opened on.",
+    false,
+  );
+  panel.append(modes);
+  panel.append(
+    el(
+      "p",
+      "It is kept in your own library (~/Libraries/my-skills, only on this machine). Share it with the team later from Share.",
+      "hint",
+    ),
+  );
   const actions = el("div", undefined, "actions");
-  const check = el("button", "Review", "quiet");
-  check.type = "button";
-  const go = el("button", "Add to library");
+  const go = el("button", "Install…");
   go.type = "button";
-  go.disabled = true;
   const cancel = el("button", "Cancel", "link");
   cancel.type = "button";
   cancel.onclick = () => {
     importStage = null;
     renderImport();
   };
-  actions.append(check, go, cancel);
+  actions.append(go, cancel);
   panel.append(actions);
-  let plan = null;
-  const invalidatePlan = () => {
-    plan = null;
-    go.disabled = true;
-    changes.replaceChildren();
-  };
-  for (const item of items) {
-    item.pick.onchange = invalidatePlan;
-    item.name.oninput = invalidatePlan;
-    if (item.kind) item.kind.onchange = invalidatePlan;
-  }
-  if (library) library.onchange = invalidatePlan;
-  check.onclick = () =>
+  go.onclick = () =>
     task(async () => {
       const chosen = items
         .filter((item) => item.pick.checked)
@@ -2765,81 +2777,53 @@ function renderImport() {
           kind: item.kind ? item.kind.value : item.candidate.kind,
           name: item.name.value.trim(),
         }));
-      if (!chosen.length) throw new Error("Choose at least one asset to add.");
-      if (!libraries.length)
-        throw new Error("Add a Git library first; assets are committed there.");
-      plan = await api("import-plan", {
+      if (!chosen.length) throw new Error("Choose at least one to install.");
+      const personal = await api("personal-library", {});
+      const plan = await api("import-plan", {
         stage: importStage.stage,
         items: chosen,
-        source: library?.value || libraries[0].source,
+        source: personal.source,
       });
-      // For review the library folder is not touched: show only the branch commit.
-      const lines = (plan.branch ? [] : plan.changes).map((change) => {
-        const line = el("div", undefined, "change");
-        line.append(
-          el("strong", change.op),
-          " ",
-          el("code", shortPath(change.path)),
+      if (!plan.can_apply)
+        throw new Error(
+          plan.conflicts.map((c) => c.message).join(" ") ||
+            "These cannot be installed.",
         );
-        return line;
-      });
-      for (const path of plan.commit_paths || []) {
-        const line = el("div", undefined, "change");
-        line.append(el("strong", "Commit"), " ", el("code", path));
-        lines.push(line);
-      }
-      for (const conflict of plan.conflicts)
-        lines.push(el("p", conflict.message, "hint warn"));
-      changes.replaceChildren(...lines);
-      go.disabled = !plan.can_apply;
-    });
-  go.onclick = () =>
-    task(async () => {
-      if (!plan) return;
-      if (!note.value.trim())
-        throw new Error("Say in a few words what it is good for.");
-      const result = await api("import-apply", {
+      await api("import-apply", {
         fingerprint: plan.fingerprint,
-        note: note.value.trim(),
-        push: push.checked,
+        note: "Add " + chosen.map((c) => c.name).join(", "),
+        push: false,
       });
-      home = await api("home").catch(() => home);
-      const done = el("div", undefined, "share-done");
-      done.append(
-        el(
-          "strong",
-          result.pushed
-            ? "Added to the library and shared."
-            : "Added to the library. Not pushed yet.",
-        ),
-      );
-      if (result.push_error)
-        done.append(el("p", "Push failed: " + result.push_error, "hint warn"));
-      done.append(el("p", "It is in Library now. Teammates can run:", "hint"));
-      for (const command of result.get_commands || []) {
-        const line = el("div", undefined, "copy-line");
-        const code = el("code", command);
-        const copy = el("button", "Copy", "quiet");
-        copy.type = "button";
-        copy.onclick = () =>
-          navigator.clipboard
-            .writeText(command)
-            .then(() => message("Copied. Paste it in chat."))
-            .catch(() => message(command));
-        line.append(code, copy);
-        done.append(line);
-      }
-      const open = el("button", "Open Library");
-      open.type = "button";
-      open.onclick = () => {
-        importStage = null;
-        renderImport();
-        view = "home";
-        render();
-        window.scrollTo(0, 0);
+      importStage = null;
+      renderImport();
+      // Link them like any library asset: one review for the chosen place.
+      const target = global.checked ? home.user : home.project;
+      await cancelReview();
+      const result = await api("selections", {
+        target,
+        source: personal.source,
+        direction: "inbound",
+        selections: chosen.map((c) => ({ kind: c.kind, name: c.name })),
+      });
+      undo = {
+        steps: [{ target, direction: "inbound", previous: result.previous }],
+        patches: new Map(),
+        touched: [],
       };
-      done.append(open);
-      panel.replaceChildren(done);
+      applyNote =
+        chosen.map((c) => c.name).join(", ") +
+        (global.checked
+          ? " installed globally. Try it in a new agent session."
+          : " installed in " +
+            projectName() +
+            ". Try it in a new agent session.");
+      await refresh(true);
+      await previewMany([
+        {
+          path: target,
+          label: global.checked ? "Global" : projectName(),
+        },
+      ]);
     });
   box.replaceChildren(panel);
 }
@@ -3326,6 +3310,188 @@ function expandable(row) {
     row.classList.add("open");
     toggle.setAttribute("aria-expanded", "true");
   }
+}
+
+// ---------------------------------------------------------------- own library → team (ADR 008)
+function personalRow(row) {
+  const id = "p/" + row.kind + "/" + row.name;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", row.name),
+    el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+  );
+  wrap.append(name);
+  if (row.description) wrap.append(el("p", row.description, "lib-desc"));
+  wrap.append(
+    el(
+      "p",
+      "In your own library" +
+        (row.exists_in ? " · the team also has one with this name" : ""),
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  const open = el(
+    "button",
+    "Share with team…",
+    versionPanel === id ? "quiet on" : "",
+  );
+  open.type = "button";
+  open.onclick = () => toggleVersionPanel(id);
+  act.append(open);
+  wrap.append(act);
+  if (versionPanel === id) wrap.append(promotePanel(row));
+  return wrap;
+}
+function promotePanel(row) {
+  const panel = el("div", undefined, "share-panel");
+  const teams = (home?.libraries || []).filter(
+    (lib) => !lib.personal && lib.is_repo,
+  );
+  if (!teams.length) {
+    panel.append(
+      el("p", "Add your team library first (Settings).", "hint warn"),
+    );
+    return panel;
+  }
+  const note = el("textarea");
+  note.rows = 2;
+  note.value = row.description || "Add " + row.name;
+  const noteLabel = el("label", "What is it good for? Teammates see this.");
+  noteLabel.append(note);
+  panel.append(noteLabel);
+  let team = null;
+  if (teams.length > 1) {
+    team = el("select");
+    for (const lib of teams) {
+      const option = el("option", lib.source);
+      option.value = lib.source;
+      team.append(option);
+    }
+    const label = el("label", "Team library");
+    label.append(team);
+    panel.append(label);
+  }
+  const pushBox = el("label", undefined, "check");
+  const push = el("input");
+  push.type = "checkbox";
+  push.checked = true;
+  pushBox.append(push, " Push to the team now");
+  panel.append(pushBox);
+  const changes = el("div", undefined, "share-changes");
+  panel.append(changes);
+  const actions = el("div", undefined, "actions");
+  const go = el("button", "Share with team");
+  go.type = "button";
+  go.disabled = true;
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => toggleVersionPanel(versionPanel);
+  actions.append(go, cancel);
+  panel.append(actions);
+  let plan = null;
+  const load = () =>
+    task(async () => {
+      go.disabled = true;
+      changes.replaceChildren(el("p", "Preparing…", "hint"));
+      plan = await api("promote-plan", {
+        kind: row.kind,
+        name: row.name,
+        team: team?.value || teams[0].source,
+        target: home.project,
+      });
+      const lines = plan.changes.map((change) => {
+        const line = el("div", undefined, "change");
+        if (change.op === "relink") {
+          // Places, in this window's words: Global or the project's name.
+          const place =
+            change.path === home.user
+              ? "Global"
+              : (change.path || "").split("/").pop();
+          line.append(
+            el("strong", "Switch to the team version"),
+            " · " + place,
+          );
+          return line;
+        }
+        line.append(
+          el(
+            "strong",
+            change.op,
+            /archive|remove/.test(change.op) ? "op-remove" : "",
+          ),
+          " ",
+          el("code", shortPath(change.path || "")),
+        );
+        return line;
+      });
+      for (const path of plan.commit_paths || []) {
+        const line = el("div", undefined, "change");
+        line.append(el("strong", "Commit"), " ", el("code", path));
+        lines.push(line);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      changes.replaceChildren(...lines);
+      go.disabled = !plan.can_apply;
+    });
+  if (team) team.onchange = load;
+  go.onclick = () =>
+    task(async () => {
+      if (!note.value.trim())
+        throw new Error("Say in a few words what it is good for.");
+      const result = await api("promote-apply", {
+        fingerprint: plan.fingerprint,
+        note: note.value.trim(),
+        push: push.checked,
+      });
+      const done = el("div", undefined, "share-done");
+      done.append(
+        el(
+          "strong",
+          result.pushed
+            ? row.name + " is shared with the team."
+            : row.name + " is in the team library but not pushed yet.",
+        ),
+      );
+      if ((result.relinked || []).length)
+        done.append(
+          el(
+            "p",
+            "Your agents now use the team version (" +
+              result.relinked
+                .map((path) =>
+                  path === home.user ? "Global" : path.split("/").pop(),
+                )
+                .join(", ") +
+              ").",
+            "hint",
+          ),
+        );
+      for (const problem of [
+        result.push_error,
+        ...(result.errors || []),
+      ].filter(Boolean))
+        done.append(el("p", problem, "hint warn"));
+      const command = "captain-share get " + row.name;
+      const copy = el("div", undefined, "copy-line");
+      const code = el("code", "Try " + row.name + ": " + command);
+      const button = el("button", "Copy", "quiet");
+      button.type = "button";
+      button.onclick = () =>
+        navigator.clipboard
+          .writeText(code.textContent)
+          .then(() => message("Copied. Paste it in chat."))
+          .catch(() => message(code.textContent));
+      copy.append(code, button);
+      done.append(el("p", "Tell your team. Paste this in chat:", "hint"), copy);
+      panel.replaceChildren(done);
+      shareData = null;
+      home = await api("home").catch(() => home);
+    });
+  setTimeout(load);
+  return panel;
 }
 
 task(refresh);

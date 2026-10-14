@@ -307,14 +307,18 @@ shows the links it will create, and applies after Apply changes; Cancel puts the
 choice back. Remove archives the links. Hover a row for Copy get command, a line a
 teammate can run: `captain-share get NAME`.
 
-### Add a skill from elsewhere
+### Install from a zip or folder
 
-Share also takes a skill that arrived without Captain Share: Upload a zip… or
-Choose a folder… (a colleague's folder, a downloaded repository). The archive is
-checked first (no paths outside it, no links, size and file-count limits; nothing
-is run), every skill, agent, prompt or power found is listed with its description,
-and you can rename each one before Add to library copies, commits and optionally
-pushes it. See [ADR 006](docs/adr/006-import-from-outside.md).
+Library takes a skill that arrived without Captain Share: Install from a zip or
+folder (a download, a colleague's folder). The archive is checked first (no paths
+outside it, no links, size and file-count limits; nothing is run). You choose
+Global or Only in this project; the skill goes into your own library
+(`~/Libraries/my-skills`, a local Git repository that is never pushed) and is
+linked like any library asset, so you can try it. When it proves useful, Share →
+In your own library → Share with team copies it into the team library, commits and
+pushes, switches your links to the team version, and moves it out of your own
+library. See [ADR 006](docs/adr/006-import-from-outside.md) and
+[ADR 008](docs/adr/008-personal-library.md).
 
 ### Share: pass a skill on
 
@@ -331,6 +335,13 @@ every agent you use links to the shared version. Skills that are already in a
 library show **Use team version…** instead; if your copy differs, the review says so
 and offers Replace mine (archived) or Keep mine. CLI: `captain-share adopt KIND NAME
 --source S [--replace] [--apply]`, or `captain-share share … --adopt`.
+
+To try a skill before sharing it, `captain-share install PATH --apply` adds a zip's
+or folder's assets to your private library `my-skills` (`~/Libraries/my-skills`, a
+local Git repository that is never pushed) and installs them for your user (`--here`
+for the project). `captain-share promote KIND NAME --to TEAM --note TEXT --apply`
+later moves one to a team library and relinks every place that used it
+([ADR 008](docs/adr/008-personal-library.md)).
 
 A library's starter set (`profiles/starter.manifest`, offered to new teammates) is
 edited with `captain-share starter SOURCE` (lists it) and `--set kind/name,…`,

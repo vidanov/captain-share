@@ -154,6 +154,22 @@ def parser():
     )
     keep.add_argument("--apply", action="store_true")
     sub.add_parser("versions", help="List your kept versions and whether the team's changed")
+    ins = sub.add_parser(
+        "install",
+        help="Add skills from a zip file or folder to your library (my-skills) and get them",
+    )
+    ins.add_argument("path", metavar="PATH", help="A zip file or a folder")
+    ins.add_argument(
+        "--here", action="store_true", help="Install into --target (or this folder) instead"
+    )
+    ins.add_argument("--apply", action="store_true", help="Add, commit locally and install")
+    prom = sub.add_parser("promote", help="Move an asset from my-skills to a team library")
+    prom.add_argument("kind", choices=list(c.KINDS))
+    prom.add_argument("name")
+    prom.add_argument("--to", dest="team", required=True, metavar="TEAM")
+    prom.add_argument("--note", help="Commit message in the team library (needed to apply)")
+    prom.add_argument("--push", action="store_true")
+    prom.add_argument("--apply", action="store_true")
     st = sub.add_parser("starter", help="Show or change a library's starter set")
     st.add_argument("source")
     change = st.add_mutually_exclusive_group()
@@ -450,6 +466,99 @@ def import_assets(args, target):
     return result
 
 
+def staged(path):
+    """(root, temporary folder or None) for a zip file or folder given on the command line."""
+    if path.is_file():
+        if not zipfile.is_zipfile(path):
+            raise c.ShareError(f"Not a zip file or folder: {path}")
+        temp = Path(tempfile.mkdtemp(prefix="captain-share-import-"))
+        return im.unzip_file(path, temp)[1], temp
+    return c.root(path), None
+
+
+def install(args, project):
+    """Add a zip's or folder's assets to the personal library (ADR 008), committing
+    locally, then get each one for the user (or --here for the project)."""
+    from . import personal as me
+
+    path = Path(args.path).expanduser().absolute()
+    home = c.global_dir().parent
+    target = project if args.here else home
+    root, temp = staged(path)
+    try:
+        rows = im.find(root, str(path) if temp else "")
+        items = import_items(rows, None, None, path)
+        report: dict = {"library": None, "added": [], "installed": [], "applied": False}
+        if not args.apply:
+            if not args.json:
+                print(f"Found in {path}:")
+                for row in rows:
+                    note = f"  (cannot add: {row['error']})" if row["error"] else ""
+                    print(f"  {row['kind']:10} {row['name']}{note}")
+                where = "this project" if args.here else "your user"
+                print(f"Run with --apply to add them to {me.SOURCE} and install them for {where}.")
+            report["candidates"] = rows
+            return report
+        report["library"] = me.ensure()
+        names = ", ".join(row["name"] for row in items)
+        planned = im.plan(target, me.SOURCE, root, items, label=str(path))
+        if not planned["can_apply"]:
+            report["plan"] = planned
+            if not args.json:
+                for error in planned["errors"]:
+                    print(f"  Blocked: {error}")
+            return {**report, "can_apply": False}
+        im.apply(planned, f"Add {names}", push=False)
+        report["added"] = [f"{row['kind']}/{row['name']}" for row in items]
+    finally:
+        if temp is not None:
+            shutil.rmtree(temp, ignore_errors=True)
+    for row in items:
+        if row["kind"] == "powers":
+            continue
+        c.select(target, "inbound", me.SOURCE, row["kind"], row["name"])
+    result = e.plan(target, "inbound")
+    report["plan"] = result
+    if not result["can_apply"]:
+        if not args.json:
+            output(result)
+            print(f"Added to {me.SOURCE}, but not installed; resolve the conflicts above.")
+        return {**report, "can_apply": False}
+    e.apply(result)
+    report.update(installed=report["added"], applied=True)
+    if not args.json:
+        print(
+            f"Added {names} to {me.SOURCE} and installed for "
+            + ("this project." if args.here else "your user.")
+        )
+    return report
+
+
+def promote(args, target):
+    from . import personal as me
+    from .server import places
+
+    planned = me.promote_plan(target, args.kind, args.name, args.team, places(target))
+    if not args.apply or not planned["can_apply"]:
+        if not args.json:
+            for row in planned["changes"]:
+                where = row.get("label") or row["path"]
+                print(f"  {row['op']:8} {where}")
+            for error in planned["errors"]:
+                print(f"  Blocked: {error}")
+        return planned
+    if not args.note:
+        raise c.ShareError("Add --note describing the asset; it is the team commit message")
+    result = me.promote_apply(planned, args.note, args.push)
+    if not args.json:
+        print(f"Committed {result['commit'][:12]} in {args.team}.")
+        if args.push:
+            print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        for problem in result["errors"]:
+            print(f"  Not finished: {problem}")
+    return result
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -532,8 +641,14 @@ def main(argv=None):
                 raise c.ShareError("Saved plan targets a different folder than --target")
             # A saved plan owns its target; an explicit mismatch is rejected.
             result = e.apply(saved)
-        elif command in ("get", "share", "import"):
-            handler = {"get": get, "share": share, "import": import_assets}[command]
+        elif command in ("get", "share", "import", "install", "promote"):
+            handler = {
+                "get": get,
+                "share": share,
+                "import": import_assets,
+                "install": install,
+                "promote": promote,
+            }[command]
             result = handler(args, target)
             if args.json:
                 output(result, True)
@@ -541,6 +656,7 @@ def main(argv=None):
                 result.get("can_apply") is False
                 or result.get("push_error")
                 or result.get("adopt_error")
+                or result.get("errors")
             )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
         elif command == "diff":

@@ -21,6 +21,7 @@ from . import config as c
 from . import engine as e
 from . import imports as im
 from . import integrations as i
+from . import personal as me
 from . import repositories as r
 
 WEB = Path(__file__).parent / "web"
@@ -521,6 +522,8 @@ def library_home(startup, baseline):
             "updated": 0,
             "starter": [],
             "error": None,
+            # The personal library (ADR 008) has no remote and is never marked new.
+            "personal": me.is_personal(source, spec.get("path")),
         }
         libraries.append(info)
         try:
@@ -546,9 +549,11 @@ def library_home(startup, baseline):
                 last_commit_at=r.last_commit_at(lib["repo"]),
             )
             info["url"] = info["url"] or git["remote_url"] or None
+            if info["personal"]:
+                info.update(behind=None, ahead=None, url=None)
             made = r.history(lib["repo"], lib["prefix"])
             edited = r.edits(lib["repo"], lib["prefix"], git["changes"])
-        before = baseline.get(source)
+        before = None if info["personal"] else baseline.get(source)
         if before is not None and lib["repo"] is not None:
             changed = r.changed_between(lib["repo"], lib["prefix"], before.get("head"), head)
         keys = []
@@ -670,11 +675,36 @@ def share_candidates(target):
                 "differs": differs,
             }
         )
+    personal = []
+    if me.SOURCE in cfg["sources"]:
+        try:
+            base = r.library(target, me.SOURCE)["path"]
+            rows = e.catalog(target, me.SOURCE)
+        except (c.ShareError, OSError):
+            rows = []
+        for row in rows:
+            if row["status"] != "available":
+                continue
+            others = [
+                found
+                for found in e.locate(cfg, row["name"], kind=row["kind"])
+                if found[0] != me.SOURCE
+            ]
+            personal.append(
+                {
+                    "kind": row["kind"],
+                    "name": row["name"],
+                    "description": row.get("description", ""),
+                    "path": Path(row["path"]).relative_to(base).as_posix(),
+                    "exists_in": others[0][0] if others else None,
+                }
+            )
     return {
         "local": local,
         "edited": edited,
         "libraries": names,
         "versions": r.version_rows(target),
+        "personal": personal,
     }
 
 
@@ -952,6 +982,25 @@ def make_server(target, port=0):
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
+                elif path == "/api/personal-library":
+                    result = me.ensure()
+                    plans.clear()
+                elif path == "/api/promote-plan":
+                    result = me.promote_plan(
+                        target, data["kind"], data["name"], data["team"], places(startup)
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/promote-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "promote" not in saved:
+                        raise c.ShareError("Preview the move again before applying")
+                    plans.pop(fingerprint)
+                    result = me.promote_apply(saved, data["note"], data.get("push") is True)
                 elif path == "/api/starter-plan":
                     result = r.starter_plan(
                         target, data["source"], data.get("assets", []), data.get("clear", False)
@@ -1180,7 +1229,9 @@ def make_server(target, port=0):
                     saved = plans.get(fingerprint)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
-                    if any(k in saved for k in ("share", "import", "propose", "starter")):
+                    if any(
+                        k in saved for k in ("share", "import", "propose", "starter", "promote")
+                    ):
                         # A share or import also commits; it is applied only with its note.
                         raise c.ShareError("Apply a share or import preview with its note")
                     plans.pop(fingerprint)

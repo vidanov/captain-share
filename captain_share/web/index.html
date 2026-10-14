@@ -92,6 +92,28 @@
           machine can use it.
         </p>
         <div id="library-strips"></div>
+        <section class="strip import-strip" aria-labelledby="import-title">
+          <p>
+            <span id="import-title">Install from a zip or folder</span>
+            <small
+              >Downloaded a skill, or got one from a colleague? Try it first. It
+              goes into your own library on this machine; share it later.</small
+            >
+          </p>
+          <input
+            id="import-file"
+            type="file"
+            accept=".zip,application/zip"
+            hidden
+          />
+          <input id="import-path" type="hidden" />
+          <button id="import-zip" type="button" class="quiet">
+            Upload a zip…</button
+          ><button id="import-folder" type="button" class="quiet">
+            Choose a folder…
+          </button>
+        </section>
+        <div id="import-panel"></div>
         <div class="list-tools">
           <label class="visually-hidden" for="home-search">Search assets</label
           ><input
@@ -114,28 +136,6 @@
           Skills you made or changed that are not in the team library yet.
           Sharing copies them into the library, commits, and pushes.
         </p>
-        <section class="strip import-strip" aria-labelledby="import-title">
-          <p>
-            <span id="import-title">Add a skill from elsewhere</span>
-            <small
-              >A zip you downloaded or a folder a colleague sent. It is checked,
-              copied into your library, and committed.</small
-            >
-          </p>
-          <input
-            id="import-file"
-            type="file"
-            accept=".zip,application/zip"
-            hidden
-          />
-          <input id="import-path" type="hidden" />
-          <button id="import-zip" type="button" class="quiet">
-            Upload a zip…</button
-          ><button id="import-folder" type="button" class="quiet">
-            Choose a folder…
-          </button>
-        </section>
-        <div id="import-panel"></div>
         <div class="list-tools list-tools-end">
           <button type="button" class="density quiet">Compact view</button>
         </div>
@@ -223,6 +223,7 @@
           </section>
           <h2 class="settings-title">Libraries</h2>
           <div id="library-list" class="library-list"></div>
+          <h2 class="settings-title">Add a library</h2>
           <div id="settings-found" class="found"></div>
           <details id="add-library" class="panel-block">
             <summary>Add a library folder</summary>
@@ -304,8 +305,9 @@
               </p>
             </form>
           </details>
-          <section class="panel-block" aria-label="Repository status">
-            <h2>Repository</h2>
+          <h2 class="settings-title">Advanced</h2>
+          <details class="panel-block">
+            <summary>Repository status, pull and push</summary>
             <label for="repo-scope">Show repository</label
             ><select id="repo-scope">
               <option value="library">Selected library</option>
@@ -326,7 +328,7 @@
               <button id="git-confirm">Confirm</button
               ><button id="git-cancel" class="quiet">Cancel</button>
             </div>
-          </section>
+          </details>
           <details class="panel-block">
             <summary>Configuration layers</summary>
             <ul id="layers"></ul>

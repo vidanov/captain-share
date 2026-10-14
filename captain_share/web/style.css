@@ -1092,6 +1092,12 @@ button.link:hover {
   max-width: 76rem;
   margin: 0 auto;
 }
+.bay.narrow {
+  max-width: 52rem;
+}
+.bay.narrow .bay-tools {
+  display: none;
+}
 .bay-head {
   display: flex;
   flex-direction: column;
