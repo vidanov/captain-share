@@ -683,13 +683,28 @@ def share_candidates(target):
         if row["status"] != "local":
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
-        differs = None
+        differs, older = None, None
         if found:
             original = e.source_path(cfg, found[0][0], row["kind"], row["name"])
             try:
                 differs = not e.same_content(target / row["path"], original)
             except (c.ShareError, OSError):
                 differs = True
+            if differs:
+                # An old team version is not the user's change (for example a copy
+                # left by an earlier installer): say so instead of offering to send it.
+                try:
+                    lib = r.library(target, found[0][0])
+                    if lib["repo"] is not None:
+                        older = r.older_version(
+                            lib["repo"],
+                            lib["prefix"],
+                            row["kind"],
+                            row["name"],
+                            target / row["path"],
+                        )
+                except (c.ShareError, OSError):
+                    older = None
         local.append(
             {
                 "kind": row["kind"],
@@ -698,6 +713,7 @@ def share_candidates(target):
                 "description": e.describe(target / row["path"], row["kind"]),
                 "exists_in": found[0][0] if found else None,
                 "differs": differs,
+                "older": older,
             }
         )
     personal = []
