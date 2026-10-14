@@ -64,7 +64,9 @@ when they are explicitly synced, not automatically to every child repository.
   written to the library checkout; existing shared edits cause a conflict.
   Generated outputs, private project context, fonts and licensed material need
   their own distribution decision. The built-in credential/path scan is only a
-  heuristic, never a confidentiality or licensing verdict.
+  heuristic, never a confidentiality or licensing verdict. A hidden-character error
+  (bidirectional override, zero-width, Unicode tag) blocks share and install alike:
+  show the user the reported line; do not strip it without their review.
 - **Choose agent tools:** `tools` shows the enabled list; `tools kiro claude codex
   copilot` sets it for the target (`--target "$HOME"` for every project). Skills then
   link into `.kiro/skills/`, `.claude/skills/`, and `.agents/skills/` (Codex) from one
