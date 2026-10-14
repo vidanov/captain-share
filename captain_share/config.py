@@ -47,8 +47,9 @@ class ShareError(Exception):
 DESTINATIONS = {
     # Codex reads the shared Agent Skills folder (.agents/skills) and follows symlinks.
     "skills": {"kiro": ".kiro/skills", "claude": ".claude/skills", "codex": ".agents/skills"},
-    "agents": {"kiro": ".kiro/agents"},
-    # Claude reads prompts as commands and steering as rules: generated files (ADR 012).
+    # Claude reads agents as subagents, prompts as commands and steering as rules or
+    # skills: generated files (ADR 012, ADR 013).
+    "agents": {"kiro": ".kiro/agents", "claude": ".claude/agents"},
     "prompts": {"kiro": ".kiro/prompts", "claude": ".claude/commands"},
     "steering": {"kiro": ".kiro/steering", "claude": ".claude/rules"},
     "copilot": {"copilot": ".github"},

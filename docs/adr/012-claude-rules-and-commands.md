@@ -1,6 +1,6 @@
 # ADR 012: Steering and prompts for Claude Code as generated files
 
-Status: Accepted
+Status: Accepted (extended by ADR 013: manual/auto steering and agents)
 
 ## Context
 
