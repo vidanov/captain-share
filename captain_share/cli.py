@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import shutil
 import sys
 import tempfile
@@ -273,6 +274,13 @@ def parser():
     ren.add_argument(
         "--clean", action="store_true", help="Archive generated files nothing links any more"
     )
+    chk = sub.add_parser(
+        "check", help="Show or set the command that checks a library before a share commits"
+    )
+    chk.add_argument("source")
+    chk_set = chk.add_mutually_exclusive_group()
+    chk_set.add_argument("--set", metavar="COMMAND", help='e.g. "python3 scripts/check.py"')
+    chk_set.add_argument("--clear", action="store_true")
     why = sub.add_parser(
         "why", help="Show which library and asset a file in an agent folder came from"
     )
@@ -914,6 +922,15 @@ def main(argv=None):
                 elif result["unused"]:
                     print(f"{len(result['unused'])} unused; --clean archives them.")
                 return 0
+        elif command == "check":
+            if args.set is not None or args.clear:
+                command = None if args.clear else shlex.split(args.set) or None
+                result = c.set_check(target, args.source, command)
+            else:
+                spec = c.effective(target)["sources"].get(args.source)
+                if spec is None:
+                    raise c.ShareError(f"Unknown library {args.source}")
+                result = {"source": args.source, "check": spec.get("check")}
         elif command == "why":
             result = e.why(args.path)
             if not args.json:

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import subprocess
 import sys
 import time
@@ -273,6 +274,15 @@ def asset_preview(target, source, kind, name, local=None):
         "text": text,
         "truncated": truncated,
     }
+
+
+def why_inside(target, value):
+    """`why` for a path in this window's folder or the home folder's agent folders."""
+    path = Path(os.path.abspath(Path(value).expanduser())) if value else None
+    roots = [c.root(target), c.global_dir().parent]
+    if path is None or not any(path == base or base in path.parents for base in roots):
+        raise c.ShareError("Choose a file in this project or your home folder")
+    return e.why(path)
 
 
 def reveal_path(target, value):
@@ -904,6 +914,11 @@ def make_server(target, port=0):
                             query.get("local", [""])[0] or None,
                         )
                     )
+                elif parsed.path == "/api/outdated":
+                    # Read-only: compares with the commits last fetched (ADR 011).
+                    self.respond(r.outdated(target))
+                elif parsed.path == "/api/why":
+                    self.respond(why_inside(target, parse_qs(parsed.query).get("path", [""])[0]))
                 elif parsed.path == "/api/share-candidates":
                     self.respond(share_candidates(target))
                 elif parsed.path == "/api/diff":
@@ -1061,7 +1076,17 @@ def make_server(target, port=0):
                     plans.pop(fingerprint)
                     result = dc.apply(saved)
                 elif path == "/api/library-settings":
-                    result = c.set_sign(target, data["source"], data["sign"])
+                    if "check" in data:
+                        text = data["check"]
+                        if not isinstance(text, str):
+                            raise c.ShareError("check must be a command line or empty")
+                        try:
+                            command = shlex.split(text) or None
+                        except ValueError as exc:
+                            raise c.ShareError(f"Could not read the command: {exc}") from exc
+                        result = c.set_check(target, data["source"], command)
+                    else:
+                        result = c.set_sign(target, data["source"], data["sign"])
                     plans.clear()
                 elif path == "/api/fetch":
                     result = r.fetch(target, data["source"])

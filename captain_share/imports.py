@@ -518,7 +518,7 @@ def apply(saved, note, push=False):
             ) from exc
         repo = Path(current["import"]["repository"])
         try:
-            sha = r.commit(repo, current["commit_paths"], note, lib["sign"])
+            sha = r.commit(repo, current["commit_paths"], note, lib["sign"], lib["check"])
         except c.ShareError as exc:
             raise exc.wrap(
                 f"Copied into the library, but the commit failed: {exc}. "
@@ -529,6 +529,6 @@ def apply(saved, note, push=False):
         "commit": sha,
         "pushed": pushed,
         **failure,
-        **r.direct_fields(args["source"], repo),
+        **r.direct_fields(args["source"], repo, lib["check"]),
         "get_commands": get_commands,
     }

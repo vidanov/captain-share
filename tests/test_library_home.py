@@ -4,6 +4,7 @@ import json
 import os
 import threading
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from captain_share import cli
@@ -311,6 +312,50 @@ class ShareApiTests(LibraryFixture):
         )
         self.assertEqual(code, 200, view)
 
+    def test_library_check_runs_before_the_commit(self):
+        import sys
+
+        self.skill(self.repo / "skills/mine")
+        (self.lib / "catalog.txt").write_text("old")
+        self.commit(self.lib, "Add catalog")
+        refresh = "open('catalog.txt', 'w').write('refreshed')"
+        c.set_check(self.repo, "team", [sys.executable, "-c", refresh])
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
+        _, plan = self.request("/api/share-plan", body)
+        code, result = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share mine"}
+        )
+        self.assertEqual(code, 200, result)
+        self.assertIn("-c", result["checked"])
+        files = e.git(self.lib, "show", "--name-only", "--format=", "HEAD").stdout.decode().split()
+        self.assertEqual(files, ["catalog.txt", "ip/skills/mine/SKILL.md"])
+        # A failing check commits nothing and says how to run it again.
+        fail = "import sys; print('ip/skills/other: not allowed'); sys.exit(1)"
+        c.set_check(self.repo, "team", [sys.executable, "-c", fail])
+        self.skill(self.repo / "skills/other")
+        body = {**body, "name": "other", "path": "skills/other"}
+        _, plan = self.request("/api/share-plan", body)
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout
+        code, failed = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share other"}
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("library check failed", failed["error"])
+        self.assertIn("not allowed", failed["detail"])
+        self.assertIn("cd ", failed["command"])
+        self.assertEqual(e.git(self.lib, "rev-parse", "HEAD").stdout, head)
+        self.assertTrue((self.lib / "ip/skills/other/SKILL.md").is_file())
+        # Settings: a command line is stored as arguments; empty turns it off.
+        code, saved = self.request(
+            "/api/library-settings", {"source": "team", "check": 'python3 "my check.py" --x'}
+        )
+        self.assertEqual(saved["check"], ["python3", "my check.py", "--x"])
+        _, cleared = self.request("/api/library-settings", {"source": "team", "check": ""})
+        self.assertIsNone(cleared["check"])
+        with self.assertRaises(c.ShareError):
+            c.set_check(self.repo, "team", ["", "x"])
+
     def test_share_commits_only_the_asset_and_pushes(self):
         remote = self.remote()
         self.skill(self.repo / "skills/mine")
@@ -341,7 +386,7 @@ class ShareApiTests(LibraryFixture):
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
             | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         # The result says where the commit went.
         self.assertEqual((result["library"], result["landed_on"]), ("team", "main"))
@@ -576,6 +621,25 @@ class AdoptTests(LibraryFixture):
         args = {"action": "adopt", "kind": "skills", "asset": "hello", "source": "team"}
         return e.plan(self.repo, **{**args, **extra})
 
+    def test_adopt_keeps_a_link_another_tool_made_to_the_original(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        link = self.repo / ".kiro/skills/hello"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(self.lib / "ip/skills/hello")
+        planned = e.plan(self.repo, action="adopt", kind="skills", asset="hello", source="team")
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        self.assertEqual(
+            [
+                (x["op"], Path(x["path"]).relative_to(self.repo).as_posix())
+                for x in planned["changes"]
+            ],
+            [("link", ".claude/skills/hello")],
+        )
+        e.apply(planned)
+        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/hello"))
+        self.assertTrue(e.status(self.repo)["ok"])
+        self.assertIn(".kiro/skills/hello", e.state(self.repo)["inbound"])
+
     def test_equal_copies_in_two_tools_are_archived_linked_and_restorable(self):
         c.set_tools(self.repo, ["kiro", "claude"])
         original = self.lib / "ip/skills/hello"
@@ -707,7 +771,7 @@ class AdoptTests(LibraryFixture):
             set(result),
             {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error", "branch"}
             | {"review_url", "push_error_hint", "push_error_command", "waiting_for_review"}
-            | {"library", "landed_on"},
+            | {"library", "landed_on", "checked"},
         )
         self.assertEqual(
             (result["pushed"], result["adopted"], result["adopt_error"]), (True, True, None)
@@ -822,3 +886,26 @@ class OutdatedTests(LibraryFixture):
             code = cli.main(["--target", str(self.repo), "outdated"])
         self.assertEqual(code, 0)
         self.assertIn("Everything is up to date (1)", out.getvalue())
+
+
+class BehindApiTests(LibraryFixture):
+    def test_outdated_and_why_endpoints(self):
+        first = (self.lib / "ip/skills/hello/SKILL.md").read_text()
+        (self.lib / "ip/skills/hello/SKILL.md").write_text(first + "\nnewer")
+        self.commit(self.lib, "Improve hello")
+        old = self.repo / ".kiro/skills/hello"
+        old.mkdir(parents=True)
+        (old / "SKILL.md").write_text(first)
+        self.start()
+        code, report = self.request("/api/outdated")
+        self.assertEqual(code, 200, report)
+        self.assertIn(
+            ("older-copy", ".kiro/skills/hello"),
+            {(x["state"], x.get("path")) for x in report["rows"]},
+        )
+        code, found = self.request("/api/why?path=" + str(old))
+        self.assertEqual(code, 200, found)
+        self.assertEqual((found["status"], found["source"]), ("local", "team"))
+        outside = self.base.parent / "elsewhere"
+        self.assertEqual(self.request("/api/why?path=" + str(outside))[0], 400)
+        self.assertEqual(self.request("/api/why?path=")[0], 400)
