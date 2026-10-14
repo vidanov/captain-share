@@ -1426,3 +1426,163 @@ def starter_apply(saved, note, push=False):
         **failure,
         **direct_fields(args["source"], lib["repo"]),
     }
+
+
+def outdated(target, do_fetch=False):
+    """What has a newer or different version than the library, for the user (home)
+    and the target folder. Uses the commits last fetched; `do_fetch` fetches first."""
+    home = c.global_dir().parent
+    target = c.root(target)
+    places = [home] + ([target] if target != home else [])
+    libs: dict[str, Any] = {}
+    statuses: dict[str, Any] = {}
+    problems: list[str] = []
+
+    def lib_for(place, source):
+        if source not in libs:
+            try:
+                libs[source] = library(place, source)
+            except c.ShareError as exc:
+                libs[source] = exc
+        return libs[source]
+
+    if do_fetch:
+        sources = set()
+        for place in places:
+            try:
+                sources.update(c.effective(place)["sources"])
+            except c.ShareError:
+                continue
+        for source in sorted(sources):
+            lib = lib_for(target, source)
+            if isinstance(lib, c.ShareError) or lib["repo"] is None:
+                continue
+            try:
+                if status(target, source).get("remote_url"):
+                    fetch(target, source)
+            except c.ShareError as exc:
+                problems.append(f"{source}: {exc}")
+
+    def library_status(source, lib):
+        if source not in statuses:
+            statuses[source] = status_of(lib["path"])
+        return statuses[source]
+
+    rows = []
+    for place in places:
+        label = "Global" if place == home else str(place)
+        try:
+            installed = e.state(place)["inbound"]
+            cfg = c.effective(place)
+        except c.ShareError as exc:
+            problems.append(f"{label}: {exc}")
+            continue
+        seen = set()
+        for row in installed.values():
+            key = (row["source"], row["kind"], row["name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            source, kind, name = key
+            item = {"place": label, "source": source, "kind": kind, "name": name}
+            lib = lib_for(place, source)
+            if isinstance(lib, c.ShareError) or lib["repo"] is None:
+                item.update(state="unknown", detail="the library is not a Git checkout here")
+                rows.append(item)
+                continue
+            try:
+                original = e.source_path(lib["cfg"], source, kind, name)
+            except c.ShareError as exc:
+                item.update(state="unknown", detail=str(exc))
+                rows.append(item)
+                continue
+            rel = original.relative_to(lib["repo"]).as_posix()
+            commit, _, when = (
+                quiet(lib["repo"], "log", "-1", "--format=%h %cI", "--", rel).strip().partition(" ")
+            )
+            item["have"] = {"commit": commit or None, "at": iso(when) or None}
+            newer = []
+            if quiet(lib["repo"], "rev-parse", "--verify", "-q", "@{upstream}").strip():
+                newer = quiet(
+                    lib["repo"], "log", "--format=%h", "HEAD..@{upstream}", "--", rel
+                ).split()
+            st = library_status(source, lib)
+            edited = any(
+                change["path"] == rel or change["path"].startswith(rel + "/")
+                for change in st.get("changes", [])
+            )
+            if newer:
+                item.update(state="newer", newer=len(newer))
+            elif edited:
+                item.update(state="edited")
+            else:
+                item.update(state="current")
+            rows.append(item)
+        for found in e.scan(place):
+            if found["status"] != "local":
+                continue
+            matches = e.locate(cfg, found["name"], kind=found["kind"])
+            if not matches:
+                continue
+            source = matches[0][0]
+            local = place / found["path"]
+            item = {
+                "place": label,
+                "source": source,
+                "kind": found["kind"],
+                "name": found["name"],
+                "path": found["path"],
+            }
+            try:
+                original = e.source_path(cfg, source, found["kind"], matches[0][2])
+                if e.same_content(local, original):
+                    item.update(state="copy-current")
+                    rows.append(item)
+                    continue
+            except (c.ShareError, OSError):
+                pass
+            lib = lib_for(place, source)
+            older = None
+            if not isinstance(lib, c.ShareError) and lib["repo"] is not None:
+                older = older_version(
+                    lib["repo"], lib["prefix"], found["kind"], matches[0][2], local
+                )
+            if older:
+                item.update(state="older-copy", older=older)
+            else:
+                item.update(state="changed-copy")
+            rows.append(item)
+        for version in version_rows(place):
+            if version["team_changed"]:
+                rows.append(
+                    {
+                        "place": label,
+                        "source": version["source"],
+                        "kind": version["kind"],
+                        "name": version["name"],
+                        "of": version["of"],
+                        "state": "kept-behind",
+                    }
+                )
+    connected = set()
+    for place in places:
+        try:
+            connected.update(c.effective(place)["sources"])
+        except c.ShareError:
+            continue
+    known = remembered()
+    checked = {
+        source: (known.get(source) or {}).get("checked_at")
+        for source in sorted(connected)
+        if source != "my-skills"
+    }
+    return {"rows": rows, "checked": checked, "problems": problems}
+
+
+def status_of(path):
+    """Uncommitted changes of the Git repository at `path` (porcelain paths)."""
+    repo = e.git_root(path)
+    if repo is None:
+        return {}
+    out = quiet(repo, "status", "--porcelain=v1", "--untracked-files=all")
+    return {"changes": [{"path": line[3:]} for line in out.splitlines() if len(line) > 3]}
