@@ -8,6 +8,10 @@ const W = 1280, H = 800;
 const profile = mkdtempSync(process.env.TMPDIR + "/tour-");
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ["--headless=new", "--remote-debugging-port=9334", `--user-data-dir=${profile}`, "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+// A failed step must not leave Chrome on the debugging port for the next run.
+process.on("exit", () => chrome.kill());
+process.on("uncaughtException", (error) => { console.error(error); process.exit(1); });
+process.on("unhandledRejection", (error) => { console.error(error); process.exit(1); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let target;
 for (let i = 0; i < 50 && !target; i++) {
@@ -69,36 +73,47 @@ await js(`${row("pr-review")}.querySelector(".lib-act button:not(.link)").click(
 await shot("06-where.jpg", `document.querySelector('#review-where input[value="user"]').closest("label")`, { click: false,
   title: "Choose where it works", text: "Everywhere for you, in every project, or only in this project. The review shows the exact links before anything changes." });
 await js(`${q("#apply")}.click(); await new Promise(r => setTimeout(r, 2500));`);
-// 7 Share
+// 7 Look before sharing
 await go("share");
-await js(`document.querySelector("#share-lists .lib-act button").click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector(".share-panel textarea").value = "Explains a slow query plan and suggests indexes. Nice before a performance review.";`);
-await shot("07-share.jpg", byText(".share-panel button", "Share"), { click: true,
-  title: "Share what works", text: "Made a useful skill in a project? Share copies it into the library, commits it with your note, and pushes it to the team." });
+await js(`${byText("#share-lists .lib-act button", "Preview")}.click(); await new Promise(r => setTimeout(r, 1500));`);
+await shot("07-look.jpg", byText("#share-lists .lib-act button", "Hide preview"), { click: true,
+  title: "Look before you share", text: "Share lists skills in this project and in your global folders that no library has yet. Preview shows what is inside; Show in Finder opens the folder." });
+await js(`${byText("#share-lists .lib-act button", "Hide preview")}.click(); await new Promise(r => setTimeout(r, 800));`);
+// 8 Share
+await js(`${byText("#share-lists .lib-act button", "Share…")}.click(); await new Promise(r => setTimeout(r, 1500)); document.querySelector(".share-panel textarea").value = "Explains a slow query plan and suggests indexes. Nice before a performance review.";`);
+await shot("08-share.jpg", byText(".share-panel button", "Share"), { click: true,
+  title: "Share what works", text: "Share copies it into the library, commits it with your note, and pushes it to the team. A library check, when set, runs first." });
 await js(`${byText(".share-panel button", "Share")}.click(); await new Promise(r => setTimeout(r, 3500));`);
-// 8 Shared
-await shot("08-shared.jpg", byText(".share-done button", "Copy"), { click: true,
-  title: "Tell your team", text: "You get a line to paste in chat. That is all a teammate needs." });
-// 9 Terminal
+// 9 Shared
+await shot("09-shared.jpg", byText(".share-done button", "Copy"), { click: true,
+  title: "Tell your team", text: "The result says where the commit landed. You get a line to paste in chat; that is all a teammate needs." });
+// 10 Terminal
 steps.push({ terminal: "$ captain-share get sql-explain\n\nPreview: sync / inbound in ~\n  link   ~/.kiro/skills/sql-explain ← ~/Libraries/team/ip/skills/sql-explain\n  link   ~/.claude/skills/sql-explain ← ~/Libraries/team/ip/skills/sql-explain\n2 asset changes. Ready to apply.\nGet sql-explain? [y/N] y\nGot team/skills/sql-explain for your user.",
   title: "A teammate takes it", text: "They paste the line into a terminal, see what it will link, and confirm. The skill is in every project for them." });
-// 10 Import a zip
+// 11 Install a zip
 const b64 = readFileSync(`${F}/commit-message.zip`).toString("base64");
-await js(`const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), c => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([bytes], "commit-message.zip", {type: "application/zip"})); const input = ${q("#import-file")}; input.files = dt.files; input.dispatchEvent(new Event("change")); await new Promise(r => setTimeout(r, 2000)); document.querySelector("#import-panel textarea").value = "Writes a conventional commit message from the staged diff. Found it online, works well."; ${byText("#import-panel button", "Review")}.click(); await new Promise(r => setTimeout(r, 1500));`);
-await shot("10-import.jpg", byText("#import-panel button", "Add to library"), { click: true,
-  title: "Got a skill as a zip?", text: "Downloaded one, or a colleague sent a folder? Upload it here. It is checked first, then added to the library like any other." });
-await js(`${byText("#import-panel button", "Add to library")}.click(); await new Promise(r => setTimeout(r, 3000));`);
-// 11 Updates from others
-execSync(`rm -rf "${F}/jonas" && git clone -q "${F}/team.git" "${F}/jonas" && mkdir -p "${F}/jonas/ip/prompts" && printf "Turn merged pull requests into release notes.\\n" > "${F}/jonas/ip/prompts/release-notes.md" && git -C "${F}/jonas" add -A && git -C "${F}/jonas" -c user.name=Jonas -c user.email=jonas@example.com -c commit.gpgsign=false commit -qm "Share release-notes" && git -C "${F}/jonas" push -q`);
+await go("home");
+await js(`const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), c => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([bytes], "commit-message.zip", {type: "application/zip"})); const input = ${q("#import-file")}; input.files = dt.files; input.dispatchEvent(new Event("change")); await new Promise(r => setTimeout(r, 2500));`);
+await shot("11-install.jpg", byText("#import-panel button", "Install…"), { click: true,
+  title: "Got a skill as a zip?", text: "Downloaded one, or a colleague sent a folder? Install it into your own library first and try it. Share it with the team later, from Share." });
+await js(`${byText("#import-panel button", "Install…")}.click(); await new Promise(r => setTimeout(r, 2500)); ${q("#apply")}.click(); await new Promise(r => setTimeout(r, 2500));`);
+// 12 Updates from others. Someone kept an old copy of plan in the project; Jonas
+// improves plan and shares a prompt.
+execSync(`cp -R "${F}/home/Libraries/team/ip/skills/plan" "${F}/home/work/backend/.kiro/skills/plan" && rm -rf "${F}/jonas" && git clone -q "${F}/team.git" "${F}/jonas" && mkdir -p "${F}/jonas/ip/prompts" && printf "Turn merged pull requests into release notes.\\n" > "${F}/jonas/ip/prompts/release-notes.md" && printf "\\nList the risks of each step.\\n" >> "${F}/jonas/ip/skills/plan/SKILL.md" && git -C "${F}/jonas" add -A && git -C "${F}/jonas" -c user.name=Jonas -c user.email=jonas@example.com -c commit.gpgsign=false commit -qm "Share release-notes; plan lists risks" && git -C "${F}/jonas" push -q`);
 await go("home");
 await js(`${byText(".strip button", "Check for updates")}.click(); await new Promise(r => setTimeout(r, 2500)); window.scrollTo(0, 0);`);
-await shot("11-updates.jpg", byText(".strip button", "Update library"), { click: true,
+await shot("12-updates.jpg", byText(".strip button", "Update library"), { click: true,
   title: "Weeks later: what's new?", text: "Check for updates asks Git whether the team pushed anything. Update library brings it in." });
 await js(`${byText(".strip button", "Update library")}.click(); await new Promise(r => setTimeout(r, 3000)); window.scrollTo(0, 0);`);
-await shot("12-new.jpg", `${row("release-notes.md")}.querySelector(".lib-act button:not(.link)")`, { click: false,
+await shot("13-new.jpg", `${row("release-notes.md")}.querySelector(".lib-act button:not(.link)")`, { click: false,
   title: "New since you last looked", text: "New items wait at the top with who shared them. Get the ones you want; ignore the rest." });
-// 13 Where installed
+// 14 Behind the team
+await js(`window.scrollTo(0, 0); await new Promise(r => setTimeout(r, 1500));`);
+await shot("14-behind.jpg", byText("#home-lists button", "Update to team version…"), { click: false,
+  title: "Behind the team", text: "An old copy of plan is still in this project, and the team has improved plan since. One click swaps the copy for the team version; the copy goes to the Archive." });
+// 15 Where installed
 await go("patch");
-await shot("13-where.jpg", q("#matrix"), { click: false,
+await shot("15-where.jpg", q("#matrix"), { click: false,
   title: "The full picture, when you need it", text: "Where installed shows every asset in this project, the folders above it, and your user. Most people never need it." });
 
 console.log(JSON.stringify(steps, null, 2));

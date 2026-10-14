@@ -2048,7 +2048,12 @@ function libraryStrip(lib) {
           renderHome();
           message(
             status.behind
-              ? status.behind + " updates waiting. Update library to get them."
+              ? status.behind +
+                  (status.behind === 1
+                    ? " update waiting."
+                    : " updates waiting.") +
+                  " Update library to get " +
+                  (status.behind === 1 ? "it." : "them.")
               : lib.source + " is up to date.",
           );
           return;

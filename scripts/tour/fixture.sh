@@ -21,4 +21,6 @@ git clone -q --bare "$F/seed" "$F/team.git"
 skill "$F/home/work/backend/.kiro/skills" sql-explain "Explains a slow query plan and suggests indexes."
 skill "$F/zip" commit-message "Writes a conventional commit message from the staged diff."
 (cd "$F/zip" && zip -qr "$F/commit-message.zip" commit-message)
-echo "Start: CAPTAIN_SHARE_HOME=$F/home/.captain captain-share --target $F/home/work/backend serve"
+# A fictional Git identity for the fixture's own home folder (own library commits).
+printf "[user]\n\tname = Alex Example\n\temail = alex@example.com\n[commit]\n\tgpgsign = false\n" > "$F/home/.gitconfig"
+echo "Start: HOME=$F/home CAPTAIN_SHARE_HOME=$F/home/.captain captain-share --target $F/home/work/backend serve"
