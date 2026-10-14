@@ -332,8 +332,9 @@ def get_command(target, source, kind, name):
     return f"captain-share get {ref}"
 
 
-def share_plan(target, source, kind, name, path):
-    """Preview copying one project asset into a library and committing only it."""
+def share_plan(target, source, kind, name, path, adopt=False):
+    """Preview copying one project asset into a library and committing only it.
+    With `adopt`, also predict swapping the local copies for library links."""
     target = c.root(target)
     c.name(source)
     c.asset_name(kind, name)
@@ -374,11 +375,28 @@ def share_plan(target, source, kind, name, path):
     result["fingerprint"] = e.digest(
         [result["plan_fingerprint"], result["share"], commit_paths, pending, problems]
     )
+    if adopt:
+        # A prediction only: the adopt is planned afresh after the commit.
+        result["adopt_changes"] = e.adopt_preview(target, kind, name, path)
     return result
 
 
-def share_apply(saved, note, push=False):
-    """Apply a fresh share preview, commit only its paths, and push when asked."""
+def adopt_after_share(target, source, kind, name, path):
+    """Use the library original in the project instead of its own copy. Returns an
+    error message instead of raising, so a failure never undoes the share."""
+    try:
+        planned = e.plan(target, action="adopt", kind=kind, asset=name, source=source, path=path)
+        if not planned["can_apply"]:
+            return "; ".join(planned["errors"])
+        e.apply(planned)
+    except (c.ShareError, OSError) as exc:
+        return str(exc)
+    return None
+
+
+def share_apply(saved, note, push=False, adopt=False):
+    """Apply a fresh share preview, commit only its paths, push when asked, and then
+    with `adopt` link the project to the library original instead of its copy."""
     note = note_text(note)
     spec = saved.get("share") if isinstance(saved, dict) else None
     if not isinstance(spec, dict):
@@ -403,11 +421,14 @@ def share_apply(saved, note, push=False):
                 "The copy stays in the library; commit it there or share again."
             ) from exc
         pushed, error = publish(args["target"], args["source"], path, push)
+    adopt_error = adopt_after_share(**args) if adopt else None
     return {
         "commit": sha,
         "pushed": pushed,
         "push_error": error,
         "get_command": get_command(args["target"], args["source"], args["kind"], args["name"]),
+        "adopted": bool(adopt) and adopt_error is None,
+        "adopt_error": adopt_error,
     }
 
 

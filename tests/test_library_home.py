@@ -272,7 +272,11 @@ class ShareApiTests(LibraryFixture):
             {"fingerprint": plan["fingerprint"], "note": "Share mine", "push": True},
         )
         self.assertEqual(code, 200, result)
-        self.assertEqual(set(result), {"commit", "pushed", "push_error", "get_command"})
+        self.assertEqual(
+            set(result),
+            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error"},
+        )
+        self.assertEqual((result["adopted"], result["adopt_error"]), (False, None))
         self.assertEqual((result["pushed"], result["push_error"]), (True, None))
         self.assertEqual(result["get_command"], "captain-share get mine")
         head = e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip()
@@ -470,3 +474,200 @@ class CliTests(LibraryFixture):
         self.assertEqual(result["get_command"], "captain-share get mine")
         subject = e.git(self.lib, "log", "-1", "--format=%s").stdout.decode().strip()
         self.assertEqual(subject, "Share mine")
+
+
+class AdoptTests(LibraryFixture):
+    def adopt(self, **extra):
+        args = {"action": "adopt", "kind": "skills", "asset": "hello", "source": "team"}
+        return e.plan(self.repo, **{**args, **extra})
+
+    def test_equal_copies_in_two_tools_are_archived_linked_and_restorable(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        original = self.lib / "ip/skills/hello"
+        for folder in (".kiro/skills", ".claude/skills"):
+            self.skill(self.repo / folder / "hello")
+        planned = self.adopt()
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        ops = [(x["op"], x["path"].replace(str(self.repo) + "/", "")) for x in planned["changes"]]
+        self.assertEqual(
+            ops,
+            [
+                ("archive", ".kiro/skills/hello"),
+                ("link", ".kiro/skills/hello"),
+                ("archive", ".claude/skills/hello"),
+                ("link", ".claude/skills/hello"),
+            ],
+        )
+        result = e.apply(planned)
+        self.assertEqual(len(result["archives"]), 2)
+        for folder in (".kiro/skills", ".claude/skills"):
+            link = self.repo / folder / "hello"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.resolve(), original)
+        saved = json.loads((self.repo / ".captain/sharing.json").read_text())
+        self.assertEqual(
+            saved["inbound"]["team/skills/hello"],
+            {"source": "team", "kind": "skills", "name": "hello"},
+        )
+        # Nothing left to adopt, and later syncs keep the links.
+        self.assertEqual(self.adopt()["changes"], [])
+        self.assertEqual(e.plan(self.repo)["changes"], [])
+        # The archived copy is recoverable once the link is removed.
+        e.apply(e.plan(self.repo, action="remove", kind="skills", asset="hello"))
+        record = next(
+            row for row in e.archives(self.repo) if row["relative_path"] == ".kiro/skills/hello"
+        )
+        e.apply(e.plan(self.repo, action="restore", archive_id=record["id"]))
+        restored = self.repo / ".kiro/skills/hello"
+        self.assertFalse(restored.is_symlink())
+        self.assertEqual(e.snapshot(restored, modes=False), e.snapshot(original, modes=False))
+
+    def test_differing_copy_conflicts_until_replaced(self):
+        self.skill(self.repo / ".kiro/skills/hello", "My local edits")
+        planned = self.adopt()
+        self.assertFalse(planned["can_apply"])
+        (conflict,) = planned["conflicts"]
+        self.assertEqual((conflict["reason"], conflict["path"]), ("differs", ".kiro/skills/hello"))
+        self.assertIn("differs from the library version", conflict["message"])
+        self.assertNotIn("team/skills/hello", c.effective(self.repo)["inbound"])
+        result = e.apply(self.adopt(replace=True))
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+        (archived,) = result["archives"]
+        payload = self.repo / ".captain/archive" / archived["id"] / "payload/SKILL.md"
+        self.assertIn("My local edits", payload.read_text())
+
+    def test_missing_original_nothing_to_adopt_and_kept_copies(self):
+        missing = self.adopt(asset="absent")
+        self.assertFalse(missing["can_apply"])
+        self.assertEqual(missing["conflicts"][0]["reason"], "missing")
+        with self.assertRaises(c.ShareError):
+            self.adopt(source="../x")
+        # No local copy: adopting only links and saves the selection.
+        e.apply(self.adopt())
+        self.assertEqual(self.adopt()["changes"], [])
+        # A copy for a tool this place does not link (claude) is kept, not archived.
+        self.skill(self.repo / ".claude/skills/hello")
+        kept = self.adopt(path=".claude/skills/hello")
+        self.assertEqual(kept["changes"], [])
+        self.assertEqual(kept["kept"][0]["path"], ".claude/skills/hello")
+        self.assertEqual(self.adopt(path="notes/hello")["kept"], [])
+
+    def test_api_adopt_plan_applies_with_fresh_fingerprint_only(self):
+        self.skill(self.repo / ".kiro/skills/hello")
+        self.start()
+        body = {"source": "team", "kind": "skills", "name": "hello"}
+        code, planned = self.request("/api/adopt-plan", body)
+        self.assertEqual((code, planned["can_apply"]), (200, True))
+        self.assertEqual(self.request("/api/adopt-plan", {**body, "replace": "yes"})[0], 400)
+        (self.repo / ".kiro/skills/hello/SKILL.md").write_text("edited after preview")
+        code, stale = self.request("/api/apply", {"fingerprint": planned["fingerprint"]})
+        self.assertEqual(code, 400)
+        self.assertIn("stale", stale["error"])
+        self.assertFalse((self.repo / ".kiro/skills/hello").is_symlink())
+        _, differs = self.request("/api/adopt-plan", body)
+        self.assertEqual(differs["conflicts"][0]["reason"], "differs")
+        _, replace = self.request("/api/adopt-plan", {**body, "replace": True})
+        self.assertEqual(
+            self.request("/api/apply", {"fingerprint": replace["fingerprint"]})[0], 200
+        )
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+
+    def test_share_with_adopt_commits_pushes_and_links(self):
+        remote = self.remote()
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.skill(self.repo / ".claude/skills/mine")
+        self.start()
+        body = {
+            "source": "team",
+            "kind": "skills",
+            "name": "mine",
+            "path": ".claude/skills/mine",
+            "adopt": True,
+        }
+        code, planned = self.request("/api/share-plan", body)
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            planned["adopt_changes"],
+            [
+                {"op": "link", "path": ".kiro/skills/mine"},
+                {"op": "archive", "path": ".claude/skills/mine"},
+                {"op": "link", "path": ".claude/skills/mine"},
+            ],
+        )
+        code, result = self.request(
+            "/api/share-apply",
+            {
+                "fingerprint": planned["fingerprint"],
+                "note": "Share mine",
+                "push": True,
+                "adopt": True,
+            },
+        )
+        self.assertEqual(code, 200, result)
+        self.assertEqual(
+            set(result),
+            {"commit", "pushed", "push_error", "get_command", "adopted", "adopt_error"},
+        )
+        self.assertEqual(
+            (result["pushed"], result["adopted"], result["adopt_error"]), (True, True, None)
+        )
+        self.assertEqual(
+            e.git(remote, "rev-parse", "main").stdout.decode().strip(), result["commit"]
+        )
+        original = self.lib / "ip/skills/mine"
+        for folder in (".kiro/skills", ".claude/skills"):
+            self.assertEqual((self.repo / folder / "mine").resolve(), original)
+        self.assertIn("team/skills/mine", c.effective(self.repo)["inbound"])
+        self.assertEqual(len(e.archives(self.repo)), 1)
+
+    def test_failed_adopt_keeps_the_commit(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        self.skill(self.repo / ".claude/skills/mine")
+        self.skill(self.repo / ".kiro/skills/mine", "An older copy")
+        planned = r.share_plan(self.repo, "team", "skills", "mine", ".claude/skills/mine")
+        result = r.share_apply(planned, "Share mine", adopt=True)
+        self.assertFalse(result["adopted"])
+        self.assertIn("differs", result["adopt_error"])
+        head = e.git(self.lib, "rev-parse", "HEAD").stdout.decode().strip()
+        self.assertEqual(head, result["commit"])
+        self.assertFalse((self.repo / ".claude/skills/mine").is_symlink())
+        self.assertEqual(e.archives(self.repo), [])
+
+
+class AdoptCliTests(LibraryFixture):
+    run_cli = CliTests.run_cli
+
+    def test_adopt_previews_conflicts_and_replaces(self):
+        self.skill(self.repo / ".kiro/skills/hello", "Mine")
+        base = ["--target", str(self.repo), "adopt", "skills", "hello", "--source", "team"]
+        code, out, _ = self.run_cli(*base)
+        self.assertEqual(code, 1)
+        self.assertIn("differs from the library version", out)
+        code, out, _ = self.run_cli(*base, "--replace")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.repo / ".kiro/skills/hello").is_symlink())
+        code, out, _ = self.run_cli(*base, "--replace", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.repo / ".kiro/skills/hello").is_symlink())
+
+    def test_share_adopt_from_a_project_folder(self):
+        self.skill(self.repo / "skills/mine")
+        base = [
+            "--target",
+            str(self.repo),
+            "share",
+            "skills",
+            "mine",
+            "--source",
+            "team",
+            "--adopt",
+        ]
+        code, out, _ = self.run_cli(*base)
+        self.assertEqual(code, 0, out)
+        self.assertIn("then archive  skills/mine", out)
+        self.assertIn("then link     .kiro/skills/mine", out)
+        code, out, _ = self.run_cli(*base, "--note", "Share mine", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn("now uses the library version", out)
+        self.assertFalse((self.repo / "skills/mine").exists())
+        self.assertTrue((self.repo / ".kiro/skills/mine").is_symlink())

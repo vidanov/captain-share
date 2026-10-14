@@ -1283,6 +1283,11 @@ button.link:hover {
 .change strong::first-letter {
   text-transform: uppercase;
 }
+.change-from {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
 .change code {
   color: var(--ink);
 }

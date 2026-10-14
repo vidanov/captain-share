@@ -468,8 +468,8 @@ async function saveSelection(quiet = false) {
         : "Nothing changed since the last save.",
     );
 }
-async function preview(spec = { direction: view }) {
-  pending = await api("plan", spec);
+async function preview(spec = { direction: view }, endpoint = "plan") {
+  pending = await api(endpoint, spec);
   lastSpec = spec;
   $("review").hidden = false;
   $("changes").replaceChildren();
@@ -494,7 +494,8 @@ async function preview(spec = { direction: view }) {
       " ",
       el("code", relativeTo(change.path, state.target)),
     );
-    if (change.source) div.append(el("div", "From " + change.source));
+    if (change.source)
+      div.append(el("div", "From " + shortPath(change.source), "change-from"));
     if (change.command)
       div.append(el("code", "Runs " + change.command.join(" "), "command"));
     $("changes").append(div);
@@ -509,9 +510,15 @@ async function preview(spec = { direction: view }) {
       ),
     );
   pending.conflicts.forEach((conflict) =>
-    $("errors").append(conflictRow(conflict, spec)),
+    $("errors").append(
+      endpoint === "adopt-plan"
+        ? adoptConflict(conflict, spec)
+        : conflictRow(conflict, spec),
+    ),
   );
-  $("conflict-help").hidden = !pending.conflicts.length;
+  // The generic conflict advice does not fit adopting; its conflicts carry their own choices.
+  $("conflict-help").hidden =
+    !pending.conflicts.length || endpoint === "adopt-plan";
   $("apply").disabled = !pending.can_apply;
   $("review").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -844,7 +851,14 @@ $("apply").onclick = () =>
     const result = await api("apply", { fingerprint: pending.fingerprint });
     const resume = resumeSpec;
     resumeSpec = null;
+    const note = applyNote;
+    applyNote = null;
     await refresh();
+    if (note && !resume) {
+      message(note);
+      if (view === "share") renderShare();
+      return;
+    }
     message(
       result.output
         ? "Kiro: " + result.output
@@ -1503,6 +1517,7 @@ async function cancelReview() {
   const saved = undo;
   undo = null;
   getting = null;
+  applyNote = null;
   invalidate();
   if (!saved) return;
   for (const step of saved.steps) await api("restore-selections", step);
@@ -2011,6 +2026,16 @@ function shareRow(row, type) {
     ),
   );
   const act = el("div", undefined, "lib-act");
+  if (type === "local" && row.exists_in) {
+    // Already in a library: swap this copy for the library original.
+    const use = el("button", "Use team version…", "quiet");
+    use.type = "button";
+    use.onclick = () =>
+      task(() => adoptAsset({ ...row, source: row.exists_in }, false));
+    act.append(use);
+    wrap.append(act);
+    return wrap;
+  }
   const open = el(
     "button",
     type === "local" ? "Share…" : "Send changes…",
@@ -2053,6 +2078,17 @@ function sharePanel(row, type) {
   push.checked = true;
   pushBox.append(push, " Push to the team now");
   panel.append(pushBox);
+  // After sharing, this project links to the library original instead of a copy.
+  const adopt = el("input");
+  adopt.type = "checkbox";
+  adopt.checked = true;
+  if (type === "local") {
+    const adoptBox = el("label", undefined, "check");
+    adoptBox.append(adopt, " Use the team version here afterwards");
+    adoptBox.title =
+      "Your copy goes to the Archive and is replaced by a link to the library original.";
+    panel.append(adoptBox);
+  }
   const changes = el("div", undefined, "share-changes");
   panel.append(changes);
   const actions = el("div", undefined, "actions");
@@ -2087,6 +2123,7 @@ function sharePanel(row, type) {
         kind: row.kind,
         name: row.name,
         path: row.path,
+        adopt: adopt.checked,
       });
       const lines = plan.changes.map((change) => {
         const line = el("div", undefined, "change");
@@ -2102,12 +2139,22 @@ function sharePanel(row, type) {
         line.append(el("strong", "Commit"), " ", el("code", path));
         lines.push(line);
       }
+      for (const change of plan.adopt_changes || []) {
+        const line = el("div", undefined, "change");
+        line.append(
+          el("strong", change.op, /archive/.test(change.op) ? "op-remove" : ""),
+          " ",
+          el("code", change.path),
+        );
+        lines.push(line);
+      }
       for (const conflict of plan.conflicts)
         lines.push(el("p", conflict.message, "hint warn"));
       changes.replaceChildren(...lines);
       go.disabled = !plan.can_apply;
     });
   if (library) library.onchange = loadPlan;
+  adopt.onchange = loadPlan;
   go.onclick = () =>
     task(async () => {
       if (!note.value.trim())
@@ -2118,6 +2165,7 @@ function sharePanel(row, type) {
               fingerprint: plan.fingerprint,
               note: note.value.trim(),
               push: push.checked,
+              adopt: adopt.checked,
             })
           : await api("commit-edits", {
               source: row.source,
@@ -2159,6 +2207,24 @@ function shareDone(row, result) {
         "hint warn",
       ),
     );
+  if (result.adopted)
+    box.append(
+      el(
+        "p",
+        projectName() +
+          " now uses the team version; your copy is in the Archive.",
+        "hint",
+      ),
+    );
+  else if (result.adopt_error) {
+    box.append(
+      el("p", "Your copy is still here: " + result.adopt_error, "hint warn"),
+    );
+    const retry = el("button", "Use the team version…", "quiet");
+    retry.type = "button";
+    retry.onclick = () => task(() => adoptAsset(row, false));
+    box.append(retry);
+  }
   const command = result.get_command || "captain-share get " + row.name;
   box.append(el("p", "Tell your team. Paste this in chat:", "hint"));
   const copy = el("div", undefined, "copy-line");
@@ -2173,6 +2239,41 @@ function shareDone(row, result) {
   copy.append(code, button);
   box.append(copy);
   return box;
+}
+
+async function adoptAsset(row, replace) {
+  await cancelReview();
+  applyNote =
+    projectName() +
+    " now uses the team version of " +
+    row.name +
+    ". Your copy is in the Archive.";
+  shareData = null;
+  await preview(
+    {
+      target: home.project,
+      source: row.source,
+      kind: row.kind,
+      name: row.name,
+      replace,
+    },
+    "adopt-plan",
+  );
+}
+function adoptConflict(conflict, spec) {
+  const div = el("div", undefined, "conflict");
+  div.append(el("p", conflict.message));
+  if (conflict.reason === "differs" && !spec.replace) {
+    const replace = el("button", "Replace mine (it is archived)", "quiet");
+    replace.type = "button";
+    replace.onclick = () =>
+      task(() => adoptAsset({ ...spec, name: spec.name }, true));
+    const keep = el("button", "Keep mine", "link");
+    keep.type = "button";
+    keep.onclick = () => task(cancelReview);
+    div.append(replace, keep);
+  }
+  return div;
 }
 
 // ---------------------------------------------------------------- agents and first setup

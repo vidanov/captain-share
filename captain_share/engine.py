@@ -432,14 +432,26 @@ def plan(
     archive_id=None,
     path=None,
     selections=None,
+    source=None,
+    replace=False,
 ):
     """Preview changes. `selections` replaces the saved outbound selections for a
-    one-off copy (sharing one asset) without writing them to configuration."""
+    one-off copy (sharing one asset) without writing them to configuration.
+    `adopt` swaps local copies of one asset for links to its library original."""
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
-    if action not in ("sync", "remove", "restore"):
+    if action not in ("sync", "remove", "restore", "adopt"):
         raise c.ShareError("Unknown plan action")
+    if action == "adopt":
+        c.asset_name(kind, asset)
+        c.name(source)
+        if not isinstance(replace, bool):
+            raise c.ShareError("replace must be true or false")
+        if path is not None:
+            c.safe_path(target, path, leaf_link=True)
+    elif source is not None or replace:
+        raise c.ShareError("source and replace apply to adopt plans only")
     if selections is not None:
         if direction != "outbound" or action != "sync":
             raise c.ShareError("Explicit selections apply to outbound copies only")
@@ -604,6 +616,80 @@ def plan(
                         next_state["outbound"][key] = {"path": str(dest), "snapshot": src_snap}
                 except (c.ShareError, OSError) as exc:
                     conflict(str(exc), row.get("path"), key)
+    elif action == "adopt":
+        key = f"{source}/{kind}/{asset}"
+        existing_row = cfg["inbound"].get(key, {})
+        row = {"source": source, "kind": kind, "name": asset}
+        if existing_row.get("alias"):
+            row["alias"] = existing_row["alias"]
+        src = None
+        try:
+            src = source_path(cfg, source, kind, asset)
+            if not os.path.lexists(src):
+                raise c.ShareError(f"The library {source} has no {kind} named {asset}")
+            validate_asset(src, kind)
+            observe(src)
+        except (c.ShareError, OSError) as exc:
+            conflict(str(exc), key=key, reason="missing")
+        targets, kept = adopt_targets(target, cfg, kind, row.get("alias", asset), path)
+        if not c.destinations(kind, cfg["tools"]):
+            readers = ", ".join(c.DESTINATIONS[kind]) or "its own installer"
+            conflict(f"No enabled tool reads {kind}; enable {readers}", key=key, reason="tool")
+        for rel, tool in targets if src is not None else []:
+            try:
+                dest = c.safe_path(target, rel, leaf_link=True)
+                if src == dest or src in dest.parents or dest in src.parents:
+                    raise c.ShareError("The local copy and the library original overlap")
+                existing = observe(dest)
+                previous = old["inbound"].get(rel)
+                if existing is not None and tracked(target, dest):
+                    conflict(
+                        f"{rel} is tracked by Git; remove it through its repository first",
+                        rel,
+                        key,
+                        "tracked",
+                    )
+                    continue
+                if previous:
+                    if existing is not None and existing != {
+                        "type": "link",
+                        "target": previous["source_path"],
+                    }:
+                        raise c.ShareError(f"Managed link changed: {rel}; restore it first")
+                    if previous["source_path"] != str(src):
+                        conflict(
+                            f"{rel} is linked to {previous.get('key')}; remove it first",
+                            rel,
+                            key,
+                            "managed",
+                        )
+                        continue
+                elif existing is not None:
+                    if not same_content(dest, src) and not replace:
+                        conflict(
+                            f"Your copy of {asset} differs from the library version. "
+                            "Share your changes, or replace yours (it is archived).",
+                            rel,
+                            key,
+                            "differs",
+                        )
+                        continue
+                    archive(dest, None)
+                if tool is None:
+                    continue  # The original the share came from is archived, not linked.
+                if existing != {"type": "link", "target": str(src)}:
+                    changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                next_state["inbound"][rel] = {
+                    **row,
+                    "source_path": str(src),
+                    "key": key,
+                    "tool": tool,
+                }
+            except (c.ShareError, OSError) as exc:
+                conflict(str(exc), rel, key)
+        if key not in cfg["inbound"]:
+            config_update = local_cfg
+            config_update["inbound"][key] = row
     elif action == "remove":
         c.asset_name(kind, asset)
         candidates = [f"{folder}/{asset}" for folder in c.folders(kind)]
@@ -696,6 +782,8 @@ def plan(
     if selections is not None:
         # Kept in the spec so apply re-plans exactly the same one-off copy.
         spec["selections"] = selections
+    if action == "adopt":
+        spec.update(source=source, replace=replace)
     result = {
         "version": 1,
         "spec": spec,
@@ -710,8 +798,56 @@ def plan(
         "exclusion": exclusion,
         "sources": cfg["sources"],
     }
+    if action == "adopt":
+        result["kept"] = kept
     result["fingerprint"] = digest(result)
     return result
+
+
+def same_content(local, original):
+    """A local copy matches the library original: a link to it, or equal content."""
+    if local.is_symlink():
+        return os.path.realpath(local) == os.path.realpath(original)
+    return snapshot(local, modes=False) == snapshot(original, modes=False)
+
+
+def adopt_targets(target, cfg, kind, name, path=None):
+    """Destinations an adopt plan handles, as (rel, tool): every enabled tool folder
+    that reads `kind`, plus the shared-from path (tool None). Copies in folders of
+    tools that are not enabled are kept, so those tools do not lose the asset."""
+    enabled = {folder: tool for tool, folder in c.destinations(kind, cfg["tools"])}
+    rows = [(f"{folder}/{name}", tool) for folder, tool in enabled.items()]
+    kept = []
+    if path is not None and path not in {rel for rel, _ in rows}:
+        folder = path.rpartition("/")[0]
+        # Only folders a restore accepts, so the archived copy stays recoverable.
+        restorable = set(c.folders()) | {f"ip/{k}" for k in c.KINDS} | set(c.KINDS)
+        if not os.path.lexists(c.safe_path(target, path, leaf_link=True)):
+            pass
+        elif folder in c.DESTINATIONS.get(kind, {}).values() and folder not in enabled:
+            kept.append({"path": path, "reason": "Its tool is not enabled for this place"})
+        elif folder not in restorable:
+            kept.append({"path": path, "reason": "Not an asset folder; left in place"})
+        else:
+            rows.append((path, None))
+    return rows, kept
+
+
+def adopt_preview(target, kind, name, path=None):
+    """Predicted adopt operations ({op, path} relative to target) for an asset that
+    is about to be copied into a library, so its content will match."""
+    target = c.root(target)
+    cfg, old = c.effective(target), state(target)
+    rows, _ = adopt_targets(target, cfg, kind, name, path)
+    ops = []
+    for rel, tool in rows:
+        dest = c.safe_path(target, rel, leaf_link=True)
+        managed = old["inbound"].get(rel)
+        if os.path.lexists(dest) and not managed:
+            ops.append({"op": "archive", "path": rel})
+        if tool is not None and not managed:
+            ops.append({"op": "link", "path": rel})
+    return ops
 
 
 class Transaction:

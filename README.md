@@ -325,6 +325,13 @@ asset's files with your note, and pushes if you leave Push checked. It ends with
 line to paste in chat. A refused push keeps the commit; push it later from
 Settings.
 
+With **Use the team version here afterwards** (on by default) the project then
+swaps its own copy for a link to the library original: the copy is archived and
+every agent you use links to the shared version. Skills that are already in a
+library show **Use team version…** instead; if your copy differs, the review says so
+and offers Replace mine (archived) or Keep mine. CLI: `captain-share adopt KIND NAME
+--source S [--replace] [--apply]`, or `captain-share share … --adopt`.
+
 ### Where installed: one grid for every place
 
 The grid is for maintenance. Rows are library assets, grouped by library, with each

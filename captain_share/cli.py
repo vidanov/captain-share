@@ -28,6 +28,8 @@ def output(value, as_json=False):
             )
             if "command" in row:
                 print(f"           runs: {' '.join(row['command'])}")
+        for row in value.get("kept", []):
+            print(f"  kept     {row['path']} ({row['reason']})")
         for error in value["errors"]:
             print(f"  Blocked: {error}")
         print(
@@ -120,6 +122,22 @@ def parser():
     share.add_argument("--path", help="The asset's path in --target when several exist")
     share.add_argument("--push", action="store_true", help="Push the commit after it is made")
     share.add_argument("--apply", action="store_true", help="Copy, commit (and push)")
+    share.add_argument(
+        "--adopt",
+        action="store_true",
+        help="Afterwards link this folder to the library original instead of its copy",
+    )
+    adopt = sub.add_parser(
+        "adopt", help="Replace local copies of a library asset with links to the original"
+    )
+    adopt.add_argument("kind", choices=list(c.KINDS))
+    adopt.add_argument("name")
+    adopt.add_argument("--source", required=True, help="Library that holds the original")
+    adopt.add_argument("--path", help="Also archive this copy, e.g. the one you shared from")
+    adopt.add_argument(
+        "--replace", action="store_true", help="Archive copies that differ from the library"
+    )
+    adopt.add_argument("--apply", action="store_true")
     imp = sub.add_parser(
         "import",
         help="Add assets from a zip file or folder to a library, committing only them",
@@ -295,18 +313,26 @@ def share(args, target):
         path = found[0]
     if args.apply and not args.note:
         raise c.ShareError("Add --note describing what you share; it becomes the commit message")
-    planned = r.share_plan(target, args.source, args.kind, args.name, path)
+    planned = r.share_plan(target, args.source, args.kind, args.name, path, adopt=args.adopt)
     if not args.apply or not planned["can_apply"]:
         if not args.json:
             output(planned)
             if planned["commit_paths"]:
                 print(f"Commits only: {', '.join(planned['commit_paths'])}")
+            for row in planned.get("adopt_changes", []):
+                print(f"  then {row['op']:8} {row['path']}")
         return planned
-    result = r.share_apply(planned, args.note, args.push)
+    result = r.share_apply(planned, args.note, args.push, adopt=args.adopt)
     if not args.json:
         print(f"Committed {result['commit'][:12]} in {args.source}.")
         if args.push:
             print("Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}")
+        if args.adopt:
+            print(
+                "This folder now uses the library version."
+                if result["adopted"]
+                else f"Kept your copy: {result['adopt_error']}"
+            )
         print(f"Teammates can run: {result['get_command']}")
     return result
 
@@ -474,8 +500,24 @@ def main(argv=None):
             result = handler(args, target)
             if args.json:
                 output(result, True)
-            blocked = result.get("can_apply") is False or result.get("push_error")
+            blocked = (
+                result.get("can_apply") is False
+                or result.get("push_error")
+                or result.get("adopt_error")
+            )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
+        elif command == "adopt":
+            result = e.plan(
+                target,
+                action="adopt",
+                kind=args.kind,
+                asset=args.name,
+                source=args.source,
+                replace=args.replace,
+                path=args.path,
+            )
+            if args.apply:
+                result = e.apply(result)
         elif command == "status":
             result = e.status(target)
         elif command == "guard":

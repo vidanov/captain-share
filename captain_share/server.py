@@ -812,7 +812,27 @@ def make_server(target, port=0):
                     result = r.fetch(target, data["source"])
                 elif path == "/api/share-plan":
                     result = r.share_plan(
-                        target, data["source"], data["kind"], data["name"], data["path"]
+                        target,
+                        data["source"],
+                        data["kind"],
+                        data["name"],
+                        data["path"],
+                        adopt=data.get("adopt") is True,
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/adopt-plan":
+                    replace = data.get("replace", False)
+                    if not isinstance(replace, bool):
+                        raise c.ShareError("replace must be true or false")
+                    result = e.plan(
+                        target,
+                        action="adopt",
+                        kind=data["kind"],
+                        asset=data["name"],
+                        source=data["source"],
+                        replace=replace,
+                        path=data.get("path"),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -825,7 +845,12 @@ def make_server(target, port=0):
                     if saved is None or "share" not in saved:
                         raise c.ShareError("Preview the share again before applying")
                     plans.pop(fingerprint)
-                    result = r.share_apply(saved, data["note"], bool(data.get("push")))
+                    result = r.share_apply(
+                        saved,
+                        data["note"],
+                        bool(data.get("push")),
+                        adopt=data.get("adopt") is True,
+                    )
                 elif path == "/api/import-folder":
                     result = stages.open_folder(data.get("path"))
                 elif path == "/api/import-plan":
