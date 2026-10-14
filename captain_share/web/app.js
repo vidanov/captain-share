@@ -216,7 +216,8 @@ function render() {
   $("first-run").hidden = !!sources || view !== "patch";
   $("bay").hidden = !sources && view === "patch";
   const isPatch = view === "patch";
-  $("matrix").hidden = !isPatch;
+  // The grid and its key belong to the Assets view only.
+  $("bay-body").hidden = !isPatch;
   $("kind-filter").hidden = !isPatch;
   $("routing").hidden = !isPatch || !patchCount();
   $("libraries-view").hidden = view !== "libraries";
@@ -802,6 +803,7 @@ document.querySelectorAll(".faceplate-nav button").forEach(
         $("search").value = "";
         invalidate();
         render();
+        window.scrollTo(0, 0);
       })),
 );
 function selectable() {
@@ -1495,6 +1497,8 @@ function renderLibraries() {
   const list = $("library-list");
   list.replaceChildren();
   const sources = Object.entries(state.config.sources);
+  $("count").textContent =
+    sources.length + (sources.length === 1 ? " library" : " libraries");
   if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
   for (const [name, spec] of sources) {
     const row = el("div", undefined, "library-row");

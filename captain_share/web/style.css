@@ -1306,4 +1306,13 @@ summary {
   .library-row {
     grid-template-columns: 1fr auto;
   }
+  /* The faceplate hides its path at this width; a library row keeps it. */
+  .library-row .faceplate-path {
+    display: block;
+    grid-column: 1 / -1;
+    max-width: 100%;
+  }
+  .library-row .reveal-button {
+    justify-self: start;
+  }
 }
