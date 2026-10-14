@@ -662,11 +662,23 @@ class SharingTests(SharingFixture):
         found = e.why(rules / "api.md")
         self.assertEqual((found["source"], found["library_name"]), ("team", "api.md"))
         self.assertIn("generated copy", found["note"])
-        # A Claude rule is not shared back as Kiro steering.
+        # A Claude rule is shared back converted to Kiro steering (ADR 014).
         own = self.repo / ".claude/rules/own.md"
-        own.write_text("My rule")
+        own.write_text('---\npaths: "src/**/*.py, tests/**"\n---\nType hints.\n')
         c.select(self.repo, "outbound", "team", "steering", "own.md", path=".claude/rules/own.md")
-        self.assertIn("in Claude's format", " ".join(e.plan(self.repo, "outbound")["errors"]))
+        planned = e.plan(self.repo, "outbound")
+        self.assertTrue(planned["can_apply"], planned["errors"])
+        e.apply(planned)
+        self.assertEqual(
+            (steering / "own.md").read_text(),
+            '---\ninclusion: fileMatch\nfileMatchPattern: ["src/**/*.py", "tests/**"]\n---\n'
+            "Type hints.\n",
+        )
+        self.assertEqual(e.plan(self.repo, "outbound")["changes"], [])
+        # An independent library edit is a conflict, as for copies.
+        (steering / "own.md").write_text("edited in the library")
+        own.write_text("Type hints everywhere.\n")
+        self.assertIn("edited independently", " ".join(e.plan(self.repo, "outbound")["errors"]))
         c.select(
             self.repo,
             "outbound",
@@ -677,6 +689,7 @@ class SharingTests(SharingFixture):
             enabled=False,
         )
         own.unlink()
+        (steering / "own.md").unlink()
         # A library change regenerates the file; an edit to it is archived first.
         (steering / "always.md").write_text("Use spaces.\n")
         (generated.parent / "always.md").write_text("edited by hand")
@@ -772,6 +785,26 @@ class SharingTests(SharingFixture):
         self.assertTrue(stray.exists())
         self.assertEqual(len(e.rendered_files(apply=True)["archived"]), 1)
         self.assertFalse(stray.exists())
+
+    def test_claude_commands_share_back_as_prompts_and_subagents_do_not(self):
+        from captain_share import formats
+
+        text = "---\ndescription: Fix\n---\nFix $ARGUMENTS[0] in $1; all: $ARGUMENTS\n"
+        back = formats.to_kiro(".claude/commands/fix.md", text)
+        self.assertEqual(
+            back.content, "---\ndescription: Fix\n---\nFix ${1} in ${2}; all: $ARGUMENTS\n"
+        )
+        # The round trip with Kiro's own format is stable.
+        forward = formats.prompt_to_command(back.content)[0]
+        self.assertEqual(formats.to_kiro(".claude/commands/fix.md", forward).content, back.content)
+        self.assertEqual(formats.rule_to_steering("No frontmatter.\n").content, "No frontmatter.\n")
+        self.assertIsNone(formats.to_kiro(".claude/agents/bot.md", "x"))
+        command = self.repo / ".claude/commands/fix.md"
+        command.parent.mkdir(parents=True)
+        command.write_text(text)
+        c.select(self.repo, "outbound", "team", "prompts", "fix.md", path=".claude/commands/fix.md")
+        e.apply(e.plan(self.repo, "outbound"))
+        self.assertIn("${1}", (self.lib / "ip/prompts/fix.md").read_text())
 
     def test_format_conversion_edge_cases(self):
         from captain_share import formats

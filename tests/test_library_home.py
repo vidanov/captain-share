@@ -281,12 +281,17 @@ class ShareApiTests(LibraryFixture):
         self.skill(self.base / ".kiro/skills/helper")
         self.skill(self.base / ".kiro/skills/hello")  # the library has it: not offered
         (self.base / ".claude/rules").mkdir(parents=True)
-        (self.base / ".claude/rules/own.md").write_text("A Claude rule: not offered")
+        (self.base / ".claude/rules/own.md").write_text("A Claude rule: shared converted")
+        (self.base / ".claude/agents").mkdir(parents=True)
+        (self.base / ".claude/agents/bot.json").write_text("{}")  # cannot be shared back
         self.start()
         _, found = self.request("/api/share-candidates")
         self.assertEqual(
-            [(row["name"], row["path"], row["target"]) for row in found["global"]],
-            [("helper", ".kiro/skills/helper", str(self.base))],
+            sorted((row["name"], row["path"], row["target"]) for row in found["global"]),
+            [
+                ("helper", ".kiro/skills/helper", str(self.base)),
+                ("own.md", ".claude/rules/own.md", str(self.base)),
+            ],
         )
         self.assertNotIn("helper", [row["name"] for row in found["local"]])
         body = {
@@ -355,6 +360,38 @@ class ShareApiTests(LibraryFixture):
         self.assertIsNone(cleared["check"])
         with self.assertRaises(c.ShareError):
             c.set_check(self.repo, "team", ["", "x"])
+
+    def test_a_claude_rule_shares_as_kiro_steering_and_adopts(self):
+        c.set_tools(self.repo, ["kiro", "claude"])
+        rule = self.repo / ".claude/rules/py.md"
+        rule.parent.mkdir(parents=True)
+        rule.write_text('---\npaths:\n  - "src/**/*.py"\n---\nUse type hints.\n')
+        self.start()
+        _, found = self.request("/api/share-candidates")
+        self.assertIn(("steering", "py.md"), [(x["kind"], x["name"]) for x in found["local"]])
+        body = {
+            "source": "team",
+            "kind": "steering",
+            "name": "py.md",
+            "path": ".claude/rules/py.md",
+        }
+        code, plan = self.request("/api/share-plan", {**body, "adopt": True})
+        self.assertEqual(code, 200, plan)
+        self.assertTrue(plan["can_apply"], plan["errors"])
+        code, result = self.request(
+            "/api/share-apply",
+            {"fingerprint": plan["fingerprint"], "note": "Share py rule", "adopt": True},
+        )
+        self.assertEqual(code, 200, result)
+        self.assertEqual(
+            (self.lib / "ip/steering/py.md").read_text(),
+            '---\ninclusion: fileMatch\nfileMatchPattern: ["src/**/*.py"]\n---\nUse type hints.\n',
+        )
+        # The rule converts back to the same text, so adopting links both tools.
+        self.assertTrue(result["adopted"], result.get("adopt_error"))
+        self.assertTrue(rule.is_symlink())
+        self.assertEqual(rule.read_text(), '---\npaths:\n  - "src/**/*.py"\n---\nUse type hints.\n')
+        self.assertTrue((self.repo / ".kiro/steering/py.md").is_symlink())
 
     def test_share_commits_only_the_asset_and_pushes(self):
         remote = self.remote()

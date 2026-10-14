@@ -701,10 +701,13 @@ def share_candidates(target):
                     files.append(rel)
             edited.append({"source": source, "kind": kind, "name": name, "files": files})
     for row in e.scan(target):
-        # Claude rules and commands are generated from Kiro originals (ADR 012).
-        if row["status"] != "local" or e.converted_folder(row["path"]):
+        if row["status"] != "local":
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
+        # A Claude rule or command is offered only while no library has it; it is
+        # shared converted to Kiro's format (ADR 014). Other Claude files are not.
+        if e.converted_folder(row["path"]) and (found or not e.shares_back(row["path"])):
+            continue
         differs, older = None, None
         if found:
             original = e.source_path(cfg, found[0][0], row["kind"], row["name"])
@@ -746,7 +749,9 @@ def share_candidates(target):
         try:
             home_cfg = c.effective(home)
             for row in e.scan(home):
-                if row["status"] != "local" or e.converted_folder(row["path"]):
+                if row["status"] != "local":
+                    continue
+                if e.converted_folder(row["path"]) and not e.shares_back(row["path"]):
                     continue
                 if e.locate(home_cfg, row["name"], kind=row["kind"]):
                     continue
