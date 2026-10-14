@@ -6,34 +6,46 @@ keeps the commit when a push is refused."""
 
 from __future__ import annotations
 
+import difflib
+import getpass
 import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from . import config as c
 from . import engine as e
 
 
 def run(path, *args):
+    return run_with(path, args).strip()
+
+
+def run_with(path, args, env_extra=None, data=None, text=True):
+    """Git without inherited GIT_* variables (only `env_extra`), optionally with stdin."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update(GIT_TERMINAL_PROMPT="0", GIT_SSH_COMMAND="ssh -oBatchMode=yes")
+    env.update(env_extra or {})
     try:
         result = subprocess.run(
             ["git", "-C", str(path), "-c", "protocol.ext.allow=never", *args],
             env=env,
+            input=data,
             capture_output=True,
-            text=True,
+            text=text,
             timeout=120,
         )
     except subprocess.TimeoutExpired as exc:
         raise c.ShareError("Git timed out. Check repository status before retrying.") from exc
     if result.returncode:
-        raise c.ShareError(result.stderr.strip() or result.stdout.strip() or "Git failed")
-    return result.stdout.strip()
+        err = result.stderr if text else result.stderr.decode(errors="replace")
+        out = result.stdout if text else ""
+        raise c.ShareError(err.strip() or out.strip() or "Git failed")
+    return result.stdout
 
 
 def checkout(target, source=""):
@@ -93,16 +105,22 @@ def status(target, source=""):
     return result
 
 
-def push_checked(path, before):
-    """Push the current branch to its own upstream branch: never forced, one URL."""
-    if not before.get("branch") or not before.get("head") or not before.get("remote_url"):
+def push_checked(path, before, branch=None):
+    """Push the current branch to its own upstream branch, or a new review branch to
+    the same remote: never forced, one push URL."""
+    if not before.get("head") or not before.get("remote_url"):
+        raise c.ShareError("A commit and a remote are required")
+    if branch is None and not before.get("branch"):
         raise c.ShareError("A branch, commit and remote are required")
     remote, ref = before["remote"], before["remote_ref"]
+    if branch is not None:
+        ref = f"refs/heads/{branch}"
     if remote.startswith("-") or not ref.startswith("refs/heads/"):
         raise c.ShareError("Unsupported remote or branch")
     if "\n" in before["push_url"]:
         raise c.ShareError("Multiple push destinations require your Git client")
-    return run(path, "push", "--no-force", "--no-mirror", "--", remote, "HEAD:" + ref)
+    source = "HEAD" if branch is None else ref
+    return run(path, "push", "--no-force", "--no-mirror", "--", remote, f"{source}:{ref}")
 
 
 def operate(target, source, action, fingerprint):
@@ -460,3 +478,489 @@ def commit_edits(target, source, kind, name, note, push, fingerprint):
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def redact(url):
+    """A remote URL without credentials: no user info for http(s), no password else."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme in ("http", "https") and "@" in parsed.netloc:
+        return parsed._replace(netloc=parsed.netloc.rpartition("@")[2]).geturl()
+    if parsed.scheme and parsed.password is not None:
+        user = parsed.username or ""
+        host = parsed.netloc.rpartition("@")[2]
+        return parsed._replace(netloc=f"{user}@{host}").geturl()
+    return url
+
+
+def remote_parts(url):
+    """(web host, repository path) of an https, ssh or scp-style remote, else None."""
+    if not isinstance(url, str) or not url:
+        return None
+    scp = re.fullmatch(r"(?:[^@/\s]+@)?([\w.-]+):(?!//)([^\s]+)", url)
+    if scp and "://" not in url:
+        host, path = scp.group(1), scp.group(2)
+    else:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http", "ssh", "git+ssh") or not parsed.hostname:
+            return None
+        host, path = parsed.hostname, parsed.path
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[: -len(".git")]
+    if not path or ".." in path.split("/"):
+        return None
+    return host.lower(), path
+
+
+def review_url(remote_url, base, branch):
+    """A GitHub compare or GitLab merge-request link for a pushed review branch."""
+    parts = remote_parts(remote_url)
+    if not parts or not branch:
+        return None
+    host, path = parts
+    if host == "github.com" and path.count("/") == 1 and base:
+        compare = quote(f"{base}...{branch}", safe="/.")
+        return f"https://github.com/{path}/compare/{compare}?expand=1"
+    if host.startswith("gitlab."):
+        query = urlencode({"merge_request[source_branch]": branch})
+        return f"https://{host}/{path}/-/merge_requests/new?{query}"
+    return None
+
+
+def slug(value):
+    return re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
+
+
+def review_branch(repo, kind, name):
+    """share/NAME-USER, with USER from Git's user.name or the operating-system user."""
+    user = quiet(repo, "config", "user.name").strip()
+    if not user:
+        try:
+            user = getpass.getuser()
+        except (KeyError, OSError):
+            user = ""
+    stem = name[: -len(c.SUFFIXES[kind])] if kind in c.SUFFIXES else name
+    branch = f"share/{slug(stem) or 'asset'}-{slug(user) or 'me'}"
+    if e.git(repo, "check-ref-format", f"refs/heads/{branch}", check=False).returncode:
+        raise c.ShareError(f"Cannot name a review branch {branch}")
+    return branch
+
+
+def commit_files(repo, commit, rel, name):
+    """Relative path -> content of an asset at one commit (single files keyed by name)."""
+    listing = run_with(
+        repo, ["ls-tree", "-r", "-z", "--full-tree", commit, "--", rel], text=False
+    ).split(b"\0")
+    entries = []
+    for item in listing:
+        if not item:
+            continue
+        meta, _, path = item.partition(b"\t")
+        mode, kind, sha = meta.decode().split()
+        if kind != "blob":
+            continue
+        path_text = os.fsdecode(path)
+        key = name if path_text == rel else path_text[len(rel) + 1 :]
+        if any(part in e.HOUSEKEEPING for part in key.split("/")):
+            continue
+        entries.append((key, sha, mode))
+    if not entries:
+        return {}
+    out = run_with(
+        repo,
+        ["cat-file", "--batch"],
+        data="".join(sha + "\n" for _, sha, _ in entries).encode(),
+        text=False,
+    )
+    files, offset = {}, 0
+    for key, _, mode in entries:
+        end = out.index(b"\n", offset)
+        size = int(out[offset:end].split()[2])
+        data = out[end + 1 : end + 1 + size]
+        offset = end + 1 + size + 1
+        files[key] = (b"symlink -> " + data) if mode == "120000" else e.bounded(data)
+    return files
+
+
+def version_rows(target):
+    """Kept versions recorded at target, with whether the team original changed since."""
+    rows, cache = [], {}
+    for key, row in sorted(c.versions(target).items()):
+        kind, new = key.split("/", 1)
+        item = {
+            "key": key,
+            "kind": kind,
+            "name": new,
+            "path": None,
+            "source": row["source"],
+            "of": row["name"],
+            "base": row["base"],
+            "team_changed": False,
+            "team_files": [],
+        }
+        for folder in c.folders(kind):
+            if os.path.lexists(c.safe_path(c.root(target), f"{folder}/{new}", leaf_link=True)):
+                item["path"] = f"{folder}/{new}"
+                break
+        try:
+            if row["source"] not in cache:
+                cache[row["source"]] = library(target, row["source"])
+            lib = cache[row["source"]]
+            original = e.source_path(lib["cfg"], row["source"], kind, row["name"])
+        except c.ShareError:
+            rows.append(item)
+            continue
+        if lib["repo"] is not None and row["base"]:
+            rel = original.relative_to(lib["repo"]).as_posix()
+            out = quiet(
+                lib["repo"], "diff", "--no-renames", "--name-only", row["base"], "HEAD", "--", rel
+            )
+            for line in [x for x in out.split("\n") if x]:
+                full = lib["repo"] / line
+                try:
+                    item["team_files"].append(full.relative_to(lib["path"]).as_posix())
+                except ValueError:
+                    item["team_files"].append(line)
+            item["team_changed"] = bool(item["team_files"])
+        rows.append(item)
+    return rows
+
+
+def version_diff(target, key):
+    """How the team original changed between a kept version's base and HEAD."""
+    row = c.versions(target).get(key)
+    if row is None:
+        raise c.ShareError(f"No kept version {key} here")
+    lib = library(target, row["source"])
+    if lib["repo"] is None or not row["base"]:
+        raise c.ShareError("This version has no recorded library commit to compare with")
+    original = e.source_path(lib["cfg"], row["source"], row["kind"], row["name"])
+    rel = original.relative_to(lib["repo"]).as_posix()
+    if e.git(lib["repo"], "cat-file", "-e", row["base"] + "^{commit}", check=False).returncode:
+        raise c.ShareError("The recorded library commit is not in this checkout")
+    old = commit_files(lib["repo"], row["base"], rel, row["name"])
+    new = commit_files(lib["repo"], "HEAD", rel, row["name"])
+    return e.compare(old, new, "then", "now")
+
+
+def propose_plan(target, source, kind, name, path=None, mode="direct"):
+    """Preview sending a local copy's changes to the library original (ADR 007)."""
+    target = c.root(target)
+    c.name(source)
+    c.asset_name(kind, name)
+    if mode not in ("direct", "review"):
+        raise c.ShareError("mode must be direct or review")
+    lib = library(target, source)
+    cfg, repo = lib["cfg"], lib["repo"]
+    rel = path if path is not None else e.local_copy(target, cfg, e.state(target), kind, name)
+    local = c.safe_path(target, rel, leaf_link=True)
+    if not os.path.lexists(local) or local.is_symlink():
+        raise c.ShareError(f"{rel} is not a local copy of {name}")
+    original = e.source_path(cfg, source, kind, name)
+    problems: list[tuple[str, str]] = []
+    try:
+        e.validate_asset(local, kind, outbound=True)
+    except c.ShareError as exc:
+        problems.append((str(exc), "invalid"))
+    exists = os.path.lexists(original)
+    if not exists:
+        problems.append((f"The library has no {name}; share it as a new asset", "missing"))
+    elif e.same_content(local, original):
+        problems.append((f"Your copy of {name} is the same as the library version", "same"))
+    commit_paths, branch, head, base, pending, push_url = [], None, None, None, "", None
+    if repo is None:
+        problems.append((f"Library {source} is not a Git repository", "repository"))
+    else:
+        commit_paths = [original.relative_to(repo).as_posix()]
+        st = status(target, source)
+        head = st["head"] or None
+        base = st["remote_ref"][len("refs/heads/") :] if st["upstream"] else st["branch"]
+        push_url = redact(st["push_url"] or st["remote_url"])
+        if mode == "direct":
+            problems += [(m, "repository") for m in commit_blockers(repo)]
+            pending = quiet(repo, "status", "--porcelain=v1", "--", *commit_paths)
+            if pending.strip():
+                problems.append(
+                    (f"The library has uncommitted edits of {name}; commit them first", "edited")
+                )
+        else:
+            if e.git(repo, "var", "GIT_COMMITTER_IDENT", check=False).returncode:
+                problems.append(
+                    (
+                        "Git needs your name and email (git config user.name/user.email)",
+                        "repository",
+                    )
+                )
+            if not head:
+                problems.append(("The library has no commits yet", "repository"))
+            branch = review_branch(repo, kind, name)
+            if (
+                e.git(
+                    repo, "rev-parse", "-q", "--verify", f"refs/heads/{branch}", check=False
+                ).returncode
+                == 0
+            ):
+                problems.append((f"Branch {branch} already exists in the library", "branch"))
+    changes = []
+    if exists:
+        change = {"op": "update", "path": str(original), "source": str(local)}
+        if branch:
+            change["branch"] = branch
+        changes.append(change)
+    result: dict[str, Any] = {
+        "version": 1,
+        "spec": {"type": "propose", "target": str(target), "action": "propose", "direction": mode},
+        "propose": {
+            "target": str(target),
+            "source": source,
+            "kind": kind,
+            "name": name,
+            "path": rel,
+            "mode": mode,
+        },
+        "changes": changes,
+        "errors": [m for m, _ in problems],
+        "conflicts": [
+            {"message": m, "path": rel, "key": None, "reason": why} for m, why in problems
+        ],
+        "can_apply": not problems,
+        "commit_paths": commit_paths,
+        "mode": mode,
+        "branch": branch,
+        "base": base,
+        "push_url": push_url,
+        "path": rel,
+        "observations": [
+            e.snapshot(local),
+            e.snapshot(original) if exists else None,
+            head,
+            pending,
+        ],
+    }
+    result["fingerprint"] = e.digest(result)
+    return result
+
+
+def review_commit(repo, rel, local, note, branch, head):
+    """Commit local as `rel` on a new branch from head, via a temporary index: the
+    working tree, the real index and the current branch are not touched."""
+    files = [(rel, local)] if local.is_file() else []
+    if local.is_dir():
+        for p in sorted(local.rglob("*")):
+            if e.ignored(p, local) or not p.is_file() or p.is_symlink():
+                continue
+            files.append((f"{rel}/{p.relative_to(local).as_posix()}", p))
+    if any(ch in str(p) for _, p in files for ch in "\n\r"):
+        raise c.ShareError("File names with line breaks cannot be proposed")
+    with tempfile.TemporaryDirectory(prefix="captain-share-index-") as temporary:
+        env = {"GIT_INDEX_FILE": str(Path(temporary) / "index")}
+        run_with(repo, ["read-tree", head], env)
+        run_with(repo, ["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", rel], env)
+        shas = run_with(
+            repo,
+            ["hash-object", "-w", "--no-filters", "--stdin-paths"],
+            env,
+            data="".join(f"{p}\n" for _, p in files),
+        ).split()
+        info = "".join(
+            f"{'100755' if os.access(p, os.X_OK) else '100644'} {sha}\t{path}\0"
+            for (path, p), sha in zip(files, shas)
+        )
+        run_with(repo, ["update-index", "-z", "--add", "--index-info"], env, data=info)
+        tree = run_with(repo, ["write-tree"], env).strip()
+    commit_id = run_with(repo, ["commit-tree", tree, "-p", head, "-m", note]).strip()
+    # The empty old value refuses to replace an existing branch.
+    run_with(repo, ["update-ref", f"refs/heads/{branch}", commit_id, ""])
+    return commit_id
+
+
+def propose_apply(saved, note, push=False):
+    """Apply a fresh propose preview: update the library original directly (commit,
+    push, then adopt) or on a review branch that is pushed for review."""
+    note = note_text(note)
+    spec = saved.get("propose") if isinstance(saved, dict) else None
+    if not isinstance(spec, dict):
+        raise c.ShareError("Preview the proposal before applying it")
+    args = {k: spec[k] for k in ("target", "source", "kind", "name", "path", "mode")}
+    lib = library(args["target"], args["source"])
+    adopted, adopt_error, url = False, None, None
+    with c.locks([lib["path"]]):
+        current = propose_plan(**args)
+        if current["fingerprint"] != saved.get("fingerprint"):
+            raise c.ShareError("Preview is stale: files or the library changed. Preview again.")
+        if not current["can_apply"]:
+            raise c.ShareError("; ".join(current["errors"]))
+        repo = lib["repo"]
+        local = c.safe_path(c.root(args["target"]), args["path"], leaf_link=True)
+        original = e.source_path(lib["cfg"], args["source"], args["kind"], args["name"])
+        if args["mode"] == "direct":
+            with c.locks([lib["path"] / ".captain"]):
+                e.replace_original(local, original, lib["path"])
+            try:
+                sha = commit(repo, current["commit_paths"], note)
+            except c.ShareError as exc:
+                raise c.ShareError(
+                    f"Updated the library, but the commit failed: {exc}. The previous "
+                    "version is archived in the library; commit there or restore it."
+                ) from exc
+            pushed, error = publish(args["target"], args["source"], lib["path"], push)
+        else:
+            sha = review_commit(
+                repo,
+                current["commit_paths"][0],
+                local,
+                note,
+                current["branch"],
+                current["observations"][2],
+            )
+            pushed, error = False, None
+            if push:
+                try:
+                    push_checked(
+                        lib["path"], status(args["target"], args["source"]), current["branch"]
+                    )
+                    pushed = True
+                except c.ShareError as exc:
+                    error = str(exc)
+            if pushed:
+                before = status(args["target"], args["source"])
+                url = review_url(before["remote_url"], current["base"], current["branch"])
+    if args["mode"] == "direct":
+        adopt_error = adopt_after_share(
+            args["target"], args["source"], args["kind"], args["name"], args["path"]
+        )
+        adopted = adopt_error is None
+    return {
+        "commit": sha,
+        "pushed": pushed,
+        "push_error": error,
+        "adopted": adopted,
+        "adopt_error": adopt_error,
+        "branch": current["branch"],
+        "review_url": url,
+    }
+
+
+STARTER = "profiles/starter.manifest"
+STARTER_HEADER = "# Starter set: offered to new teammates by Captain Share\n"
+
+
+def starter_text(assets):
+    """Manifest text: one `kind: names` line per kind in KINDS order, names sorted."""
+    by_kind: dict[str, set[str]] = {}
+    for ref in assets:
+        kind, _, name = ref.partition("/") if isinstance(ref, str) else ("", "", "")
+        by_kind.setdefault(kind, set()).add(name)
+    lines = [f"{k}: {' '.join(sorted(by_kind[k]))}\n" for k in c.KINDS if k in by_kind]
+    return STARTER_HEADER + "".join(lines)
+
+
+def starter_plan(target, source, assets, clear=False):
+    """Preview writing (or with `clear`, removing) a library's starter set."""
+    target = c.root(target)
+    c.name(source)
+    if not isinstance(assets, list) or len(assets) > 500:
+        raise c.ShareError("Expected a list of at most 500 kind/name assets")
+    if not isinstance(clear, bool):
+        raise c.ShareError("clear must be true or false")
+    if clear and assets:
+        raise c.ShareError("Clear the starter set or choose assets, not both")
+    if not clear and not assets:
+        raise c.ShareError("Choose at least one asset, or clear the starter set")
+    lib = library(target, source)
+    for ref in assets:
+        kind, sep, name = ref.partition("/") if isinstance(ref, str) else ("", "", "")
+        if not sep or kind not in c.KINDS:
+            raise c.ShareError(f"Use kind/name for starter assets: {ref!r}")
+        c.asset_name(kind, name)
+        if not c.DESTINATIONS[kind]:
+            raise c.ShareError(f"{kind} are installed by their tool and cannot be in a starter set")
+        original = e.source_path(lib["cfg"], source, kind, name)
+        if not os.path.lexists(original):
+            raise c.ShareError(f"The library {source} has no {ref}")
+        e.validate_asset(original, kind)
+    file = c.safe_path(lib["path"], STARTER)
+    exists = file.is_file()
+    current = file.read_text(errors="replace") if exists else ""
+    wanted = None if clear else starter_text(assets)
+    problems, commit_paths, pending, head = [], [], "", None
+    if clear and not exists:
+        problems.append(("This library has no starter set to clear", "same"))
+    elif wanted == current:
+        problems.append(("The starter set already has exactly these assets", "same"))
+    if lib["repo"] is None:
+        problems.append((f"Library {source} is not a Git repository", "repository"))
+    else:
+        commit_paths = [file.relative_to(lib["repo"]).as_posix()]
+        problems += [(m, "repository") for m in commit_blockers(lib["repo"])]
+        head = quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
+        pending = quiet(lib["repo"], "status", "--porcelain=v1", "--", *commit_paths)
+        if pending.strip():
+            problems.append(
+                (
+                    "The starter set has uncommitted changes in the library; commit them first",
+                    "edited",
+                )
+            )
+    diff = "".join(
+        difflib.unified_diff(
+            current.splitlines(True),
+            (wanted or "").splitlines(True),
+            fromfile=f"a/{STARTER}" if exists else "/dev/null",
+            tofile=f"b/{STARTER}" if wanted is not None else "/dev/null",
+        )
+    )
+    result: dict[str, Any] = {
+        "version": 1,
+        "spec": {"type": "starter", "target": str(target), "action": "starter"},
+        "starter": {"target": str(target), "source": source, "assets": assets, "clear": clear},
+        "changes": [{"op": "remove" if clear else "write", "path": STARTER}],
+        "diff": diff,
+        "content": wanted,
+        "errors": [m for m, _ in problems],
+        "conflicts": [
+            {"message": m, "path": STARTER, "key": None, "reason": why} for m, why in problems
+        ],
+        "can_apply": not problems,
+        "commit_paths": commit_paths,
+        "observations": [current if exists else None, head, pending],
+    }
+    result["fingerprint"] = e.digest(result)
+    return result
+
+
+def starter_apply(saved, note, push=False):
+    """Write the previewed starter set, commit only that file, and push when asked."""
+    note = note_text(note)
+    spec = saved.get("starter") if isinstance(saved, dict) else None
+    if not isinstance(spec, dict):
+        raise c.ShareError("Preview the starter set before applying it")
+    args = {k: spec[k] for k in ("target", "source", "assets", "clear")}
+    lib = library(args["target"], args["source"])
+    with c.locks([lib["path"], lib["path"] / ".captain"]):
+        current = starter_plan(**args)
+        if current["fingerprint"] != saved.get("fingerprint"):
+            raise c.ShareError("Preview is stale: the starter set changed. Preview again.")
+        if not current["can_apply"]:
+            raise c.ShareError("; ".join(current["errors"]))
+        file = c.safe_path(lib["path"], STARTER)
+        tx = e.Transaction()
+        try:
+            if args["clear"]:
+                # The committed version stays in history; the file itself is archived.
+                e.archive_into(tx, file, lib["path"])
+            else:
+                tx.write(file, current["content"])
+            sha = commit(lib["repo"], current["commit_paths"], note)
+        except Exception as exc:
+            issues = tx.rollback()
+            # The file had no uncommitted changes, so its index entry returns to HEAD.
+            e.git(lib["repo"], "reset", "-q", "--", *current["commit_paths"], check=False)
+            raise c.ShareError(
+                f"Saving the starter set failed and was rolled back: {exc}"
+                + (f"; recovery needed: {issues}" if issues else "")
+            ) from exc
+        pushed, error = publish(args["target"], args["source"], lib["path"], push)
+    return {"commit": sha, "pushed": pushed, "push_error": error}

@@ -127,6 +127,43 @@ def parser():
         action="store_true",
         help="Afterwards link this folder to the library original instead of its copy",
     )
+    dif = sub.add_parser("diff", help="Show how your copy differs from the library version")
+    dif.add_argument("kind", choices=list(c.KINDS))
+    dif.add_argument("name")
+    dif.add_argument("--source", required=True)
+    dif.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    pro = sub.add_parser(
+        "propose", help="Send your copy's changes to the library version (directly or for review)"
+    )
+    pro.add_argument("kind", choices=list(c.KINDS))
+    pro.add_argument("name")
+    pro.add_argument("--source", required=True)
+    pro.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    pro.add_argument("--review", action="store_true", help="Commit on a new review branch")
+    pro.add_argument("--note", help="Commit message (needed to apply)")
+    pro.add_argument("--push", action="store_true")
+    pro.add_argument("--apply", action="store_true")
+    keep = sub.add_parser("keep", help="Keep your copy as your own version under a new name")
+    keep.add_argument("kind", choices=list(c.KINDS))
+    keep.add_argument("name")
+    keep.add_argument("--source", required=True)
+    keep.add_argument("--as", dest="new_name", required=True, metavar="NEWNAME")
+    keep.add_argument("--path", help="Your copy, relative to --target (default: found)")
+    keep.add_argument(
+        "--no-team", dest="link_team", action="store_false", help="Do not link the team version"
+    )
+    keep.add_argument("--apply", action="store_true")
+    sub.add_parser("versions", help="List your kept versions and whether the team's changed")
+    st = sub.add_parser("starter", help="Show or change a library's starter set")
+    st.add_argument("source")
+    change = st.add_mutually_exclusive_group()
+    change.add_argument("--set", metavar="KIND/NAME,...", help="Replace the set")
+    change.add_argument("--add", metavar="KIND/NAME")
+    change.add_argument("--remove", metavar="KIND/NAME")
+    change.add_argument("--clear", action="store_true", help="Remove the starter set")
+    st.add_argument("--note", help="Commit message (needed to apply)")
+    st.add_argument("--push", action="store_true")
+    st.add_argument("--apply", action="store_true")
     adopt = sub.add_parser(
         "adopt", help="Replace local copies of a library asset with links to the original"
     )
@@ -506,6 +543,125 @@ def main(argv=None):
                 or result.get("adopt_error")
             )
             return 1 if blocked or result.get("plan", {}).get("can_apply") is False else 0
+        elif command == "diff":
+            result = e.diff(target, args.source, args.kind, args.name, args.path)
+            if not args.json:
+                for row in result["files"]:
+                    if row["diff"]:
+                        print(row["diff"], end="")
+                    else:
+                        note = "binary" if row["binary"] else "too large to show"
+                        print(f"{row['status']}: {row['path']} ({note})")
+                if not result["files"]:
+                    print("Your copy matches the library version.")
+                if result["truncated"]:
+                    print("(Output shortened.)")
+                return 0
+        elif command == "propose":
+            mode = "review" if args.review else "direct"
+            planned = r.propose_plan(target, args.source, args.kind, args.name, args.path, mode)
+            if not args.apply or not planned["can_apply"]:
+                result = planned
+                if not args.json:
+                    output(planned)
+                    if planned["branch"]:
+                        print(f"Review branch: {planned['branch']}")
+                    return 0 if planned["can_apply"] else 1
+            else:
+                if not args.note:
+                    raise c.ShareError(
+                        "Add --note describing your change; it is the commit message"
+                    )
+                result = r.propose_apply(planned, args.note, args.push)
+                if not args.json:
+                    print(
+                        f"Committed {result['commit'][:12]}"
+                        + (f" on {result['branch']}" if result["branch"] else "")
+                        + "."
+                    )
+                    if args.push:
+                        print(
+                            "Pushed." if result["pushed"] else f"Not pushed: {result['push_error']}"
+                        )
+                    if result["review_url"]:
+                        print(f"Open a review: {result['review_url']}")
+                    if result["adopt_error"]:
+                        print(f"Kept your copy: {result['adopt_error']}")
+                    return 1 if result["push_error"] or result["adopt_error"] else 0
+        elif command == "keep":
+            result = e.plan(
+                target,
+                action="keep",
+                kind=args.kind,
+                asset=args.name,
+                source=args.source,
+                path=args.path,
+                new_name=args.new_name,
+                link_team=args.link_team,
+            )
+            if args.apply:
+                result = e.apply(result)
+        elif command == "versions":
+            result = r.version_rows(target)
+            if not args.json:
+                for row in result:
+                    state = "team changed since" if row["team_changed"] else "up to date with"
+                    print(f"{row['key']:30} {state} {row['source']}/{row['kind']}/{row['of']}")
+                if not result:
+                    print("No kept versions here.")
+                return 0
+        elif command == "starter":
+            from .server import starter_view
+
+            view = starter_view(target, args.source)
+            if not (args.set or args.add or args.remove or args.clear):
+                result = view
+                if not args.json:
+                    if view["error"]:
+                        print(f"The starter set is invalid: {view['error']}")
+                    for ref in view["assets"]:
+                        print(ref)
+                    if not view["exists"]:
+                        print(f"{args.source} has no starter set.")
+                    return 1 if view["error"] else 0
+            else:
+                assets = list(view["assets"])
+                if view["error"] and (args.add or args.remove):
+                    raise c.ShareError(
+                        f"The current starter set is invalid ({view['error']}); use --set or --clear"
+                    )
+                if args.set:
+                    assets = [x.strip() for x in args.set.split(",") if x.strip()]
+                elif args.add and args.add not in assets:
+                    assets.append(args.add)
+                elif args.remove:
+                    if args.remove not in assets:
+                        raise c.ShareError(f"{args.remove} is not in the starter set")
+                    assets.remove(args.remove)
+                clear = bool(args.clear)
+                planned = r.starter_plan(target, args.source, [] if clear else assets, clear)
+                if not args.apply or not planned["can_apply"]:
+                    result = planned
+                    if not args.json:
+                        print(planned["diff"], end="")
+                        for error in planned["errors"]:
+                            print(f"  Blocked: {error}")
+                        return 0 if planned["can_apply"] else 1
+                else:
+                    if not args.note:
+                        raise c.ShareError(
+                            "Add --note describing the change; it is the commit message"
+                        )
+                    result = r.starter_apply(planned, args.note, args.push)
+                    if not args.json:
+                        print(f"Committed {result['commit'][:12]} in {args.source}.")
+                        if args.push:
+                            print(
+                                "Pushed."
+                                if result["pushed"]
+                                else f"Not pushed: {result['push_error']}"
+                            )
+                        return 1 if result["push_error"] else 0
         elif command == "adopt":
             result = e.plan(
                 target,

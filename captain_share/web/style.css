@@ -563,8 +563,152 @@ main {
 .strip-dot.ok {
   background: var(--mint);
 }
-#home-search {
+.list-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   margin: 16px 0 0;
+}
+.list-tools-end {
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+.density {
+  flex: none;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+/* Sections are expanders. */
+details.lib-section > summary.lib-heading {
+  cursor: pointer;
+  list-style: none;
+}
+details.lib-section > summary.lib-heading::-webkit-details-marker {
+  display: none;
+}
+details.lib-section > summary.lib-heading::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 8px;
+  border-left: 5px solid var(--ink-3);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 160ms var(--ease);
+}
+details.lib-section[open] > summary.lib-heading::before {
+  transform: rotate(90deg);
+}
+/* Row expander: shown in compact view only. */
+.row-toggle {
+  display: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  align-self: center;
+}
+.row-toggle::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0 auto;
+  border-left: 5px solid var(--ink-3);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 160ms var(--ease);
+}
+.row-toggle[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+.compact .row-toggle {
+  display: inline-block;
+}
+/* Compact: half-height rows, no intro text, small controls. */
+.compact .lib-row {
+  padding: 3px 12px;
+  min-height: 34px;
+}
+.compact .home > p,
+.compact .strip small,
+.compact .import-strip small {
+  display: none;
+}
+.compact .strip {
+  margin-top: 10px;
+  padding: 6px 12px;
+}
+.compact .lib-heading {
+  margin: 14px 0 4px;
+}
+.compact .home h1 {
+  font-size: 1.25rem;
+  margin-bottom: 4px;
+}
+.compact .lib-name {
+  font-size: 13px;
+}
+.compact .have {
+  font-size: 12px;
+  gap: 5px;
+}
+.compact .have i {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+.compact .lib-act {
+  gap: 4px 10px;
+}
+.compact .lib-row:not(.open) > .lib-desc,
+.compact .lib-row:not(.open) > .lib-meta,
+.compact .lib-row:not(.open) .lib-act .link {
+  display: none;
+}
+/* One line at every width: name on the left, status or button on the right. */
+.compact .lib-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+}
+.compact .lib-row > .lib-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.compact
+  .lib-row
+  > .lib-name
+  > span:not(.kind-tag):not(.badge-new):not(.badge-edit) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compact .lib-row > .lib-act {
+  flex: none;
+  max-width: none;
+  margin: 0 0 0 auto;
+  justify-content: flex-end;
+}
+.compact .lib-row > :not(.lib-name):not(.lib-act) {
+  flex-basis: 100%;
+  order: 2;
+}
+.compact .lib-row.open > .lib-act {
+  flex-wrap: wrap;
+}
+.compact .lib-row .lib-act button:not(.link) {
+  padding: 2px 9px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.compact .list-tools input {
+  padding: 5px 10px;
 }
 .lib-heading {
   margin: 28px 0 8px;
@@ -725,6 +869,102 @@ button.link:hover {
   margin-right: auto;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* Changes between your copy and the team version */
+.diff {
+  margin-top: 4px;
+}
+.diff-file {
+  margin: 10px 0 4px;
+  font-size: 12.5px;
+}
+.diff-file strong {
+  color: var(--mint-text);
+  margin-right: 6px;
+}
+.diff-text {
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  font:
+    12px/1.5 ui-monospace,
+    "SF Mono",
+    Menlo,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-add {
+  color: var(--mint-text);
+}
+.diff-del {
+  color: var(--red-ink);
+}
+.diff-hunk,
+.diff-meta {
+  color: var(--ink-3);
+}
+.lib-act button.on {
+  border-color: var(--amber-line);
+}
+
+/* Asset preview */
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.preview-head .lib-meta {
+  margin: 0;
+}
+.preview-files {
+  margin: 6px 0;
+  padding-left: 18px;
+  font:
+    12px/1.6 ui-monospace,
+    "SF Mono",
+    Menlo,
+    monospace;
+  color: var(--ink-2);
+}
+.preview-text {
+  max-height: 18rem;
+}
+
+/* Starter set editor (Settings) */
+.starter-editor {
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.starter-editor summary {
+  font-weight: 620;
+}
+.starter-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 2px 16px;
+  margin: 8px 0;
+}
+.starter-picks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-weight: 500;
+  color: var(--ink);
+}
+.starter-picks input {
+  width: auto;
 }
 
 /* Libraries found on this machine */

@@ -35,6 +35,15 @@ when they are explicitly synced, not automatically to every child repository.
 - **Use the library version:** `adopt KIND NAME --source NAME` previews archiving
   the local copies and linking the original; `--replace` only when the user agrees
   to archive a copy that differs; `--apply` to apply.
+- **Starter set:** `starter SOURCE` lists a library's starter set; `--set`,
+  `--add`, `--remove` (each `kind/name`) or `--clear` preview the new manifest, and
+  `--note TEXT --apply` commits only that file (`--push` to push).
+- **A copy that extends the team version:** `diff KIND NAME --source NAME` shows
+  the changes. Ask the user which they mean: `propose … --note TEXT --apply`
+  updates the library version (add `--review` for a pushed review branch when the
+  default branch is protected or others should review), or `keep … --as NEWNAME
+  --apply` keeps it as their own renamed version. `versions` reports kept versions
+  whose team original changed since.
 - **Add from outside:** `import PATH --source NAME` previews the assets in a zip
   file or folder (all valid ones; `--name` picks or renames one, `--kind steering`
   for Markdown). `--note TEXT --apply` copies them into the library and commits only

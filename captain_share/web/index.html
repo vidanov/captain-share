@@ -92,12 +92,14 @@
           machine can use it.
         </p>
         <div id="library-strips"></div>
-        <label class="visually-hidden" for="home-search">Search assets</label
-        ><input
-          id="home-search"
-          type="search"
-          placeholder="Search skills, agents, prompts"
-        />
+        <div class="list-tools">
+          <label class="visually-hidden" for="home-search">Search assets</label
+          ><input
+            id="home-search"
+            type="search"
+            placeholder="Search skills, agents, prompts"
+          /><button type="button" class="density quiet">Compact view</button>
+        </div>
         <div id="home-lists"></div>
       </section>
 
@@ -134,6 +136,9 @@
           </button>
         </section>
         <div id="import-panel"></div>
+        <div class="list-tools list-tools-end">
+          <button type="button" class="density quiet">Compact view</button>
+        </div>
         <div id="share-lists"></div>
       </section>
 
@@ -175,7 +180,7 @@
           <ul class="legend" aria-label="What the circles mean">
             <li><span class="jack on sample"></span>Installed</li>
             <li><span class="jack on inherited sample"></span>From a folder</li>
-            <li><span class="jack covered sample"></span>For your user</li>
+            <li><span class="jack covered sample"></span>Global</li>
             <li><span class="jack pending on sample"></span>Will install</li>
             <li><span class="jack pending sample"></span>Will remove</li>
             <li><span class="jack blocked on sample"></span>File in the way</li>
@@ -223,7 +228,7 @@
             <label for="source-scope" class="engraved"
               >Make it available to</label
             ><select id="source-scope">
-              <option value="user">Every project (your user)</option>
+              <option value="user">Global (all projects)</option>
               <option value="project">This project only</option>
             </select>
             <form id="add-source">
@@ -347,7 +352,7 @@
           <label class="where-option"
             ><input type="radio" name="where" value="user" checked />
             <span
-              ><strong>Everywhere for me</strong> Every project on this machine.
+              ><strong>Global</strong> All your projects on this machine.
               Recommended.</span
             ></label
           >
@@ -393,7 +398,7 @@
           <h2>Get</h2>
           <p>
             Library shows what is new since you last looked. Get links a skill
-            everywhere for you, or only in one project.
+            globally, for all your projects, or only in one project.
           </p>
         </section>
         <section>
@@ -440,10 +445,12 @@
             Get links an asset from the library into your agents' folders.
             Remove takes the link away and keeps a copy in the Archive.
           </dd>
-          <dt>Everywhere for me · This project</dt>
+          <dt>Global · Only in this project</dt>
           <dd>
-            Where a Get applies: your home folder, so every project sees it, or
-            only the project this window opened on.
+            Where a Get applies. Global installs into your home folder
+            (<code>~/.kiro</code>, <code>~/.claude</code>, …), so every project
+            sees it; Only in this project installs into the project this window
+            opened on.
           </dd>
           <dt>Link · original</dt>
           <dd>
@@ -493,13 +500,13 @@
             <code>.kiro/steering</code>
           </dd>
           <dt>Kiro powers</dt>
-          <dd>installed for you by <code>kiro-cli</code></dd>
+          <dd>installed globally by <code>kiro-cli</code></dd>
           <dt>Copilot</dt>
           <dd><code>.github/</code> instructions and prompts</dd>
         </dl>
         <p class="hint">
           In a project folder, or in your home folder when you get something
-          everywhere for you. Each is a link to the one original in the library.
+          globally. Each is a link to the one original in the library.
         </p>
       </section>
       <details class="about-more">
@@ -509,7 +516,7 @@ captain-share get NAME
 captain-share --help</code></pre>
         <p>
           The window works for the folder you start it in, the folders above it,
-          your user, and projects you register.
+          Global (your home folder), and projects you register.
         </p>
       </details>
       <details class="about-more">

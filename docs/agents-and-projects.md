@@ -27,7 +27,7 @@ Code; those stay Kiro-only. Agents not in the table (for example Cursor)
 are not targets today. Codex custom prompts are deprecated by OpenAI, and its
 `AGENTS.md` instruction files are not managed here.
 
-Kiro powers are installed for your user, not linked:
+Kiro powers are installed globally, not linked:
 `captain-share powers install LIBRARY NAME --apply` runs `kiro-cli powers install`.
 Library edits reach Kiro after another install.
 
@@ -35,11 +35,11 @@ Library edits reach Kiro after another install.
 
 | Install for | Command target | Use it for |
 | --- | --- | --- |
-| Your user | `--target "$HOME"` | Everyday personal skills, available in every project |
+| Global (your user) | `--target "$HOME"` | Everyday personal skills, available in every project |
 | A group of projects | `--target /path/to/parent-folder` | A baseline every project in that folder inherits |
 | One project | `--target /path/to/project` | Project- or customer-specific assets |
 
-**Your user.** Selections saved for your home folder link into `~/.kiro`,
+**Global (your user).** Selections saved for your home folder link into `~/.kiro`,
 `~/.claude`, and `~/.agents`, which the agents read in every project. Projects inherit your home
 libraries and `tools` setting, but not these selections, so a user-wide skill is
 never linked a second time into a project.
@@ -66,24 +66,24 @@ checkout paths stay in the ignored `sharing.local.json`.
 ([ADR 005](adr/005-library-home-and-sharing.md)):
 
 - **Library** shows what is new since you last looked, what you have, and the rest.
-  **Get** asks once where an asset should work: everywhere for you (all projects and
+  **Get** asks once where an asset should work: globally (all your projects, for the
   agents you use) or only in this project.
 - **Share** passes a skill you made or edited on to the team: copy into the library,
   commit with a note, push, and a line to paste in chat.
 - **Settings** holds the agents you use and the libraries.
 - **Where installed** is the grid for several places at once
   ([ADR 004](adr/004-web-places.md)): rows are assets, columns are this project, the
-  folders above it (shared with the projects inside), and Your user. A line from a
+  folders above it (shared with the projects inside), and Global (your home folder). A line from a
   folder's circle marks projects that get an asset from it; a dashed circle marks an
-  asset installed for your user. **Projects** there lists registered projects with
+  asset installed globally. **Projects** there lists registered projects with
   their sync state; Preview sync for all previews every project for one Apply.
 
-From a terminal, `captain-share get NAME` installs one asset for your user;
+From a terminal, `captain-share get NAME` installs one asset globally;
 `--here` installs it in the current project instead.
 
 ## Connect libraries once
 
-Connect each library for your user; every project then lists it:
+Connect each library globally (for your user); every project then lists it:
 
 ```bash
 captain-share --target "$HOME" source add team /path/to/team-library

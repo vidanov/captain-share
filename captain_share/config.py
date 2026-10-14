@@ -172,8 +172,13 @@ def blank() -> dict[str, Any]:
 
 def validate(data, path, local=False):
     allowed = {"version", "sources"} if local else set(blank())
-    if not isinstance(data, dict) or data.get("version") != 1 or set(data) - allowed - {"tools"}:
+    extra = {"tools", "versions"}
+    if not isinstance(data, dict) or data.get("version") != 1 or set(data) - allowed - extra:
         raise ShareError(f"Unsupported sharing configuration at {path}")
+    if "versions" in data:
+        if local:
+            raise ShareError(f"versions belong in the portable sharing.json, not {path}")
+        validate_versions(data["versions"], path)
     if "tools" in data:
         if local:
             raise ShareError(f"tools belong in the portable sharing.json, not {path}")
@@ -220,6 +225,40 @@ def validate(data, path, local=False):
                 asset_name(row["kind"], row["alias"])
             if direction == "outbound" and not isinstance(row.get("path"), str):
                 raise ShareError(f"Outbound selection needs a relative path: {key}")
+
+
+SHA = re.compile(r"[0-9a-f]{40,64}\Z")
+
+
+def validate_versions(versions, path):
+    """`versions` maps "kind/NEWNAME" to the library asset a kept copy came from (ADR 007)."""
+    if not isinstance(versions, dict):
+        raise ShareError(f"versions must be an object at {path}")
+    for key, row in versions.items():
+        kind, sep, new = key.partition("/") if isinstance(key, str) else ("", "", "")
+        if not sep or kind not in KINDS:
+            raise ShareError(f"Invalid version key {key!r} at {path}")
+        asset_name(kind, new)
+        if not isinstance(row, dict) or set(row) != {"source", "kind", "name", "base"}:
+            raise ShareError(f"Version {key} needs source, kind, name and base at {path}")
+        name(row["source"])
+        if row["kind"] != kind:
+            raise ShareError(f"Version {key} has a different kind at {path}")
+        asset_name(kind, row["name"])
+        if row["base"] is not None and not (
+            isinstance(row["base"], str) and SHA.fullmatch(row["base"])
+        ):
+            raise ShareError(f"Version {key} needs a commit id as base at {path}")
+
+
+def versions(target):
+    """Kept versions recorded in this folder's own portable configuration."""
+    p = safe_path(root(target), ".captain/sharing.json")
+    data = read_json(p)
+    if data is None:
+        return {}
+    validate(data, p)
+    return dict(data.get("versions", {}))
 
 
 def layers(target):

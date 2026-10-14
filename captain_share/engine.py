@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
@@ -434,24 +435,37 @@ def plan(
     selections=None,
     source=None,
     replace=False,
+    new_name=None,
+    link_team=False,
 ):
     """Preview changes. `selections` replaces the saved outbound selections for a
     one-off copy (sharing one asset) without writing them to configuration.
-    `adopt` swaps local copies of one asset for links to its library original."""
+    `adopt` swaps local copies of one asset for links to its library original;
+    `keep` renames a local copy into the user's own version (ADR 007)."""
     target = c.root(target)
     if direction not in ("inbound", "outbound", "both"):
         raise c.ShareError("Unknown direction")
-    if action not in ("sync", "remove", "restore", "adopt"):
+    if action not in ("sync", "remove", "restore", "adopt", "keep"):
         raise c.ShareError("Unknown plan action")
-    if action == "adopt":
+    if action in ("adopt", "keep"):
         c.asset_name(kind, asset)
         c.name(source)
-        if not isinstance(replace, bool):
-            raise c.ShareError("replace must be true or false")
+        for flag in (replace, link_team):
+            if not isinstance(flag, bool):
+                raise c.ShareError("replace and link_team must be true or false")
         if path is not None:
             c.safe_path(target, path, leaf_link=True)
     elif source is not None or replace:
-        raise c.ShareError("source and replace apply to adopt plans only")
+        raise c.ShareError("source and replace apply to adopt and keep plans only")
+    if action == "keep":
+        if not isinstance(new_name, str) or not new_name:
+            raise c.ShareError("Choose a new name for your version")
+        if not c.DESTINATIONS.get(kind):
+            raise c.ShareError(f"{kind} are installed by their tool; keep a copy is not available")
+        if kind in c.SUFFIXES and not new_name.endswith(c.SUFFIXES[kind]):
+            new_name += c.SUFFIXES[kind]
+    elif new_name is not None or link_team:
+        raise c.ShareError("new_name and link_team apply to keep plans only")
     if selections is not None:
         if direction != "outbound" or action != "sync":
             raise c.ShareError("Explicit selections apply to outbound copies only")
@@ -489,6 +503,90 @@ def plan(
     def archive(p, row=None):
         changes.append({"op": "archive", "path": str(p), "selection": row})
 
+    def link_original(freed=()):
+        """Adopt: archive local copies of the asset and link the library original into
+        every enabled tool folder. Paths in `freed` are being archived by this plan."""
+        nonlocal config_update
+        key = f"{source}/{kind}/{asset}"
+        existing_row = cfg["inbound"].get(key, {})
+        row = {"source": source, "kind": kind, "name": asset}
+        if existing_row.get("alias"):
+            row["alias"] = existing_row["alias"]
+        src = None
+        try:
+            src = source_path(cfg, source, kind, asset)
+            if not os.path.lexists(src):
+                raise c.ShareError(f"The library {source} has no {kind} named {asset}")
+            validate_asset(src, kind)
+            observe(src)
+        except (c.ShareError, OSError) as exc:
+            conflict(str(exc), key=key, reason="missing")
+        targets, kept = adopt_targets(target, cfg, kind, row.get("alias", asset), path)
+        if action == "keep":
+            targets = [(rel, tool) for rel, tool in targets if tool is not None]
+        if not c.destinations(kind, cfg["tools"]):
+            readers = ", ".join(c.DESTINATIONS[kind]) or "its own installer"
+            conflict(f"No enabled tool reads {kind}; enable {readers}", key=key, reason="tool")
+        for rel, tool in targets:
+            if src is None:
+                break
+            try:
+                dest = c.safe_path(target, rel, leaf_link=True)
+                if src == dest or src in dest.parents or dest in src.parents:
+                    raise c.ShareError("The local copy and the library original overlap")
+                existing = None if rel in freed else observe(dest)
+                previous = old["inbound"].get(rel)
+                if existing is not None and tracked(target, dest):
+                    conflict(
+                        f"{rel} is tracked by Git; remove it through its repository first",
+                        rel,
+                        key,
+                        "tracked",
+                    )
+                    continue
+                if previous:
+                    if existing is not None and existing != {
+                        "type": "link",
+                        "target": previous["source_path"],
+                    }:
+                        raise c.ShareError(f"Managed link changed: {rel}; restore it first")
+                    if previous["source_path"] != str(src):
+                        conflict(
+                            f"{rel} is linked to {previous.get('key')}; remove it first",
+                            rel,
+                            key,
+                            "managed",
+                        )
+                        continue
+                elif existing is not None:
+                    if not same_content(dest, src) and not replace:
+                        conflict(
+                            f"Your copy of {asset} differs from the library version. "
+                            "Share your changes, or replace yours (it is archived).",
+                            rel,
+                            key,
+                            "differs",
+                        )
+                        continue
+                    archive(dest, None)
+                if tool is None:
+                    continue  # The original the share came from is archived, not linked.
+                if existing != {"type": "link", "target": str(src)}:
+                    changes.append({"op": "link", "path": str(dest), "source": str(src)})
+                next_state["inbound"][rel] = {
+                    **row,
+                    "source_path": str(src),
+                    "key": key,
+                    "tool": tool,
+                }
+            except (c.ShareError, OSError) as exc:
+                conflict(str(exc), rel, key)
+        if key not in cfg["inbound"]:
+            config_update = local_cfg
+            config_update["inbound"][key] = row
+        return kept
+
+    kept: list = []
     if action == "sync":
         if direction in ("inbound", "both"):
             desired = {}
@@ -617,79 +715,74 @@ def plan(
                 except (c.ShareError, OSError) as exc:
                     conflict(str(exc), row.get("path"), key)
     elif action == "adopt":
-        key = f"{source}/{kind}/{asset}"
-        existing_row = cfg["inbound"].get(key, {})
-        row = {"source": source, "kind": kind, "name": asset}
-        if existing_row.get("alias"):
-            row["alias"] = existing_row["alias"]
-        src = None
+        kept = link_original()
+    elif action == "keep":
+        rel = path if path is not None else local_copy(target, cfg, old, kind, asset)
+        vkey, chosen = f"{kind}/{new_name}", new_name
         try:
-            src = source_path(cfg, source, kind, asset)
-            if not os.path.lexists(src):
-                raise c.ShareError(f"The library {source} has no {kind} named {asset}")
-            validate_asset(src, kind)
-            observe(src)
-        except (c.ShareError, OSError) as exc:
-            conflict(str(exc), key=key, reason="missing")
-        targets, kept = adopt_targets(target, cfg, kind, row.get("alias", asset), path)
-        if not c.destinations(kind, cfg["tools"]):
-            readers = ", ".join(c.DESTINATIONS[kind]) or "its own installer"
-            conflict(f"No enabled tool reads {kind}; enable {readers}", key=key, reason="tool")
-        for rel, tool in targets if src is not None else []:
-            try:
-                dest = c.safe_path(target, rel, leaf_link=True)
-                if src == dest or src in dest.parents or dest in src.parents:
-                    raise c.ShareError("The local copy and the library original overlap")
-                existing = observe(dest)
-                previous = old["inbound"].get(rel)
-                if existing is not None and tracked(target, dest):
-                    conflict(
-                        f"{rel} is tracked by Git; remove it through its repository first",
-                        rel,
-                        key,
-                        "tracked",
-                    )
-                    continue
-                if previous:
-                    if existing is not None and existing != {
-                        "type": "link",
-                        "target": previous["source_path"],
-                    }:
-                        raise c.ShareError(f"Managed link changed: {rel}; restore it first")
-                    if previous["source_path"] != str(src):
-                        conflict(
-                            f"{rel} is linked to {previous.get('key')}; remove it first",
-                            rel,
-                            key,
-                            "managed",
-                        )
-                        continue
-                elif existing is not None:
-                    if not same_content(dest, src) and not replace:
-                        conflict(
-                            f"Your copy of {asset} differs from the library version. "
-                            "Share your changes, or replace yours (it is archived).",
-                            rel,
-                            key,
-                            "differs",
-                        )
-                        continue
-                    archive(dest, None)
-                if tool is None:
-                    continue  # The original the share came from is archived, not linked.
-                if existing != {"type": "link", "target": str(src)}:
-                    changes.append({"op": "link", "path": str(dest), "source": str(src)})
-                next_state["inbound"][rel] = {
-                    **row,
-                    "source_path": str(src),
-                    "key": key,
-                    "tool": tool,
+            c.asset_name(kind, new_name)
+        except c.ShareError as exc:
+            conflict(str(exc), rel, vkey, "invalid")
+            chosen = None
+        local = c.safe_path(target, rel, leaf_link=True)
+        if not os.path.lexists(local) or local.is_symlink() or rel in old["inbound"]:
+            raise c.ShareError(f"{rel} is not a local copy of {asset}")
+        folder = rel.rpartition("/")[0]
+        restorable = set(c.folders()) | {f"ip/{k}" for k in c.KINDS} | set(c.KINDS)
+        if folder not in restorable:
+            conflict(f"{rel} is not in an asset folder", rel, vkey, "invalid")
+        try:
+            validate_asset(local, kind)
+        except c.ShareError as exc:
+            conflict(str(exc), rel, vkey, "invalid")
+        observe(local)
+        if tracked(target, local):
+            conflict(
+                f"{rel} is tracked by Git; rename it through its repository", rel, vkey, "tracked"
+            )
+        if chosen is not None:
+            new_rel = f"{folder}/{chosen}" if folder else chosen
+            new_dest = c.safe_path(target, new_rel, leaf_link=True)
+            taken = observe(new_dest) is not None or vkey in local_cfg.get("versions", {})
+            taken = taken or any(
+                os.path.lexists(c.safe_path(target, f"{f}/{chosen}", leaf_link=True))
+                for _, f in c.destinations(kind, cfg["tools"])
+            )
+            if chosen == asset:
+                conflict("Choose a name different from the team's", new_rel, vkey, "invalid")
+            elif taken:
+                conflict(
+                    f"{chosen} is already taken here; choose another name", new_rel, vkey, "taken"
+                )
+            edit = None
+            if kind == "skills" and (local / "SKILL.md").is_file():
+                renamed = rename_frontmatter((local / "SKILL.md").read_text(), chosen)
+                if renamed is not None:
+                    edit = f"name: {renamed[1]} -> {chosen}"
+            changes.append(
+                {
+                    "op": "rename",
+                    "path": str(new_dest),
+                    "source": str(local),
+                    "name": chosen,
+                    "edit": edit,
                 }
-            except (c.ShareError, OSError) as exc:
-                conflict(str(exc), rel, key)
-        if key not in cfg["inbound"]:
+            )
+            archive(local, None)
+            base = None
+            try:
+                base = head_of(source_path(cfg, source))
+            except c.ShareError as exc:
+                conflict(str(exc), None, vkey, "missing")
             config_update = local_cfg
-            config_update["inbound"][key] = row
+            config_update.setdefault("versions", {})[vkey] = {
+                "source": source,
+                "kind": kind,
+                "name": asset,
+                "base": base,
+            }
+        if link_team:
+            kept = [row for row in link_original(freed={rel}) if row["path"] != rel]
     elif action == "remove":
         c.asset_name(kind, asset)
         candidates = [f"{folder}/{asset}" for folder in c.folders(kind)]
@@ -784,6 +877,8 @@ def plan(
         spec["selections"] = selections
     if action == "adopt":
         spec.update(source=source, replace=replace)
+    if action == "keep":
+        spec.update(source=source, new_name=new_name, link_team=link_team)
     result = {
         "version": 1,
         "spec": spec,
@@ -798,9 +893,177 @@ def plan(
         "exclusion": exclusion,
         "sources": cfg["sources"],
     }
-    if action == "adopt":
+    if action in ("adopt", "keep"):
         result["kept"] = kept
     result["fingerprint"] = digest(result)
+    return result
+
+
+def archive_into(tx, dest, owner, selection=None):
+    """Move dest into owner's recoverable archive within a transaction; returns its id."""
+    archive_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:10]
+    folder = c.safe_path(owner, f".captain/archive/{archive_id}")
+    metadata = {
+        "version": 1,
+        "id": archive_id,
+        "relative_path": dest.relative_to(owner).as_posix(),
+        "snapshot": snapshot(dest),
+        "selection": selection,
+        "created": datetime.now(timezone.utc).isoformat(),
+    }
+    tx.move(dest, folder / "payload")
+    tx.write(folder / "record.json", metadata)
+    # Archive contents and machine records stay local to their owning repo.
+    ig = c.safe_path(owner, ".captain/.gitignore")
+    text = ig.read_text() if ig.exists() else ""
+    tx.write(
+        ig,
+        text.rstrip("\n")
+        + "\n"
+        + "\n".join(x for x in c.LOCAL_IGNORE.splitlines() if x not in text.splitlines())
+        + "\n",
+    )
+    return archive_id
+
+
+def replace_original(local, original, owner):
+    """Overwrite a library original with a local copy: the original is archived beside
+    the library, and a handled failure rolls both steps back."""
+    tx = Transaction()
+    try:
+        archive_id = archive_into(tx, original, owner)
+        tx.copy(local, original)
+    except Exception as exc:
+        issues = tx.rollback()
+        raise c.ShareError(
+            f"Updating the library failed and was rolled back: {exc}"
+            + (f"; recovery needed: {issues}" if issues else "")
+        ) from exc
+    return archive_id
+
+
+def head_of(path):
+    """The commit checked out in the Git repository holding path, or None."""
+    repo = git_root(path)
+    if repo is None:
+        return None
+    proc = git(repo, "rev-parse", "HEAD", check=False)
+    value = os.fsdecode(proc.stdout).strip()
+    return value if proc.returncode == 0 and c.SHA.fullmatch(value) else None
+
+
+def rename_frontmatter(text, new):
+    """(text with the frontmatter `name:` set to new, previous value), or None."""
+    lines = text.splitlines(True)
+    if not lines or lines[0].strip() != "---":
+        return None
+    for index, line in enumerate(lines[1:], 1):
+        if line.strip() == "---":
+            return None
+        if line.startswith("name:"):
+            previous = line.partition(":")[2].strip().strip("\"'")
+            ending = "\n" if line.endswith("\n") else ""
+            lines[index] = f"name: {new}{ending}"
+            return "".join(lines), previous
+    return None
+
+
+def local_copy(target, cfg, installed, kind, name):
+    """The asset's destination in the first enabled tool folder holding an unmanaged copy."""
+    for _, folder in c.destinations(kind, cfg["tools"]):
+        rel = f"{folder}/{name}"
+        p = c.safe_path(target, rel, leaf_link=True)
+        if os.path.lexists(p) and not p.is_symlink() and rel not in installed["inbound"]:
+            return rel
+    raise c.ShareError(f"No local copy of {name} found here; choose its path")
+
+
+MAX_DIFF_BYTES = 200 * 1024
+MAX_DIFF_FILES = 500
+MAX_DIFF_FILE = 1024 * 1024
+
+
+def bounded(data):
+    """File content for comparison; a large file becomes a binary hash marker."""
+    if len(data) > MAX_DIFF_FILE:
+        return b"\0large:" + hashlib.sha256(data).hexdigest().encode()
+    return data
+
+
+def asset_files(path, name):
+    """Relative path -> content of an asset on disk, without housekeeping files. A
+    single-file asset is keyed by its asset name."""
+    if path.is_symlink():
+        raise c.ShareError(f"{path} is a link, not a copy")
+    if path.is_file():
+        return {name: bounded(path.read_bytes())}
+    files = {}
+    for p in sorted(path.rglob("*")):
+        if ignored(p, path):
+            continue
+        rel = p.relative_to(path).as_posix()
+        if p.is_symlink():
+            files[rel] = ("symlink -> " + os.readlink(p)).encode()
+        elif p.is_file():
+            files[rel] = bounded(p.read_bytes())
+    return files
+
+
+def is_binary(data):
+    if b"\0" in data[:8192]:
+        return True
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+def compare(old, new, old_label="library", new_label="yours"):
+    """File-by-file unified diff from old to new, bounded in files and text."""
+    files: list[dict] = []
+    used, truncated = 0, False
+    for rel in sorted(set(old) | set(new)):
+        a, b = old.get(rel), new.get(rel)
+        if a == b:
+            continue
+        if len(files) >= MAX_DIFF_FILES:
+            truncated = True
+            break
+        status = "added" if a is None else "removed" if b is None else "changed"
+        binary = any(is_binary(x) for x in (a, b) if x is not None)
+        text = None
+        if not binary and not truncated:
+            lines = difflib.unified_diff(
+                (a or b"").decode().splitlines(),
+                (b or b"").decode().splitlines(),
+                fromfile=f"{old_label}/{rel}" if a is not None else "/dev/null",
+                tofile=f"{new_label}/{rel}" if b is not None else "/dev/null",
+                lineterm="",
+            )
+            text = "\n".join(lines) + "\n"
+            if used + len(text.encode()) > MAX_DIFF_BYTES:
+                text, truncated = None, True
+            else:
+                used += len(text.encode())
+        files.append({"path": rel, "status": status, "diff": text, "binary": binary})
+    return {"files": files, "truncated": truncated}
+
+
+def diff(target, source, kind, name, path=None):
+    """Changes a local copy makes to its library original (ADR 007 "Show changes")."""
+    target = c.root(target)
+    c.asset_name(kind, name)
+    cfg = c.effective(target)
+    original = source_path(cfg, c.name(source), kind, name)
+    if not os.path.lexists(original):
+        raise c.ShareError(f"The library {source} has no {kind} named {name}")
+    rel = path if path is not None else local_copy(target, cfg, state(target), kind, name)
+    local = c.safe_path(target, rel, leaf_link=True)
+    if not os.path.lexists(local):
+        raise c.ShareError(f"Nothing at {rel}")
+    result = compare(asset_files(original, name), asset_files(local, name))
+    result["path"] = rel
     return result
 
 
@@ -947,39 +1210,20 @@ def apply(saved):
                 dest = Path(change["path"])
                 if change["op"] == "archive":
                     owner = Path(change.get("archive_root", str(target)))
-                    archive_id = (
-                        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-                        + "-"
-                        + uuid.uuid4().hex[:10]
-                    )
-                    folder = c.safe_path(owner, f".captain/archive/{archive_id}")
-                    metadata = {
-                        "version": 1,
-                        "id": archive_id,
-                        "relative_path": dest.relative_to(owner).as_posix(),
-                        "snapshot": snapshot(dest),
-                        "selection": change.get("selection"),
-                        "created": datetime.now(timezone.utc).isoformat(),
-                    }
-                    tx.move(dest, folder / "payload")
-                    tx.write(folder / "record.json", metadata)
-                    # Archive contents and machine records stay local to their owning repo.
-                    ig = c.safe_path(owner, ".captain/.gitignore")
-                    text = ig.read_text() if ig.exists() else ""
-                    tx.write(
-                        ig,
-                        text.rstrip("\n")
-                        + "\n"
-                        + "\n".join(
-                            x for x in c.LOCAL_IGNORE.splitlines() if x not in text.splitlines()
-                        )
-                        + "\n",
-                    )
+                    archive_id = archive_into(tx, dest, owner, change.get("selection"))
                     archives.append({"id": archive_id, "root": str(owner)})
                 elif change["op"] == "link":
                     tx.link(change["source"], dest)
                 elif change["op"] == "copy":
                     tx.copy(Path(change["source"]), dest)
+                elif change["op"] == "rename":
+                    tx.copy(Path(change["source"]), dest)
+                    if change.get("edit"):
+                        skill = dest / "SKILL.md"
+                        renamed = rename_frontmatter(skill.read_text(), change["name"])
+                        if renamed is None:
+                            raise c.ShareError(f"Could not rename {skill}")
+                        tx.write(skill, renamed[0])
                 elif change["op"] == "restore":
                     tx.move(Path(change["source"]), dest)
                     record = Path(change["archive_record"])

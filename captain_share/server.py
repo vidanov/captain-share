@@ -215,6 +215,58 @@ def discover(startup):
     return {"libraries": libraries, "searched": [str(home)], "truncated": truncated}
 
 
+PREVIEW_BYTES = 60_000
+PREVIEW_FILES = 200
+MAIN_FILES = ("SKILL.md", "POWER.md", "README.md")
+
+
+def asset_preview(target, source, kind, name):
+    """Read-only look inside one library asset: its files and its main text."""
+    if kind not in c.KINDS:
+        raise c.ShareError("Unknown asset kind")
+    c.asset_name(kind, name)
+    path = e.source_path(c.effective(target), source, kind, name)
+    if not os.path.lexists(path):
+        raise c.ShareError(f"{source} has no {kind} named {name}")
+    if path.is_dir():
+        inside = path.resolve()
+
+        def contained(item):
+            # Never list through a link that leads out of the asset folder.
+            try:
+                item.resolve().relative_to(inside)
+            except ValueError:
+                return False
+            return True
+
+        files = sorted(
+            p
+            for p in path.rglob("*")
+            if p.is_file() and not p.is_symlink() and contained(p) and not e.ignored(p, path)
+        )
+        main = next((path / m for m in MAIN_FILES if (path / m).is_file()), None)
+    else:
+        files, main = [path], path
+    text, truncated = None, False
+    if main is not None:
+        raw = main.read_bytes()[: PREVIEW_BYTES + 1]
+        truncated = len(raw) > PREVIEW_BYTES
+        if b"\0" not in raw[:PREVIEW_BYTES]:
+            text = raw[:PREVIEW_BYTES].decode("utf-8", errors="replace")
+    base = path if path.is_dir() else path.parent
+    return {
+        "path": str(path),
+        "files": [
+            {"path": f.relative_to(base).as_posix(), "size": f.stat().st_size}
+            for f in files[:PREVIEW_FILES]
+        ],
+        "more_files": max(0, len(files) - PREVIEW_FILES),
+        "main": main.relative_to(base).as_posix() if main is not None else None,
+        "text": text,
+        "truncated": truncated,
+    }
+
+
 def reveal_path(target, value):
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -436,6 +488,24 @@ def library_home(startup, baseline):
         "project": {row.get("key") for row in e.state(startup)["inbound"].values()},
     }
     libraries, assets, seen = [], [], {}
+    # Kept versions (ADR 007) of library assets, at the project and for the user.
+    versions: dict[str, list[dict[str, Any]]] = {}
+    for where, folder in (("project", startup), ("user", home)):
+        if where == "user" and folder == startup:
+            continue
+        try:
+            rows = r.version_rows(folder)
+        except (c.ShareError, OSError):
+            continue
+        for row in rows:
+            versions.setdefault(f"{row['source']}/{row['kind']}/{row['of']}", []).append(
+                {
+                    "key": row["key"],
+                    "name": row["name"],
+                    "place": where,
+                    "team_changed": row["team_changed"],
+                }
+            )
     for source in sorted(project_cfg["sources"]):
         spec = project_cfg["sources"][source]
         info: dict[str, Any] = {
@@ -522,6 +592,7 @@ def library_home(startup, baseline):
                     },
                     "power": power,
                     "edited": bool(edited.get((kind, name))),
+                    "versions": versions.get(key, []),
                 }
             )
         seen[source] = {"head": head, "assets": sorted(keys)}
@@ -533,6 +604,26 @@ def library_home(startup, baseline):
         "assets": assets,
     }
     return view, seen
+
+
+def starter_view(target, source):
+    """A library's current starter set (profiles/starter.manifest)."""
+    lib = r.library(target, source)
+    file = c.safe_path(lib["path"], r.STARTER)
+    view = {
+        "source": source,
+        "path": r.STARTER,
+        "exists": file.is_file(),
+        "assets": [],
+        "error": None,
+    }
+    if view["exists"]:
+        try:
+            rows = i.import_profile(target, source, "starter")["selections"]
+            view["assets"] = [f"{row['kind']}/{row['name']}" for row in rows]
+        except (c.ShareError, OSError) as exc:
+            view["error"] = str(exc)
+    return view
 
 
 def share_candidates(target):
@@ -562,6 +653,13 @@ def share_candidates(target):
         if row["status"] != "local":
             continue
         found = e.locate(cfg, row["name"], kind=row["kind"])
+        differs = None
+        if found:
+            original = e.source_path(cfg, found[0][0], row["kind"], row["name"])
+            try:
+                differs = not e.same_content(target / row["path"], original)
+            except (c.ShareError, OSError):
+                differs = True
         local.append(
             {
                 "kind": row["kind"],
@@ -569,9 +667,15 @@ def share_candidates(target):
                 "path": row["path"],
                 "description": e.describe(target / row["path"], row["kind"]),
                 "exists_in": found[0][0] if found else None,
+                "differs": differs,
             }
         )
-    return {"local": local, "edited": edited, "libraries": names}
+    return {
+        "local": local,
+        "edited": edited,
+        "libraries": names,
+        "versions": r.version_rows(target),
+    }
 
 
 class Server(HTTPServer):
@@ -682,8 +786,35 @@ def make_server(target, port=0):
                         record_seen(fresh)
                         session["recorded"].update(fresh)
                     self.respond(view)
+                elif parsed.path == "/api/asset":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        asset_preview(
+                            target,
+                            query.get("source", [""])[0],
+                            query.get("kind", [""])[0],
+                            query.get("name", [""])[0],
+                        )
+                    )
                 elif parsed.path == "/api/share-candidates":
                     self.respond(share_candidates(target))
+                elif parsed.path == "/api/diff":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        e.diff(
+                            target,
+                            query.get("source", [""])[0],
+                            query.get("kind", [""])[0],
+                            query.get("name", [""])[0],
+                            query.get("path", [None])[0] or None,
+                        )
+                    )
+                elif parsed.path == "/api/starter":
+                    source = parse_qs(parsed.query).get("source", [""])[0]
+                    self.respond(starter_view(target, source))
+                elif parsed.path == "/api/version-diff":
+                    key = parse_qs(parsed.query).get("key", [""])[0]
+                    self.respond(r.version_diff(target, key))
                 elif parsed.path == "/api/matrix":
                     self.respond(matrix(startup, target))
                 elif parsed.path == "/api/projects":
@@ -818,6 +949,59 @@ def make_server(target, port=0):
                         data["name"],
                         data["path"],
                         adopt=data.get("adopt") is True,
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/starter-plan":
+                    result = r.starter_plan(
+                        target, data["source"], data.get("assets", []), data.get("clear", False)
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/starter-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "starter" not in saved:
+                        raise c.ShareError("Preview the starter set again before applying")
+                    plans.pop(fingerprint)
+                    result = r.starter_apply(saved, data["note"], data.get("push") is True)
+                elif path == "/api/propose-plan":
+                    result = r.propose_plan(
+                        target,
+                        data["source"],
+                        data["kind"],
+                        data["name"],
+                        data.get("path") or None,
+                        data.get("mode", "direct"),
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/propose-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "propose" not in saved:
+                        raise c.ShareError("Preview the proposal again before applying")
+                    plans.pop(fingerprint)
+                    result = r.propose_apply(saved, data["note"], data.get("push") is True)
+                elif path == "/api/keep-plan":
+                    link_team = data.get("link_team", True)
+                    if not isinstance(link_team, bool):
+                        raise c.ShareError("link_team must be true or false")
+                    result = e.plan(
+                        target,
+                        action="keep",
+                        kind=data["kind"],
+                        asset=data["name"],
+                        source=data["source"],
+                        path=data.get("path") or None,
+                        new_name=data["new_name"],
+                        link_team=link_team,
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -996,7 +1180,7 @@ def make_server(target, port=0):
                     saved = plans.get(fingerprint)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
-                    if "share" in saved or "import" in saved:
+                    if any(k in saved for k in ("share", "import", "propose", "starter")):
                         # A share or import also commits; it is applied only with its note.
                         raise c.ShareError("Apply a share or import preview with its note")
                     plans.pop(fingerprint)
