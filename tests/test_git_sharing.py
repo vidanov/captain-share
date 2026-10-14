@@ -80,6 +80,21 @@ class GitSharingTests(SharingFixture):
         with self.assertRaises(c.ShareError):
             r.operate(self.repo, "cloned", "push", r.status(self.repo, "cloned")["fingerprint"])
 
+    def test_clone_creates_only_one_missing_parent_when_asked(self):
+        e.git(self.lib, "init", "-b", "main")
+        self.commit(self.lib)
+        remote = self.base / "remote.git"
+        e.git(self.base, "clone", "--bare", str(self.lib), str(remote))
+        dest = self.base / "Libraries" / "shared"
+        with self.assertRaises(c.ShareError):
+            r.clone(self.repo, "shared", str(remote), str(dest))
+        deep = self.base / "a" / "b" / "shared"
+        with self.assertRaises(c.ShareError):
+            r.clone(self.repo, "shared", str(remote), str(deep), create_parent=True)
+        self.assertFalse((self.base / "a").exists())
+        r.clone(self.repo, "shared", str(remote), str(dest), create_parent=True)
+        self.assertTrue((dest / ".git").is_dir())
+
     def test_clone_rejects_existing_destination_credentials_and_command_protocol(self):
         for url in (
             "ext::touch /tmp/unwanted",

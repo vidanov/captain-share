@@ -24,7 +24,11 @@ let state,
   showAllFolders = false,
   // Saved choices a cancelled review puts back: { steps, patches, touched }.
   undo = null,
-  view = "patch",
+  view = "home",
+  // Library home data (ADR 005) and the Get in progress.
+  home = null,
+  getting = null,
+  applyNote = null,
   pending = null,
   lastSpec = null,
   resumeSpec = null,
@@ -70,12 +74,13 @@ let currentTarget = "",
 async function api(path, data) {
   // Every request names the folder it acts on (ADR 004); the server checks it.
   if (currentTarget) {
-    if (data === undefined)
-      path +=
-        (path.includes("?") ? "&" : "?") +
-        "target=" +
-        encodeURIComponent(currentTarget);
-    else if (!("target" in data)) data = { ...data, target: currentTarget };
+    if (data === undefined) {
+      if (!/[?&]target=/.test(path))
+        path +=
+          (path.includes("?") ? "&" : "?") +
+          "target=" +
+          encodeURIComponent(currentTarget);
+    } else if (!("target" in data)) data = { ...data, target: currentTarget };
   }
   const res = await fetch("/api/" + path, {
     method: data === undefined ? "GET" : "POST",
@@ -108,6 +113,7 @@ function invalidate() {
   pendingBatch = null;
   resumeSpec = null;
   $("review").hidden = true;
+  $("review-where").hidden = true;
   $("apply").disabled = true;
 }
 function here() {
@@ -165,6 +171,7 @@ async function refresh(keepDrafts = false) {
   $("installed-count").textContent = state.installed.length;
   $("installed-count").hidden = !state.installed.length;
   bay = await api("matrix");
+  home = await api("home").catch(() => null);
   await loadRepository();
   if (!keepDrafts) drafts = {};
   invalidate();
@@ -188,17 +195,14 @@ function remember(row, input, alias) {
 function render() {
   const titles = {
     patch: [
-      "Assets",
+      "Where installed",
       "Click a circle to install an asset there. A folder shares its assets with every project inside it.",
     ],
     projects: [
       "Projects",
       "This project and the ones you registered. Sync after changing assets or pulling a library.",
     ],
-    libraries: [
-      "Libraries",
-      "Folders with shared assets. Add one once and every project can use it.",
-    ],
+    libraries: ["Settings", "Your agents and the libraries this machine uses."],
     outbound: [
       "Share back",
       "Copy local originals from this project into a library checkout, then commit there.",
@@ -212,14 +216,30 @@ function render() {
       "Removed assets waiting to be restored. Nothing is deleted.",
     ],
   };
-  $("view-title").textContent = titles[view][0];
-  $("view-help").textContent = titles[view][1];
+  const sources = Object.keys(state.config.sources).length;
+  const where = WHERE_VIEWS.includes(view);
   document
     .querySelectorAll(".faceplate-nav button")
+    .forEach((b) =>
+      b.classList.toggle("active", b.dataset.tab === (where ? "patch" : view)),
+    );
+  document
+    .querySelectorAll("#subnav button")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === view));
-  const sources = Object.keys(state.config.sources).length;
-  $("first-run").hidden = !!sources || view !== "patch";
-  $("bay").hidden = !sources && view === "patch";
+  // Everyday views show no places; the project picker belongs to Where installed.
+  document.querySelector(".faceplate-place").hidden = !where;
+  $("subnav").hidden = !where;
+  const setup = !sources && view !== "libraries";
+  $("setup").hidden = !setup;
+  $("home-view").hidden = setup || view !== "home";
+  $("share-view").hidden = setup || view !== "share";
+  $("bay").hidden = setup || !(where || view === "libraries");
+  $("routing").hidden = true;
+  if (setup) return renderSetup();
+  if (view === "home") return renderHome();
+  if (view === "share") return renderShare();
+  $("view-title").textContent = titles[view][0];
+  $("view-help").textContent = titles[view][1];
   const isPatch = view === "patch";
   // The grid and its key belong to the Assets view only.
   $("bay-body").hidden = !isPatch;
@@ -232,7 +252,10 @@ function render() {
   $("selection-actions").hidden = view !== "outbound";
   $("project-actions").hidden = view !== "projects";
   if (isPatch) return renderMatrix();
-  if (view === "libraries") return renderLibraries();
+  if (view === "libraries") {
+    renderAgents();
+    return renderLibraries();
+  }
   if (view === "projects") {
     renderHistory("");
     renderProjects();
@@ -733,9 +756,9 @@ $("add-source").onsubmit = (event) => {
     });
     resetAddLibrary();
     $("add-library").open = false;
-    view = "patch";
+    view = "home";
     await refresh();
-    message("Library " + name + " added. Click a circle to install an asset.");
+    message("Library " + name + " added. Get what you need from it.");
   });
 };
 $("source").onchange = () =>
@@ -767,12 +790,19 @@ $("apply").onclick = () =>
         await api("apply", { fingerprint: plan.fingerprint });
         synced++;
       }
+      const note = applyNote;
+      applyNote = null;
+      getting = null;
       await refresh(true);
       message(
-        "Applied changes in " +
-          synced +
-          (synced === 1 ? " place" : " places") +
-          (skipped ? "; " + skipped + " skipped because of conflicts." : "."),
+        note && synced && !skipped
+          ? note
+          : "Applied changes in " +
+              synced +
+              (synced === 1 ? " place" : " places") +
+              (skipped
+                ? "; " + skipped + " skipped because of conflicts."
+                : "."),
       );
       return;
     }
@@ -799,12 +829,13 @@ $("place").onchange = () =>
   });
 $("preview-all").onclick = () => task(() => previewMany(projects));
 $("add-project").onclick = () => openFolderPicker("project-path");
-document.querySelectorAll(".faceplate-nav button").forEach(
+document.querySelectorAll(".faceplate-nav button, #subnav button").forEach(
   (button) =>
     (button.onclick = () =>
       task(async () => {
         await cancelReview();
         view = button.dataset.tab;
+        if (view === "share") shareData = null;
         $("search").value = "";
         invalidate();
         render();
@@ -964,11 +995,9 @@ $("clone-source").onsubmit = (event) => {
       layout: $("clone-layout").value,
       target: homePath(),
     });
-    view = "patch";
+    view = "home";
     await refresh();
-    message(
-      "Cloned and added for every project. Click a circle to install an asset.",
-    );
+    message("Cloned and added for every project. Get what you need from it.");
   });
 };
 
@@ -1434,6 +1463,7 @@ function setReviewHint(saved) {
 async function cancelReview() {
   const saved = undo;
   undo = null;
+  getting = null;
   invalidate();
   if (!saved) return;
   for (const step of saved.steps) await api("restore-selections", step);
@@ -1540,18 +1570,659 @@ function renderLibraries() {
     list.append(row);
   }
 }
-$("first-choose").onclick = () => {
-  view = "libraries";
-  render();
-  $("add-library").open = true;
-  openFolderPicker("source-path");
+// ---------------------------------------------------------------- library home (ADR 005)
+const WHERE_VIEWS = ["patch", "projects", "installed", "archive", "outbound"];
+let showAllAssets = false,
+  shareData = null,
+  shareOpen = null,
+  setupAgents = null;
+function ago(iso) {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (Number.isNaN(days)) return "";
+  if (days < 1) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return days + " days ago";
+  if (days < 60) return Math.round(days / 7) + " weeks ago";
+  return Math.round(days / 30) + " months ago";
+}
+function projectName() {
+  return (home?.project || "").split("/").pop() || "this project";
+}
+function getCommand(asset) {
+  const taken = home.assets.filter((a) => a.name === asset.name).length > 1;
+  return "captain-share get " + (taken ? asset.source + "/" : "") + asset.name;
+}
+function copyCommand(asset) {
+  const command = getCommand(asset);
+  navigator.clipboard
+    .writeText(command)
+    .then(() => message("Copied “" + command + "”. Paste it in chat."))
+    .catch(() => message("Send this to a teammate: " + command));
+}
+function owned(a) {
+  if (a.kind === "powers")
+    return a.power === "current" || a.power === "differs";
+  return a.have.user || a.have.project;
+}
+function libraryStrip(lib) {
+  const strip = el("div", undefined, "strip");
+  const waiting = lib.behind || lib.new || lib.updated;
+  strip.append(el("span", undefined, "strip-dot" + (waiting ? "" : " ok")));
+  const text = el("p");
+  text.append(
+    lib.behind
+      ? lib.behind +
+          (lib.behind === 1 ? " update" : " updates") +
+          " waiting for " +
+          lib.source
+      : lib.new || lib.updated
+        ? [
+            lib.new ? lib.new + " new" : "",
+            lib.updated ? lib.updated + " updated" : "",
+          ]
+            .filter(Boolean)
+            .join(" and ") + " since you last looked"
+        : lib.source + " is up to date",
+    el(
+      "small",
+      lib.source +
+        (lib.last_commit_at
+          ? " · last change " + ago(lib.last_commit_at)
+          : "") +
+        (lib.is_repo ? "" : " · not a Git checkout"),
+    ),
+  );
+  strip.append(text);
+  if (lib.is_repo) {
+    const button = el(
+      "button",
+      lib.behind ? "Update library" : "Check for updates",
+      lib.behind ? "" : "quiet",
+    );
+    button.type = "button";
+    button.onclick = () =>
+      task(async () => {
+        if (!lib.behind) {
+          const status = await api("fetch", { source: lib.source });
+          home = await api("home");
+          renderHome();
+          message(
+            status.behind
+              ? status.behind + " updates waiting. Update library to get them."
+              : lib.source + " is up to date.",
+          );
+          return;
+        }
+        const repo = await api(
+          "repository?source=" +
+            encodeURIComponent(lib.source) +
+            "&target=" +
+            encodeURIComponent(home.project),
+        );
+        await api("git", {
+          source: lib.source,
+          action: "pull",
+          fingerprint: repo.fingerprint,
+          target: home.project,
+        });
+        await refresh();
+        message(lib.source + " updated. New and changed assets are marked.");
+      });
+    strip.append(button);
+  }
+  return strip;
+}
+function starterBanner() {
+  for (const lib of home.libraries) {
+    const missing = (lib.starter || []).filter((key) => {
+      const asset = home.assets.find((a) => a.key === key);
+      return asset && !owned(asset);
+    });
+    if (!missing.length) continue;
+    const box = el("div", undefined, "strip starter");
+    const text = el("p");
+    text.append(
+      "Start with the " + lib.source + " starter set",
+      el(
+        "small",
+        missing.map((key) => key.split("/").pop()).join(", ") +
+          " · picked by the library maintainers",
+      ),
+    );
+    const button = el("button", "Get the starter set");
+    button.type = "button";
+    button.onclick = () =>
+      task(async () => {
+        await cancelReview();
+        await api("profile", {
+          target: home.user,
+          source: lib.source,
+          profile: "starter",
+        });
+        applyNote = "Starter set ready everywhere for you.";
+        await previewMany([{ path: home.user, label: "Everywhere for you" }]);
+      });
+    box.append(el("span", undefined, "strip-dot"), text, button);
+    return box;
+  }
+  return null;
+}
+function assetRow(a) {
+  const row = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", a.name),
+    el("span", KIND_LABELS[a.kind] || a.kind, "kind-tag"),
+  );
+  if (a.new) name.append(el("span", "New", "badge-new"));
+  else if (a.updated) name.append(el("span", "Updated", "badge-new"));
+  if (a.edited) name.append(el("span", "Edited here", "badge-edit"));
+  row.append(name);
+  if (a.description || a.error)
+    row.append(el("p", a.description || a.error, "lib-desc"));
+  const meta = [];
+  if (a.shared_by)
+    meta.push(
+      "Shared by " +
+        a.shared_by +
+        (a.shared_at ? " · " + ago(a.shared_at) : ""),
+    );
+  if (home.libraries.length > 1) meta.push(a.source);
+  if (meta.length) row.append(el("p", meta.join(" · "), "lib-meta"));
+  const act = el("div", undefined, "lib-act");
+  const have = (text) => {
+    const pill = el("span", undefined, "have");
+    pill.append(el("i"), text);
+    act.append(pill);
+  };
+  const link = (text, fn, cls = "") => {
+    const button = el("button", text, "link " + cls);
+    button.type = "button";
+    button.onclick = fn;
+    act.append(button);
+  };
+  if (a.status !== "available") {
+    act.append(el("span", "Can't be installed", "lib-meta"));
+    act.title = a.error || "";
+  } else if (a.kind === "powers") {
+    if (a.power === "current") {
+      have("For you");
+      link("Remove", () => task(() => powerAction(a, "uninstall")));
+    } else if (a.power === "unavailable" || !a.power) {
+      act.append(el("span", "Needs Kiro CLI", "lib-meta"));
+    } else {
+      const button = el(
+        "button",
+        a.power === "differs" ? "Update" : "Get",
+        a.new ? "" : "quiet",
+      );
+      button.type = "button";
+      button.onclick = () => task(() => powerAction(a, "install"));
+      act.append(button);
+    }
+  } else if (a.have.user) {
+    have(a.linked.user ? "For you" : "For you, not linked yet");
+    if (!a.linked.user)
+      link("Finish", () =>
+        task(() =>
+          previewMany([{ path: home.user, label: "Everywhere for you" }]),
+        ),
+      );
+    link("Remove", () => task(() => removeAsset(a, home.user)));
+  } else if (a.have.project && a.have.from) {
+    have("From " + a.have.from.split("/").pop());
+  } else if (a.have.project) {
+    have("In " + projectName());
+    link("Remove", () => task(() => removeAsset(a, home.project)));
+  } else {
+    const button = el("button", "Get", a.new || a.updated ? "" : "quiet");
+    button.type = "button";
+    button.onclick = () => task(() => getAsset(a, "user"));
+    act.append(button);
+  }
+  if (a.status === "available")
+    link("Copy get command", () => copyCommand(a), "copy-get");
+  row.append(act);
+  return row;
+}
+function homeSection(title, rows, limit) {
+  const section = el("section", undefined, "lib-section");
+  section.append(el("h2", title, "lib-heading"));
+  const list = el("div", undefined, "lib-list");
+  const shown = limit && rows.length > limit ? rows.slice(0, limit) : rows;
+  list.append(...shown.map(assetRow));
+  if (shown.length < rows.length) {
+    const more = el("button", "Show all " + rows.length, "link lib-more");
+    more.type = "button";
+    more.onclick = () => {
+      showAllAssets = true;
+      renderHome();
+    };
+    list.append(more);
+  }
+  section.append(list);
+  return section;
+}
+function renderHome() {
+  if (!home) {
+    $("home-lists").replaceChildren(
+      el("p", "The library view needs a newer Captain Share server.", "hint"),
+    );
+    return;
+  }
+  $("home-title").textContent =
+    home.libraries.length === 1
+      ? home.libraries[0].source.charAt(0).toUpperCase() +
+        home.libraries[0].source.slice(1) +
+        " library"
+      : "Your libraries";
+  $("library-strips").replaceChildren(
+    ...home.libraries.map(libraryStrip),
+    ...[starterBanner()].filter(Boolean),
+  );
+  const query = $("home-search").value.toLowerCase();
+  const assets = home.assets.filter((a) =>
+    (a.name + " " + a.description + " " + a.kind).toLowerCase().includes(query),
+  );
+  const fresh = assets.filter((a) => a.new || a.updated);
+  const mine = assets.filter((a) => !fresh.includes(a) && owned(a));
+  const rest = assets.filter((a) => !fresh.includes(a) && !owned(a));
+  const lists = [];
+  if (fresh.length) lists.push(homeSection("New from your team", fresh));
+  if (mine.length) lists.push(homeSection("You have", mine));
+  if (rest.length)
+    lists.push(
+      homeSection(
+        (mine.length || fresh.length ? "Everything else" : "In the library") +
+          " · " +
+          rest.length,
+        rest,
+        query || showAllAssets ? 0 : 12,
+      ),
+    );
+  if (!assets.length)
+    lists.push(
+      el("p", query ? "Nothing matches." : "This library is empty.", "hint"),
+    );
+  $("home-lists").replaceChildren(...lists);
+}
+$("home-search").oninput = () => renderHome();
+async function getAsset(a, where) {
+  await cancelReview();
+  const target = where === "user" ? home.user : home.project;
+  const result = await api("selections", {
+    target,
+    source: a.source,
+    direction: "inbound",
+    selections: [{ kind: a.kind, name: a.name }],
+  });
+  undo = {
+    steps: [{ target, direction: "inbound", previous: result.previous }],
+    patches: new Map(),
+    touched: [],
+  };
+  getting = a;
+  applyNote =
+    a.name +
+    (where === "user"
+      ? " is ready in every project."
+      : " is ready in " + projectName() + ".") +
+    " Start a new agent session to load it.";
+  await previewMany([
+    {
+      path: target,
+      label: where === "user" ? "Everywhere for you" : projectName(),
+    },
+  ]);
+  $("where-project").textContent = "Only in " + projectName();
+  document.querySelector('#review-where input[value="' + where + '"]').checked =
+    true;
+  $("review-where").hidden = false;
+}
+document.querySelectorAll('#review-where input[name="where"]').forEach(
+  (input) =>
+    (input.onchange = () => {
+      const asset = getting;
+      if (asset) task(() => getAsset(asset, input.value));
+    }),
+);
+async function removeAsset(a, target) {
+  await cancelReview();
+  applyNote = null;
+  await preview({ action: "remove", kind: a.kind, name: a.name, target });
+}
+async function powerAction(a, action) {
+  await cancelReview();
+  await preview({
+    power: true,
+    action,
+    source: a.source,
+    name: a.name,
+    target: home.user,
+  });
+}
+
+// ---------------------------------------------------------------- share
+async function renderShare() {
+  const box = $("share-lists");
+  if (!shareData) {
+    box.replaceChildren(el("p", "Looking for skills to share…", "hint"));
+    try {
+      shareData = await api(
+        "share-candidates?target=" + encodeURIComponent(home?.project || ""),
+      );
+    } catch (error) {
+      box.replaceChildren(el("p", error.message, "hint"));
+      return;
+    }
+  }
+  const lists = [];
+  const project = projectName();
+  if (shareData.local.length) {
+    const section = el("section", undefined, "lib-section");
+    section.append(
+      el("h2", "In " + project + " · not in a library", "lib-heading"),
+    );
+    const list = el("div", undefined, "lib-list");
+    for (const row of shareData.local) list.append(shareRow(row, "local"));
+    section.append(list);
+    lists.push(section);
+  }
+  if (shareData.edited.length) {
+    const section = el("section", undefined, "lib-section");
+    section.append(el("h2", "Library assets you edited", "lib-heading"));
+    const list = el("div", undefined, "lib-list");
+    for (const row of shareData.edited) list.append(shareRow(row, "edited"));
+    section.append(list);
+    lists.push(section);
+  }
+  if (!lists.length)
+    lists.push(
+      el(
+        "p",
+        "Nothing to share from " +
+          project +
+          ". Skills you create in its agent folders appear here.",
+        "hint",
+      ),
+    );
+  box.replaceChildren(...lists);
+}
+function shareRow(row, type) {
+  const id = type + "/" + (row.source || "") + "/" + row.kind + "/" + row.name;
+  const wrap = el("div", undefined, "lib-row");
+  const name = el("div", undefined, "lib-name");
+  name.append(
+    el("span", row.name),
+    el("span", KIND_LABELS[row.kind] || row.kind, "kind-tag"),
+  );
+  if (type === "edited") name.append(el("span", "Edited", "badge-edit"));
+  wrap.append(name);
+  if (row.description) wrap.append(el("p", row.description, "lib-desc"));
+  wrap.append(
+    el(
+      "p",
+      type === "local"
+        ? row.path + (row.exists_in ? " · already in " + row.exists_in : "")
+        : row.source +
+            " · " +
+            row.files.length +
+            (row.files.length === 1 ? " file" : " files"),
+      "lib-meta",
+    ),
+  );
+  const act = el("div", undefined, "lib-act");
+  const open = el(
+    "button",
+    type === "local" ? "Share…" : "Send changes…",
+    shareOpen === id ? "quiet" : "",
+  );
+  open.type = "button";
+  open.onclick = () => {
+    shareOpen = shareOpen === id ? null : id;
+    renderShare();
+  };
+  act.append(open);
+  wrap.append(act);
+  if (shareOpen === id) wrap.append(sharePanel(row, type));
+  return wrap;
+}
+function sharePanel(row, type) {
+  const panel = el("div", undefined, "share-panel");
+  const libraries = shareData.libraries;
+  const note = el("textarea");
+  note.rows = 2;
+  note.value = type === "local" ? row.description || "" : "Update " + row.name;
+  const noteLabel = el("label", "What is it good for? Teammates see this.");
+  noteLabel.append(note);
+  panel.append(noteLabel);
+  let library = null;
+  if (type === "local" && libraries.length > 1) {
+    library = el("select");
+    for (const name of libraries) {
+      const option = el("option", name);
+      option.value = name;
+      library.append(option);
+    }
+    const label = el("label", "Library");
+    label.append(library);
+    panel.append(label);
+  }
+  const pushBox = el("label", undefined, "check");
+  const push = el("input");
+  push.type = "checkbox";
+  push.checked = true;
+  pushBox.append(push, " Push to the team now");
+  panel.append(pushBox);
+  const changes = el("div", undefined, "share-changes");
+  panel.append(changes);
+  const actions = el("div", undefined, "actions");
+  const go = el("button", type === "local" ? "Share" : "Send changes");
+  go.type = "button";
+  const cancel = el("button", "Cancel", "quiet");
+  cancel.type = "button";
+  cancel.onclick = () => {
+    shareOpen = null;
+    renderShare();
+  };
+  actions.append(go, cancel);
+  panel.append(actions);
+  let plan = null;
+  const source = () => library?.value || row.source || libraries[0];
+  const loadPlan = () =>
+    task(async () => {
+      changes.replaceChildren(el("p", "Preparing…", "hint"));
+      if (type === "edited") {
+        changes.replaceChildren(
+          ...row.files.map((file) => {
+            const line = el("div", undefined, "change");
+            line.append(el("strong", "Commit"), " ", el("code", file));
+            return line;
+          }),
+        );
+        return;
+      }
+      plan = await api("share-plan", {
+        target: home.project,
+        source: source(),
+        kind: row.kind,
+        name: row.name,
+        path: row.path,
+      });
+      const lines = plan.changes.map((change) => {
+        const line = el("div", undefined, "change");
+        line.append(
+          el("strong", change.op),
+          " ",
+          el("code", relativeTo(change.path, home.project)),
+        );
+        return line;
+      });
+      for (const path of plan.commit_paths || []) {
+        const line = el("div", undefined, "change");
+        line.append(el("strong", "Commit"), " ", el("code", path));
+        lines.push(line);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      changes.replaceChildren(...lines);
+      go.disabled = !plan.can_apply;
+    });
+  if (library) library.onchange = loadPlan;
+  go.onclick = () =>
+    task(async () => {
+      if (!note.value.trim())
+        throw new Error("Say in a few words what it is good for.");
+      const result =
+        type === "local"
+          ? await api("share-apply", {
+              fingerprint: plan.fingerprint,
+              note: note.value.trim(),
+              push: push.checked,
+            })
+          : await api("commit-edits", {
+              source: row.source,
+              kind: row.kind,
+              name: row.name,
+              note: note.value.trim(),
+              push: push.checked,
+              fingerprint: (
+                await api(
+                  "repository?source=" +
+                    encodeURIComponent(row.source) +
+                    "&target=" +
+                    encodeURIComponent(home.project),
+                )
+              ).fingerprint,
+            });
+      panel.replaceChildren(shareDone(row, result));
+      shareData = null;
+      home = await api("home").catch(() => home);
+    });
+  setTimeout(loadPlan);
+  return panel;
+}
+function shareDone(row, result) {
+  const box = el("div", undefined, "share-done");
+  box.append(
+    el(
+      "strong",
+      result.pushed
+        ? row.name + " is shared."
+        : row.name + " is committed in the library but not pushed yet.",
+    ),
+  );
+  if (result.push_error)
+    box.append(
+      el(
+        "p",
+        "Push failed: " + result.push_error + " Push it from Settings.",
+        "hint warn",
+      ),
+    );
+  const command = result.get_command || "captain-share get " + row.name;
+  box.append(el("p", "Tell your team. Paste this in chat:", "hint"));
+  const copy = el("div", undefined, "copy-line");
+  const code = el("code", "Try " + row.name + ": " + command);
+  const button = el("button", "Copy", "quiet");
+  button.type = "button";
+  button.onclick = () =>
+    navigator.clipboard
+      .writeText(code.textContent)
+      .then(() => message("Copied. Paste it in chat."))
+      .catch(() => message(code.textContent));
+  copy.append(code, button);
+  box.append(copy);
+  return box;
+}
+
+// ---------------------------------------------------------------- agents and first setup
+function agentPicks(box, selected, onToggle) {
+  box.replaceChildren(
+    ...AGENTS.map(([tool, name]) => {
+      const pick = el(
+        "button",
+        name,
+        "agent-pick" + (selected.includes(tool) ? " on" : ""),
+      );
+      pick.type = "button";
+      pick.setAttribute("aria-pressed", String(selected.includes(tool)));
+      pick.onclick = () => onToggle(tool);
+      return pick;
+    }),
+  );
+}
+function renderAgents() {
+  const current = home?.agents || [];
+  agentPicks($("user-agents"), current, (tool) =>
+    task(async () => {
+      const tools = current.includes(tool)
+        ? current.filter((t) => t !== tool)
+        : [...current, tool];
+      if (!tools.length) throw new Error("Keep at least one agent.");
+      await api("tools", { tools, target: home.user });
+      home = await api("home");
+      renderAgents();
+      applyNote = "Your agents are updated.";
+      await previewMany([{ path: home.user, label: "Everywhere for you" }]);
+    }),
+  );
+}
+function cloneDestination() {
+  const last = $("setup-url")
+    .value.trim()
+    .split(/[/:]/)
+    .pop()
+    .replace(/\.git$/, "");
+  const name = last ? suggestName(last) : "";
+  return { name, path: name ? homePath() + "/Libraries/" + name : "" };
+}
+function renderSetup() {
+  if (!setupAgents) setupAgents = [...(home?.agents || ["kiro"])];
+  agentPicks($("setup-agents"), setupAgents, (tool) => {
+    setupAgents = setupAgents.includes(tool)
+      ? setupAgents.filter((t) => t !== tool)
+      : [...setupAgents, tool];
+    renderSetup();
+  });
+  const dest = cloneDestination();
+  $("setup-dest").textContent = dest.path
+    ? "Cloned to " + shortPath(dest.path) + " with your Git access."
+    : "Paste the Git URL your team uses for shared skills.";
+}
+async function saveSetupAgents() {
+  if (!setupAgents.length) throw new Error("Choose at least one agent.");
+  await api("tools", { tools: setupAgents, target: homePath() });
+}
+$("setup-url").oninput = renderSetup;
+$("setup-clone").onsubmit = (event) => {
+  event.preventDefault();
+  task(async () => {
+    await saveSetupAgents();
+    const dest = cloneDestination();
+    message("Cloning " + dest.name + "…");
+    await api("clone", {
+      name: dest.name,
+      url: $("setup-url").value.trim(),
+      path: dest.path,
+      target: homePath(),
+      create_parent: true,
+    });
+    view = "home";
+    await refresh();
+    message("Ready. Get what you need, or start with the starter set.");
+  });
 };
-$("first-clone").onclick = () => {
-  view = "libraries";
-  render();
-  $("clone-library").open = true;
-  $("clone-url").focus();
-};
+$("setup-folder").onclick = () =>
+  task(async () => {
+    await saveSetupAgents();
+    view = "libraries";
+    render();
+    $("add-library").open = true;
+    $("source-scope").value = "user";
+    openFolderPicker("source-path");
+  });
+
 task(refresh);
 
 function changeLabel(status) {

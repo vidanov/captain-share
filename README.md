@@ -69,6 +69,17 @@ captain-share apply /tmp/sharing-plan.json
 captain-share --target /path/to/project status
 ```
 
+To get one asset quickly, name it. `get` resolves `NAME`, `SOURCE/NAME` or
+`SOURCE/KIND/NAME` across connected libraries, installs for your user by default
+(`--here` installs into `--target` or the current folder), shows the preview and
+applies after you confirm or with `--apply`. A preview with conflicts changes nothing.
+
+```bash
+captain-share get review-code              # user-wide; asks before applying
+captain-share get team/review-code --apply
+captain-share --target /path/to/project get team/skills/review-code --here
+```
+
 Inbound assets are live symlinks. Editing the shared original changes every linked
 project. Aliases change the local directory/file name, not skill frontmatter or
 agent resource references. Select dependencies referenced by an agent alongside
@@ -143,8 +154,20 @@ captain-share --target /path/to/project plan --direction outbound
 captain-share --target /path/to/project sync --direction outbound --apply
 ```
 
-Outbound copies go into the local library checkout. Review that diff, run the
-library's checks, and commit normally. Push is available as an explicit, confirmed
+To share a single asset in one step, `share` previews the copy; with `--apply` it
+copies the asset into the library checkout and commits **only that asset's paths**
+with your note as the message (other staged changes stay staged). `--push` then
+pushes without forcing; a refused push keeps the commit. It prints the `get`
+command teammates can run. No outbound selection is saved.
+
+```bash
+captain-share --target /path/to/project share skills review-code --source team
+captain-share --target /path/to/project share skills review-code --source team \
+  --note "Add review-code skill" --push --apply
+```
+
+With `select outbound` and `sync`, outbound copies go into the local library
+checkout. Review that diff, run the library's checks, and commit normally. Push is available as an explicit, confirmed
 UI action. Sharing never copies whole projects. It refuses nested symlinks, local/generated folders,
 recognizable credentials, and personal absolute paths in selected content. These
 checks are heuristics, not a confidentiality or licensing certification. Review
@@ -239,11 +262,39 @@ performs the mechanical work.
 
 ## Web interface
 
-Start it with `captain-share --target FOLDER serve --open`.
+Start it with `captain-share --target FOLDER serve --open`. It opens on **Library**;
+**Share**, **Where installed** and **Settings** are the other pages. See
+[ADR 005](docs/adr/005-library-home-and-sharing.md).
 
-### Assets: one grid for every place
+### First setup
 
-The Assets page is a grid. Rows are library assets, grouped by library, with each
+With no library yet, the window asks three things once: which agents you use (Kiro,
+Claude Code, Codex, Copilot), your team library's Git URL (cloned to
+`~/Libraries/NAME`, or choose an existing checkout), and whether to take the
+library's starter set (`profiles/starter.manifest`, if it has one).
+
+### Library: get what you need
+
+Library lists what is new since you last looked (with who shared it and when, from
+the library's Git history), what you have, and everything else. Check for updates
+fetches; Update library fast-forwards the checkout and marks new and changed
+assets. Get asks where it should work, everywhere for you or only in this project,
+shows the links it will create, and applies after Apply changes; Cancel puts the
+choice back. Remove archives the links. Hover a row for Copy get command, a line a
+teammate can run: `captain-share get NAME`.
+
+### Share: pass a skill on
+
+Share lists skills in this project that are not in a library, and library assets
+you edited in place. Share… takes a short note ("what is it good for?"), shows the
+copy and the commit, then copies the asset into the library, commits only that
+asset's files with your note, and pushes if you leave Push checked. It ends with a
+line to paste in chat. A refused push keeps the commit; push it later from
+Settings.
+
+### Where installed: one grid for every place
+
+The grid is for maintenance. Rows are library assets, grouped by library, with each
 asset's description. Columns are places: this project, the folders above it inside
 your home folder, and Your user (installs into `~/.kiro`, `~/.claude` and
 `~/.agents` for every project). Click a circle to install an asset in that place or
@@ -264,7 +315,7 @@ including registered projects inside a changed folder. Apply changes creates the
 links; Cancel puts the saved choices back as they were. See
 [ADR 004](docs/adr/004-web-places.md).
 
-The Projects page lists this project and registered ones with their sync state.
+Under Where installed, Projects lists this project and registered ones with their sync state.
 Add project… registers a folder, Preview sync previews one project, and Preview
 sync for all previews every project before one Apply.
 

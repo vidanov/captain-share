@@ -256,10 +256,196 @@ def matrix(startup, target):
     return {"columns": [col["column"] for col in info], "rows": rows}
 
 
+def seen_path():
+    # Machine-local record of what the user last saw per library (ADR 005).
+    return c.config_dir(scope="global") / "seen.json"
+
+
+def read_seen():
+    try:
+        data = c.read_json(seen_path(), {})
+    except c.ShareError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        sid: row
+        for sid, row in data.items()
+        if isinstance(row, dict) and isinstance(row.get("assets", []), list)
+    }
+
+
+def record_seen(current):
+    """Store these libraries' current heads and asset keys; other rows are kept."""
+    path = seen_path()
+    with c.locks([path]):
+        data = read_seen()
+        changed = False
+        for sid, row in current.items():
+            old = data.get(sid, {})
+            if old.get("head") != row["head"] or old.get("assets") != row["assets"]:
+                data[sid] = {**row, "at": r.now()}
+                changed = True
+        if changed:
+            c.atomic_json(path, data)
+
+
+def library_home(startup, baseline):
+    """The everyday view: libraries visible from the startup project and their assets,
+    marked against the session baseline. Returns the view and the seen state to record."""
+    home = c.global_dir().parent
+    user_cfg = c.effective(home)
+    project_cfg = user_cfg if startup == home else c.effective(startup)
+    linked = {
+        "user": {row.get("key") for row in e.state(home)["inbound"].values()},
+        "project": {row.get("key") for row in e.state(startup)["inbound"].values()},
+    }
+    libraries, assets, seen = [], [], {}
+    for source in sorted(project_cfg["sources"]):
+        spec = project_cfg["sources"][source]
+        info: dict[str, Any] = {
+            "source": source,
+            "path": spec.get("path"),
+            "url": spec.get("url") or None,
+            "is_repo": False,
+            "branch": None,
+            "behind": None,
+            "ahead": None,
+            "last_commit_at": None,
+            "new": 0,
+            "updated": 0,
+            "starter": [],
+            "error": None,
+        }
+        libraries.append(info)
+        try:
+            lib = r.library(startup, source)
+            rows = e.catalog(startup, source)
+        except (c.ShareError, OSError) as exc:
+            info["error"] = str(exc)
+            continue
+        try:
+            starter = i.import_profile(startup, source, "starter")["selections"]
+            info["starter"] = [c.selection_key(row) for row in starter]
+        except (c.ShareError, OSError):
+            pass
+        head, made, changed, edited = None, {}, set(), {}
+        if lib["repo"] is not None:
+            git = r.status(startup, source)
+            head = git["head"] or None
+            info.update(
+                is_repo=True,
+                branch=git["branch"] or None,
+                behind=git["behind"],
+                ahead=git["ahead"],
+                last_commit_at=r.last_commit_at(lib["repo"]),
+            )
+            info["url"] = info["url"] or git["remote_url"] or None
+            made = r.history(lib["repo"], lib["prefix"])
+            edited = r.edits(lib["repo"], lib["prefix"], git["changes"])
+        before = baseline.get(source)
+        if before is not None and lib["repo"] is not None:
+            changed = r.changed_between(lib["repo"], lib["prefix"], before.get("head"), head)
+        keys = []
+        for row in rows:
+            kind, name = row["kind"], row["name"]
+            key = f"{source}/{kind}/{name}"
+            keys.append(key)
+            user_origin = user_cfg["origins"]["inbound"].get(key)
+            have_user = key in user_cfg["inbound"] and user_origin == str(home)
+            have_project = key in project_cfg["inbound"]
+            origin = project_cfg["origins"]["inbound"].get(key)
+            new = before is not None and key not in before.get("assets", [])
+            updated = (have_user or have_project) and (kind, name) in changed
+            info["new"] += int(new)
+            info["updated"] += int(updated)
+            author = made.get((kind, name))
+            power = None
+            if kind == "powers" and row["status"] == "available":
+                power = i.power_state(Path(row["path"]))
+            assets.append(
+                {
+                    "key": key,
+                    "source": source,
+                    "kind": kind,
+                    "name": name,
+                    "description": row.get("description", ""),
+                    "status": row["status"],
+                    "error": row.get("error"),
+                    "shared_by": author["by"] if author else None,
+                    "shared_at": author["at"] if author else None,
+                    "new": new,
+                    "updated": updated,
+                    "have": {
+                        "user": have_user,
+                        "project": have_project,
+                        "from": origin if have_project and origin != str(startup) else None,
+                    },
+                    "linked": {
+                        "user": key in linked["user"],
+                        "project": key in linked["project"],
+                    },
+                    "power": power,
+                    "edited": bool(edited.get((kind, name))),
+                }
+            )
+        seen[source] = {"head": head, "assets": sorted(keys)}
+    view = {
+        "user": str(home),
+        "project": str(startup),
+        "agents": user_cfg["tools"],
+        "libraries": libraries,
+        "assets": assets,
+    }
+    return view, seen
+
+
+def share_candidates(target):
+    """What this place could share: local originals not in a library, library assets
+    with uncommitted edits, and the libraries that can record a share."""
+    cfg = c.effective(target)
+    names, local, edited = [], [], []
+    for source in sorted(cfg["sources"]):
+        try:
+            lib = r.library(target, source)
+        except c.ShareError:
+            continue
+        if lib["repo"] is None:
+            continue
+        names.append(source)
+        changes = r.status(target, source)["changes"]
+        for (kind, name), paths in sorted(r.edits(lib["repo"], lib["prefix"], changes).items()):
+            files = []
+            for rel in paths:
+                full = lib["repo"] / rel
+                try:
+                    files.append(full.relative_to(lib["path"]).as_posix())
+                except ValueError:
+                    files.append(rel)
+            edited.append({"source": source, "kind": kind, "name": name, "files": files})
+    for row in e.scan(target):
+        if row["status"] != "local":
+            continue
+        found = e.locate(cfg, row["name"], kind=row["kind"])
+        local.append(
+            {
+                "kind": row["kind"],
+                "name": row["name"],
+                "path": row["path"],
+                "description": e.describe(target / row["path"], row["kind"]),
+                "exists_in": found[0][0] if found else None,
+            }
+        )
+    return {"local": local, "edited": edited, "libraries": names}
+
+
 def make_server(target, port=0):
     startup = c.root(target)
     token = secrets.token_urlsafe(32)
     plans: dict[str, dict[str, Any]] = {}
+    # "New since last looked" compares against seen.json as it was when this
+    # window first asked, so marks stay put while the window is open.
+    session: dict[str, Any] = {}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -331,6 +517,23 @@ def make_server(target, port=0):
                 elif parsed.path == "/api/repository":
                     source = parse_qs(parsed.query).get("source", [""])[0]
                     self.respond(r.status(target, source))
+                elif parsed.path == "/api/home":
+                    if "baseline" not in session:
+                        session["baseline"], session["recorded"] = read_seen(), set()
+                    view, seen = library_home(startup, session["baseline"])
+                    # Each library is recorded once per session, when first shown, so
+                    # what arrives while the window is open is marked next time too.
+                    fresh = {k: v for k, v in seen.items() if k not in session["recorded"]}
+                    # A library first seen now (for example cloned in this window) uses
+                    # that sight as its baseline, so later arrivals are marked new.
+                    for sid, row in fresh.items():
+                        session["baseline"].setdefault(sid, row)
+                    if fresh:
+                        record_seen(fresh)
+                        session["recorded"].update(fresh)
+                    self.respond(view)
+                elif parsed.path == "/api/share-candidates":
+                    self.respond(share_candidates(target))
                 elif parsed.path == "/api/matrix":
                     self.respond(matrix(startup, target))
                 elif parsed.path == "/api/projects":
@@ -391,13 +594,50 @@ def make_server(target, port=0):
                     result = reveal_path(target, data["path"])
                 elif path == "/api/clone":
                     result = r.clone(
-                        target, data["name"], data["url"], data["path"], data.get("layout") or None
+                        target,
+                        data["name"],
+                        data["url"],
+                        data["path"],
+                        data.get("layout") or None,
+                        create_parent=data.get("create_parent") is True,
                     )
                     plans.clear()
                 elif path == "/api/git":
                     result = r.operate(
                         target, data.get("source", ""), data["action"], data["fingerprint"]
                     )
+                    plans.clear()
+                elif path == "/api/fetch":
+                    result = r.fetch(target, data["source"])
+                elif path == "/api/share-plan":
+                    result = r.share_plan(
+                        target, data["source"], data["kind"], data["name"], data["path"]
+                    )
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
+                elif path == "/api/share-apply":
+                    fingerprint = data.get("fingerprint")
+                    if not isinstance(fingerprint, str):
+                        raise c.ShareError("A preview fingerprint is required")
+                    r.note_text(data.get("note"))
+                    saved = plans.get(fingerprint)
+                    if saved is None or "share" not in saved:
+                        raise c.ShareError("Preview the share again before applying")
+                    plans.pop(fingerprint)
+                    result = r.share_apply(saved, data["note"], bool(data.get("push")))
+                elif path == "/api/commit-edits":
+                    result = r.commit_edits(
+                        target,
+                        data["source"],
+                        data["kind"],
+                        data["name"],
+                        data.get("note"),
+                        bool(data.get("push")),
+                        data["fingerprint"],
+                    )
+                    plans.clear()
+                elif path == "/api/profile":
+                    result = i.import_profile(target, data["source"], data["profile"], apply=True)
                     plans.clear()
                 elif path == "/api/projects":
                     folder = c.root(data["path"])
@@ -500,9 +740,13 @@ def make_server(target, port=0):
                     fingerprint = data.get("fingerprint")
                     if not isinstance(fingerprint, str):
                         raise c.ShareError("A preview fingerprint is required")
-                    saved = plans.pop(fingerprint, None)
+                    saved = plans.get(fingerprint)
                     if saved is None:
                         raise c.ShareError("Preview again before applying")
+                    if "share" in saved:
+                        # A share also commits; it is applied only with its note.
+                        raise c.ShareError("Apply a share preview with its note")
+                    plans.pop(fingerprint)
                     is_power = saved["spec"].get("type") == "power"
                     result = i.power_apply(saved) if is_power else e.apply(saved)
                 else:

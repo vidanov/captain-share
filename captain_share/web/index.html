@@ -18,48 +18,104 @@
         <code id="target" class="faceplate-path">Connecting…</code>
       </div>
       <nav class="faceplate-nav" aria-label="Sections">
-        <button data-tab="patch" class="active">Assets</button
-        ><button data-tab="libraries">Libraries</button
+        <button data-tab="home" class="active">Library</button
+        ><button data-tab="share">Share</button
         ><span class="nav-rule" aria-hidden="true"></span
-        ><button data-tab="projects" class="minor">Projects</button
-        ><button data-tab="outbound" class="minor">Share back</button
-        ><button data-tab="installed" class="minor">
-          Local files
-          <span id="installed-count" class="count-chip" hidden>0</span></button
-        ><button data-tab="archive" class="minor">Archive</button>
+        ><button data-tab="patch" class="minor">Where installed</button
+        ><button data-tab="libraries" class="minor">Settings</button>
       </nav>
       <a href="/about" id="about-link" class="faceplate-about">About</a>
     </header>
 
     <main id="workspace-page">
-      <section id="first-run" class="first-run" hidden>
-        <h1>Add a library</h1>
+      <section id="setup" class="setup" hidden aria-labelledby="setup-title">
+        <h1 id="setup-title">Set up Captain Share</h1>
         <p>
-          A library is a folder, usually a Git checkout, with shared skills,
-          agents, prompts, steering, or Kiro powers. Add one and every project
-          on this machine can use it.
+          About a minute, once. After that you open it only to get something new
+          or to share something.
         </p>
-        <ol class="first-run-steps">
-          <li>
-            <strong>Add a library.</strong> Choose its folder or clone it.
+        <ol class="setup-steps">
+          <li id="setup-agents-step">
+            <strong>Which agents do you use?</strong>
+            <div id="setup-agents" class="agent-picks"></div>
+            <p class="hint">
+              Skills you get are linked into each of these. Change it later in
+              Settings.
+            </p>
           </li>
-          <li>
-            <strong>Pick skills.</strong> Click a circle to install a skill in
-            this project or for your user.
+          <li id="setup-library-step">
+            <strong>Add your team library</strong>
+            <form id="setup-clone">
+              <label for="setup-url" class="visually-hidden"
+                >Repository URL</label
+              ><input
+                id="setup-url"
+                required
+                placeholder="git@example.com:team/shared-skills.git"
+                autocomplete="off"
+              />
+              <p id="setup-dest" class="hint"></p>
+              <button type="submit">Clone and continue</button>
+              <button type="button" id="setup-folder" class="quiet">
+                I already have a checkout…
+              </button>
+            </form>
           </li>
-          <li>
-            <strong>Review and apply.</strong> Nothing changes until you apply.
+          <li id="setup-starter-step">
+            <strong>Start with the team's starter set</strong>
+            <p id="setup-starter" class="hint">
+              Available after the library is added.
+            </p>
+            <div class="actions">
+              <button id="setup-starter-get" type="button" hidden>
+                Get the starter set
+              </button>
+            </div>
           </li>
         </ol>
-        <div class="first-run-actions">
-          <button id="first-choose" type="button">Choose library folder…</button
-          ><button id="first-clone" type="button" class="quiet">
-            Clone from Git…
-          </button>
-        </div>
+      </section>
+
+      <section id="home-view" class="home" hidden aria-labelledby="home-title">
+        <h1 id="home-title">Team library</h1>
+        <p>
+          Skills and agents your team shares. Get one and every project on this
+          machine can use it.
+        </p>
+        <div id="library-strips"></div>
+        <label class="visually-hidden" for="home-search">Search assets</label
+        ><input
+          id="home-search"
+          type="search"
+          placeholder="Search skills, agents, prompts"
+        />
+        <div id="home-lists"></div>
+      </section>
+
+      <section
+        id="share-view"
+        class="home"
+        hidden
+        aria-labelledby="share-title"
+      >
+        <h1 id="share-title">Share with your team</h1>
+        <p>
+          Skills you made or changed that are not in the team library yet.
+          Sharing copies them into the library, commits, and pushes.
+        </p>
+        <div id="share-lists"></div>
       </section>
 
       <section id="bay" class="bay" aria-labelledby="view-title">
+        <nav id="subnav" class="subnav" aria-label="Where installed">
+          <button data-tab="patch" class="active">Grid</button
+          ><button data-tab="projects">Projects</button
+          ><button data-tab="installed">
+            Local files
+            <span id="installed-count" class="count-chip" hidden
+              >0</span
+            ></button
+          ><button data-tab="archive">Archive</button>
+        </nav>
         <div class="bay-head">
           <div>
             <h1 id="view-title">Assets</h1>
@@ -120,6 +176,14 @@
         </div>
 
         <div id="libraries-view" class="libraries" hidden>
+          <section class="panel-block" aria-labelledby="agents-title">
+            <h2 id="agents-title">Agents you use</h2>
+            <p class="hint">
+              Assets you get for yourself are linked into each of these agents.
+            </p>
+            <div id="user-agents" class="agent-picks"></div>
+          </section>
+          <h2 class="settings-title">Libraries</h2>
           <div id="library-list" class="library-list"></div>
           <details id="add-library" class="panel-block">
             <summary>Add a library folder</summary>
@@ -245,6 +309,23 @@
         <p id="review-hint" class="hint">
           Nothing changes on disk until you apply.
         </p>
+        <fieldset id="review-where" class="where" hidden>
+          <legend>Where should it work?</legend>
+          <label class="where-option"
+            ><input type="radio" name="where" value="user" checked />
+            <span
+              ><strong>Everywhere for me</strong> Every project on this machine.
+              Recommended.</span
+            ></label
+          >
+          <label class="where-option"
+            ><input type="radio" name="where" value="project" />
+            <span
+              ><strong id="where-project">Only in this project</strong> The
+              project this window opened on.</span
+            ></label
+          >
+        </fieldset>
         <div id="changes"></div>
         <div id="errors" role="alert"></div>
         <p id="conflict-help" class="hint" hidden>
@@ -280,22 +361,23 @@
           <h3>Start here</h3>
           <ol>
             <li>
-              <strong>Add a library.</strong> Choose its folder, or clone it
-              from Git. Libraries added for your user appear in every project.
+              <strong>Set up once.</strong> Pick the agents you use, add your
+              team library, and take the starter set if it has one.
             </li>
             <li>
-              <strong>Click circles on the Assets page.</strong> Rows are
-              library assets, columns are places: this project, the folders
-              above it (they share assets with every project inside), and your
-              user.
+              <strong>Get what you need.</strong> Library shows what is new
+              since you last looked, what you have, and the rest. Get installs
+              everywhere for you, or only in this project.
             </li>
             <li>
-              <strong>Review and apply.</strong> The review lists every link per
-              place; Apply changes creates them. Cancel puts your choices back.
+              <strong>Share what works.</strong> Share lists skills you made or
+              edited. Sharing copies them into the library, commits with your
+              note, and pushes. Paste the line it gives you in chat; teammates
+              run <code>captain-share get NAME</code>.
             </li>
             <li>
-              <strong>Choose agents per place</strong> with the chips under each
-              column: Kiro (IDE and CLI), Claude Code, Codex, Copilot.
+              <strong>Where installed</strong> shows the full grid of projects,
+              folders and your user, plus Projects, Local files and Archive.
             </li>
           </ol>
         </section>
