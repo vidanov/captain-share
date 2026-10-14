@@ -131,6 +131,21 @@ class ServerTests(SharingFixture):
             self.request("/api/asset?source=team&kind=skills&name=hello", token=False)[0], 403
         )
 
+    def test_asset_preview_of_a_project_copy_stays_in_the_project(self):
+        local = self.repo / ".kiro/skills/mine"
+        local.mkdir(parents=True)
+        (local / "SKILL.md").write_text("---\nname: mine\ndescription: Mine\n---\nlocal text")
+        code, view = self.request("/api/asset?kind=skills&name=mine&local=.kiro/skills/mine")
+        self.assertEqual(code, 200, view)
+        self.assertIn("local text", view["text"])
+        self.assertEqual(view["path"], str(local))
+        outside = self.base / "elsewhere"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text("no")
+        for bad in ("../elsewhere", str(outside), ".kiro/skills/gone"):
+            code, _ = self.request("/api/asset?kind=skills&name=mine&local=" + bad)
+            self.assertEqual(code, 400, bad)
+
     def test_api_requires_launch_token_and_same_origin(self):
         self.assertEqual(self.request("/api/state", token=False)[0], 403)
         self.assertEqual(self.request("/api/state", origin="https://outside.example")[0], 403)
