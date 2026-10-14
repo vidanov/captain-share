@@ -54,6 +54,10 @@ function el(tag, text, cls) {
 }
 function message(text, error = false) {
   clearTimeout(messageTimer);
+  // While the review sheet is open, speak inside it; otherwise in the dock.
+  const box = $("message");
+  if (!$("review").hidden) $("review-hint").after(box);
+  else if (box.parentElement !== $("dock")) $("dock").prepend(box);
   $("message").textContent = !text ? "" : error ? "Error: " + text : text;
   $("message").className = error ? "error" : "";
   if (text && !error) messageTimer = setTimeout(() => message(""), 6000);
@@ -144,6 +148,7 @@ async function refresh(keepDrafts = false) {
   projects = await api("projects").catch(() => []);
   $("target").textContent = shortPath(state.target);
   $("target").title = state.target;
+  $("place").title = state.target;
   $("reveal-workspace").textContent = "Show project in " + state.file_manager;
   $("layers").replaceChildren(...state.config.layers.map((p) => el("li", p)));
   const saved = $("source").value;
@@ -1122,26 +1127,24 @@ function toggleJack(row, col) {
   renderMatrix();
 }
 function renderKindFilter(kinds) {
-  const box = $("kind-filter");
-  box.replaceChildren();
+  const select = $("kind-filter");
+  select.replaceChildren();
   for (const [value, label] of [
-    ["", "All"],
+    ["", "All kinds"],
     ...kinds.map((k) => [k, KIND_LABELS[k] + "s"]),
   ]) {
-    const chip = el(
-      "button",
-      label,
-      "chip" + (kindFilter === value ? " active" : ""),
-    );
-    chip.type = "button";
-    chip.setAttribute("aria-pressed", String(kindFilter === value));
-    chip.onclick = () => {
-      kindFilter = value;
-      renderMatrix();
-    };
-    box.append(chip);
+    const option = el("option", label);
+    option.value = value;
+    select.append(option);
   }
+  if (!kinds.includes(kindFilter)) kindFilter = "";
+  select.value = kindFilter;
+  select.hidden = kinds.length < 2;
 }
+$("kind-filter").onchange = () => {
+  kindFilter = $("kind-filter").value;
+  renderMatrix();
+};
 function placeName(col) {
   return col?.kind === "user" ? "your user" : col?.label || "";
 }
@@ -1162,6 +1165,24 @@ function columnHead(col) {
       "col-kind",
     ),
   );
+  const linked = AGENTS.filter(([tool]) => col.tools.includes(tool)).map(
+    ([, name]) => name,
+  );
+  const summary = el(
+    "button",
+    linked.join(", ") || "No agents",
+    "agent-summary" + (editingAgents.has(col.path) ? " open" : ""),
+  );
+  summary.type = "button";
+  summary.title = "Choose which agents get links here";
+  summary.setAttribute("aria-expanded", String(editingAgents.has(col.path)));
+  summary.onclick = () => {
+    if (editingAgents.has(col.path)) editingAgents.delete(col.path);
+    else editingAgents.add(col.path);
+    renderMatrix();
+  };
+  head.append(summary);
+  if (!editingAgents.has(col.path)) return head;
   const agents = el("div", undefined, "agent-chips");
   for (const [tool, name] of AGENTS) {
     if (tool === "copilot" && col.kind === "user") continue;
@@ -1207,6 +1228,8 @@ function patchesTouched(place) {
   renderRouting();
 }
 const touchedPlaces = new Set();
+// Column heads whose agent editor is open.
+const editingAgents = new Set();
 // Cables already on screen; only new ones draw in.
 let drawnCables = new Set();
 function renderMatrix() {

@@ -30,7 +30,6 @@
       </nav>
       <a href="/about" id="about-link" class="faceplate-about">About</a>
     </header>
-    <div id="message" role="status" aria-live="polite"></div>
 
     <main id="workspace-page">
       <section id="first-run" class="first-run" hidden>
@@ -73,12 +72,8 @@
               type="search"
               placeholder="Filter by name or description"
             />
-            <div
-              id="kind-filter"
-              class="kind-filter"
-              role="group"
-              aria-label="Asset kinds"
-            ></div>
+            <label class="visually-hidden" for="kind-filter">Asset kind</label
+            ><select id="kind-filter" class="kind-select"></select>
             <span id="count" class="count-text">0</span>
           </div>
         </div>
@@ -89,35 +84,14 @@
             role="grid"
             aria-labelledby="view-title"
           ></div>
-          <aside class="key" aria-label="What the circles mean">
-            <ul class="legend">
-              <li><span class="jack on sample"></span>Installed here</li>
-              <li>
-                <span class="jack on inherited sample"></span>From a folder
-                above
-              </li>
-              <li>
-                <span class="jack covered sample"></span>Installed for your user
-              </li>
-              <li>
-                <span class="jack pending on sample"></span>Will be installed
-              </li>
-              <li><span class="jack pending sample"></span>Will be removed</li>
-              <li>
-                <span class="jack blocked on sample"></span>A local file is in
-                the way
-              </li>
-            </ul>
-            <p class="key-note">
-              Agent buttons in a column choose which agents get links there. Lit
-              means linked.
-            </p>
-          </aside>
-        </div>
-        <div id="routing" class="routing" hidden>
-          <span id="routing-summary"></span>
-          <button id="routing-clear" type="button" class="quiet">Discard</button
-          ><button id="routing-review" type="button">Review and apply</button>
+          <ul class="legend" aria-label="What the circles mean">
+            <li><span class="jack on sample"></span>Installed</li>
+            <li><span class="jack on inherited sample"></span>From a folder</li>
+            <li><span class="jack covered sample"></span>For your user</li>
+            <li><span class="jack pending on sample"></span>Will install</li>
+            <li><span class="jack pending sample"></span>Will remove</li>
+            <li><span class="jack blocked on sample"></span>File in the way</li>
+          </ul>
         </div>
 
         <div id="list-view" hidden>
@@ -658,6 +632,15 @@ SOFTWARE.
         </section>
       </div>
     </main>
+    <!-- Messages and pending changes share one dock, so neither covers the other. -->
+    <div id="dock" class="dock">
+      <div id="message" role="status" aria-live="polite"></div>
+      <div id="routing" class="routing" hidden>
+        <span id="routing-summary"></span>
+        <button id="routing-clear" type="button" class="quiet">Discard</button
+        ><button id="routing-review" type="button">Review and apply</button>
+      </div>
+    </div>
     <dialog id="folder-picker" aria-labelledby="folder-picker-title">
       <h3 id="folder-picker-title">Choose a folder</h3>
       <p id="folder-picker-help" class="hint"></p>

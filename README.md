@@ -251,13 +251,14 @@ remove it. A folder shares its assets with every project inside it; a line from
 the folder's circle marks each project that gets the asset from it, and a dashed
 circle marks an asset already installed for your user, so each skill lives in one
 place. Only the nearest folder is shown until another folder has selections;
-"+N folders above" shows the rest. A key beside the grid explains every state.
+"+N folders above" shows the rest. A one-line key under the grid explains each state.
 
-Each column head lists the agents (Kiro, Claude, Codex, Copilot) that get links in
-that place; click one to switch it on or off. Kiro powers install for your user
+Each column head names the agents that get links in that place (for example "Kiro,
+Copilot"); click it to switch Kiro, Claude, Codex or Copilot on or off there. Kiro powers install for your user
 only and show Kiro's install state.
 
-Changes wait in the bar at the bottom ("Add reviewer.json to your user"). Review
+Changes wait in the bar at the bottom ("Add reviewer.json to your user"); status
+messages appear just above it and never cover it. Review
 and apply saves the choices and opens one review for every place they affect,
 including registered projects inside a changed folder. Apply changes creates the
 links; Cancel puts the saved choices back as they were. See

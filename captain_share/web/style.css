@@ -318,13 +318,8 @@ input[type="checkbox"] {
 
 /* Status toast */
 #message:not(:empty) {
-  position: fixed;
-  left: 50%;
-  bottom: 84px;
-  transform: translateX(-50%);
-  z-index: 60;
-  max-width: min(44rem, calc(100vw - 32px));
-  padding: 11px 16px;
+  max-width: min(44rem, 100%);
+  padding: 10px 14px;
   border-radius: var(--radius);
   background: var(--panel-3);
   border: 1px solid var(--rule-strong);
@@ -332,6 +327,25 @@ input[type="checkbox"] {
   font-size: 13px;
   cursor: pointer;
   overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+.review-sheet #message:not(:empty) {
+  margin: 12px 0 0;
+}
+/* Messages and pending changes stack at the bottom; neither covers the other. */
+.dock {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 24px 16px;
+  pointer-events: none;
+}
+.dock > * {
+  pointer-events: auto;
 }
 #message.error {
   border-color: var(--red);
@@ -425,36 +439,14 @@ main {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.kind-filter {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.chip {
-  background: transparent;
-  color: var(--ink-2);
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.chip:hover {
-  background: var(--panel-3);
-}
-.chip.active {
-  color: var(--amber-ink);
-  background: var(--amber);
-  border-color: var(--amber);
-}
 
 /* Matrix: sized to its columns so jacks sit next to the names they belong to. */
 .bay-body {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 28px;
-  margin-bottom: 96px;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 .matrix {
   flex: none;
@@ -462,20 +454,6 @@ main {
   border: 1px solid var(--rule);
   border-radius: 10px;
   background: var(--panel-2);
-}
-.key {
-  position: sticky;
-  top: calc(var(--face-h) + 20px);
-  flex: 0 1 17rem;
-  min-width: 13rem;
-  padding: 4px 0 0;
-}
-.key-note {
-  margin: 16px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--rule);
-  font-size: 12px;
-  color: var(--ink-3);
 }
 .mx-row {
   display: grid;
@@ -506,17 +484,17 @@ main {
 .legend {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 4px;
   display: flex;
-  flex-direction: column;
-  gap: 11px;
-  font-size: 12.5px;
-  color: var(--ink-2);
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--ink-3);
 }
 .legend li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   margin: 0;
 }
 .jack.sample {
@@ -560,6 +538,31 @@ main {
 }
 .col-user {
   background: rgba(67, 192, 143, 0.04);
+}
+.agent-summary {
+  margin-top: 4px;
+  padding: 1px 6px;
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-summary:hover,
+.agent-summary.open {
+  color: var(--ink);
+  background: var(--panel-3);
+}
+.kind-select {
+  width: auto;
+}
+#target {
+  display: none;
 }
 .agent-chips {
   align-self: stretch;
@@ -765,13 +768,9 @@ main {
 
 /* Routing bar */
 .routing {
-  position: sticky;
-  bottom: 16px;
-  z-index: 20;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: -80px 0 24px;
   width: fit-content;
   min-width: min(40rem, 100%);
   max-width: 100%;
@@ -787,6 +786,9 @@ main {
   font-variant-numeric: tabular-nums;
 }
 #selection-actions {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
   margin: 18px 0 24px;
   border-color: var(--rule-strong);
 }
@@ -1235,20 +1237,12 @@ summary {
   main {
     padding: 20px 16px 0;
   }
-  .bay-body {
-    flex-direction: column-reverse;
-    gap: 14px;
-  }
+
   .matrix {
     overflow: auto;
     max-height: calc(100dvh - var(--face-h) - 32px);
   }
-  .key {
-    position: static;
-    flex: none;
-    min-width: 0;
-    padding: 0;
-  }
+
   .agent-chips {
     grid-template-columns: 1fr;
     justify-items: start;
@@ -1257,15 +1251,7 @@ summary {
   .agent {
     border-color: transparent;
   }
-  .legend {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 8px 14px;
-    font-size: 12px;
-  }
-  .key-note {
-    display: none;
-  }
+
   .asset-desc {
     -webkit-line-clamp: 2;
   }
@@ -1301,7 +1287,9 @@ summary {
   }
   .routing {
     flex-wrap: wrap;
-    margin: -80px 0 24px;
+  }
+  .dock {
+    padding: 0 16px 12px;
   }
   .library-row {
     grid-template-columns: 1fr auto;
