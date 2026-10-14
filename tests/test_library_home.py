@@ -275,6 +275,40 @@ class ShareApiTests(LibraryFixture):
         _, review = self.request("/api/share-plan", {**body, "mode": "review"})
         self.assertFalse(any("not main" in x["message"] for x in review["conflicts"]))
 
+    def test_global_assets_not_in_a_library_can_be_shared(self):
+        c.add_source(self.base, "team", self.lib, scope="global")
+        self.skill(self.base / ".kiro/skills/helper")
+        self.skill(self.base / ".kiro/skills/hello")  # the library has it: not offered
+        self.start()
+        _, found = self.request("/api/share-candidates")
+        self.assertEqual(
+            [(row["name"], row["path"], row["target"]) for row in found["global"]],
+            [("helper", ".kiro/skills/helper", str(self.base))],
+        )
+        self.assertNotIn("helper", [row["name"] for row in found["local"]])
+        body = {
+            "target": str(self.base),
+            "source": "team",
+            "kind": "skills",
+            "name": "helper",
+            "path": ".kiro/skills/helper",
+        }
+        code, plan = self.request("/api/share-plan", body)
+        self.assertEqual(code, 200, plan)
+        self.assertTrue(plan["can_apply"], plan["errors"])
+        code, result = self.request(
+            "/api/share-apply", {"fingerprint": plan["fingerprint"], "note": "Share helper"}
+        )
+        self.assertEqual(code, 200, result)
+        self.assertTrue((self.lib / "ip/skills/helper/SKILL.md").is_file())
+        # Previewing it reads the home folder's copy.
+        code, view = self.request(
+            "/api/asset?target="
+            + str(self.base)
+            + "&kind=skills&name=helper&local=.kiro/skills/helper"
+        )
+        self.assertEqual(code, 200, view)
+
     def test_share_commits_only_the_asset_and_pushes(self):
         remote = self.remote()
         self.skill(self.repo / "skills/mine")

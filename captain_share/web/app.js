@@ -2158,7 +2158,7 @@ function assetPreview(a) {
   api(
     "asset?" +
       query({
-        target: home.project,
+        target: a.target || home.project,
         source: a.source || "",
         kind: a.kind,
         name: a.name,
@@ -2374,6 +2374,14 @@ async function renderShare() {
         "share-fresh",
       ),
     );
+  if ((shareData.global || []).length)
+    lists.push(
+      listSection(
+        "Global · not in a library",
+        shareData.global.map((row) => shareRow(row, "local")),
+        "share-global",
+      ),
+    );
   if ((shareData.personal || []).length)
     lists.push(
       listSection(
@@ -2451,7 +2459,7 @@ function shareLooks(wrap, act, id, spec) {
   // An open preview has its own Show in Finder button.
   if (spec.local && !open) {
     const show = revealButton(
-      home.project + "/" + spec.local,
+      (spec.target || home.project) + "/" + spec.local,
       "Show in " + (state.file_manager || "folder"),
     );
     show.className = "link";
@@ -2467,7 +2475,16 @@ function shareRow(row, type) {
   if (type === "local" && row.exists_in && row.differs && row.older)
     return olderRow(row);
   if (type === "local" && row.exists_in && row.differs) return extendedRow(row);
-  const id = type + "/" + (row.source || "") + "/" + row.kind + "/" + row.name;
+  const id =
+    type +
+    "/" +
+    (row.target || "") +
+    "/" +
+    (row.source || "") +
+    "/" +
+    row.kind +
+    "/" +
+    row.name;
   const wrap = el("div", undefined, "lib-row");
   const name = el("div", undefined, "lib-name");
   name.append(
@@ -2481,7 +2498,8 @@ function shareRow(row, type) {
     el(
       "p",
       type === "local"
-        ? row.path + (row.exists_in ? " · already in " + row.exists_in : "")
+        ? (row.target ? shortPath(row.target + "/" + row.path) : row.path) +
+            (row.exists_in ? " · already in " + row.exists_in : "")
         : row.source +
             " · " +
             row.files.length +
@@ -2496,7 +2514,12 @@ function shareRow(row, type) {
       extra,
       id,
       type === "local"
-        ? { kind: row.kind, name: row.name, local: row.path }
+        ? {
+            kind: row.kind,
+            name: row.name,
+            local: row.path,
+            target: row.target,
+          }
         : { source: row.source, kind: row.kind, name: row.name },
     );
   if (type === "local" && row.exists_in) {
@@ -2611,7 +2634,7 @@ function sharePanel(row, type) {
         return;
       }
       plan = await api("share-plan", {
-        target: home.project,
+        target: row.target || home.project,
         source: source(),
         kind: row.kind,
         name: row.name,
@@ -2626,7 +2649,7 @@ function sharePanel(row, type) {
         line.append(
           el("strong", change.op),
           " ",
-          el("code", relativeTo(change.path, home.project)),
+          el("code", relativeTo(change.path, row.target || home.project)),
         );
         return line;
       });
@@ -2706,7 +2729,7 @@ function shareDone(row, result) {
     box.append(
       el(
         "p",
-        projectName() +
+        (row.target && row.target !== home.project ? "Global" : projectName()) +
           " now uses the team version; your copy is in the Archive.",
         "hint",
       ),
@@ -2758,7 +2781,7 @@ async function adoptAsset(row, replace) {
   shareData = null;
   await preview(
     {
-      target: home.project,
+      target: row.target || home.project,
       source: row.source,
       kind: row.kind,
       name: row.name,
