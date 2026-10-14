@@ -736,7 +736,9 @@ def share_candidates(target):
         try:
             home_cfg = c.effective(home)
             for row in e.scan(home):
-                if row["status"] != "local" or e.locate(home_cfg, row["name"], kind=row["kind"]):
+                if row["status"] != "local" or e.converted_folder(row["path"]):
+                    continue
+                if e.locate(home_cfg, row["name"], kind=row["kind"]):
                     continue
                 shared_from_home.append(
                     {

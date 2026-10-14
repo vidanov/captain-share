@@ -279,6 +279,8 @@ class ShareApiTests(LibraryFixture):
         c.add_source(self.base, "team", self.lib, scope="global")
         self.skill(self.base / ".kiro/skills/helper")
         self.skill(self.base / ".kiro/skills/hello")  # the library has it: not offered
+        (self.base / ".claude/rules").mkdir(parents=True)
+        (self.base / ".claude/rules/own.md").write_text("A Claude rule: not offered")
         self.start()
         _, found = self.request("/api/share-candidates")
         self.assertEqual(
