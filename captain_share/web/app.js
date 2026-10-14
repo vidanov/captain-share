@@ -3727,6 +3727,20 @@ applyDensity();
 function expandable(row) {
   const name = row.querySelector(".lib-name");
   if (!name || name.querySelector(".row-toggle")) return;
+  // The right column keeps the main action; text links (Preview, Show in Finder,
+  // Remove…) get their own line under the description.
+  const act = row.querySelector(":scope > .lib-act");
+  const links = act ? [...act.querySelectorAll(":scope > button.link")] : [];
+  // "Copy get command" appears on hover; at the end it leaves no gap between links.
+  links.sort(
+    (a, b) =>
+      a.classList.contains("copy-get") - b.classList.contains("copy-get"),
+  );
+  if (links.length) {
+    const line = el("div", undefined, "lib-links");
+    line.append(...links);
+    row.insertBefore(line, act);
+  }
   const toggle = el("button", undefined, "row-toggle");
   toggle.type = "button";
   toggle.setAttribute("aria-expanded", String(row.classList.contains("open")));
