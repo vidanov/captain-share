@@ -557,6 +557,7 @@ def library_home(startup, baseline):
                     "team_changed": row["team_changed"],
                 }
             )
+    hidden_keys = c.hidden_assets()
     for source in sorted(project_cfg["sources"]):
         if source == i.BUILTIN:
             continue  # the bundled agent skill is not a library people browse
@@ -630,7 +631,14 @@ def library_home(startup, baseline):
             origin = project_cfg["origins"]["inbound"].get(key)
             last = made.get((kind, name)) or {}
             mine = bool(own_email) and last.get("email") == own_email
-            new = before is not None and key not in before.get("assets", []) and not mine
+            # Hidden assets (not installed) are left out of "new" too.
+            hidden = key in hidden_keys and not (have_user or have_project)
+            new = (
+                before is not None
+                and key not in before.get("assets", [])
+                and not mine
+                and not hidden
+            )
             updated = (have_user or have_project) and (kind, name) in changed and not mine
             info["new"] += int(new)
             info["updated"] += int(updated)
@@ -651,6 +659,7 @@ def library_home(startup, baseline):
                     "shared_at": author["at"] if author else None,
                     "new": new,
                     "updated": updated,
+                    "hidden": hidden,
                     "have": {
                         "user": have_user,
                         "project": have_project,
@@ -1106,6 +1115,8 @@ def make_server(target, port=0, token=None):
                         data.get("layout") or None,
                         create_parent=data.get("create_parent") is True,
                     )
+                elif path == "/api/hide":
+                    result = c.set_hidden(data.get("key"), data.get("hidden") is not False)
                 elif path == "/api/libraries-folder":
                     result = c.set_libraries_folder(data.get("path"))
                     plans.clear()

@@ -1036,3 +1036,25 @@ class AgentSkillTests(LibraryFixture):
         e.apply(i.skill_plan(home, remove=True))
         self.assertFalse(os.path.lexists(home / ".kiro/skills/captain-share"))
         self.assertEqual(i.skill_installed(self.repo), [])
+
+
+class HiddenAssetTests(LibraryFixture):
+    def test_hidden_assets_leave_the_lists_and_the_new_count(self):
+        self.start()
+        self.request("/api/home")  # the first look records what exists
+        self.skill(self.lib / "ip/skills/fresh")
+        self.skill(self.lib / "ip/skills/other")
+        self.commit(self.lib, "Two new skills")
+        self.start()  # a new window compares with the first look
+        code, saved = self.request("/api/hide", {"key": "team/skills/fresh"})
+        self.assertEqual((code, saved["hidden"]), (200, True))
+        _, view = self.request("/api/home")
+        rows = {a["name"]: a for a in view["assets"]}
+        self.assertTrue(rows["fresh"]["hidden"])
+        self.assertFalse(rows["fresh"]["new"])
+        self.assertTrue(rows["other"]["new"])
+        self.assertEqual(view["libraries"][0]["new"], 1)
+        self.request("/api/hide", {"key": "team/skills/fresh", "hidden": False})
+        _, view = self.request("/api/home")
+        self.assertFalse({a["name"]: a for a in view["assets"]}["fresh"]["hidden"])
+        self.assertEqual(self.request("/api/hide", {"key": "bad"})[0], 400)
