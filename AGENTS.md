@@ -15,7 +15,7 @@ management skill and fictional fixtures are public product code.
   operations, sharing and disconnecting;
   staging zips/folders from outside and adding their assets to a library.
 - `captain_share/selfupdate.py`: how this copy is installed, and updating it (ADR 015).
-- `captain_share/skills/manage-shared-assets/`: reusable management instructions.
+- `captain_share/skills/captain-share/`: the skill that teaches agents to use Captain Share.
 - `scripts/verify.py`: the local and CI verification entrypoint.
 
 ## Commands

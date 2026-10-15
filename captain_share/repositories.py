@@ -1572,7 +1572,7 @@ def outdated(target, do_fetch=False):
         seen = set()
         for row in installed.values():
             key = (row["source"], row["kind"], row["name"])
-            if key in seen:
+            if key in seen or row["source"] == c.BUILTIN:
                 continue
             seen.add(key)
             source, kind, name = key
@@ -1666,7 +1666,7 @@ def outdated(target, do_fetch=False):
     checked = {
         source: (known.get(source) or {}).get("checked_at")
         for source in sorted(connected)
-        if source != "my-skills"
+        if source not in ("my-skills", c.BUILTIN)
     }
     return {"rows": rows, "checked": checked, "problems": problems}
 

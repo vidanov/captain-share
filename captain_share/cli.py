@@ -481,6 +481,12 @@ def parser():
     assist.add_argument("request")
     assist.add_argument("--run", action="store_true")
     assist.add_argument("--agent")
+    sk = sub.add_parser(
+        "skill", help="Install the skill that teaches your agents to use Captain Share"
+    )
+    sk.add_argument("action", nargs="?", choices=["install", "remove"], help="Omit to show status")
+    sk.add_argument("--here", action="store_true", help="This project instead of every project")
+    sk.add_argument("--apply", action="store_true")
     upd = sub.add_parser("update", help="Show what is new in Captain Share; --apply updates it")
     upd.add_argument("--apply", action="store_true", help="Update the way it was installed")
     serve = sub.add_parser("serve", help="Start the local web interface for this target")
@@ -1069,6 +1075,33 @@ def main(argv=None):
                 if spec is None:
                     raise c.ShareError(f"Unknown library {args.source}")
                 result = {"source": args.source, "check": spec.get("check")}
+        elif command == "skill":
+            home = c.global_dir().parent
+            place = target if args.here else home
+            if not args.action:
+                found = i.skill_installed(place)
+                result = {"installed": found}
+                if not args.json:
+                    print(
+                        "The captain-share skill is installed for your agents ("
+                        + ", ".join("Global" if p == str(home) else p for p in found)
+                        + ")."
+                        if found
+                        else "The captain-share skill is not installed. "
+                        "Run captain-share skill install to let your agents use Captain Share."
+                    )
+                    return 0
+            else:
+                result = i.skill_plan(place, remove=args.action == "remove")
+                if args.apply and result["can_apply"]:
+                    result = e.apply(result)
+                    if not args.json:
+                        print(
+                            "Installed the captain-share skill. Start a new agent session to use it."
+                            if args.action == "install"
+                            else "Removed the captain-share skill (archived)."
+                        )
+                        return 0
         elif command == "update":
             from . import selfupdate as su
 

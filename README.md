@@ -353,10 +353,11 @@ to a Git revision, and the tool does not auto-fetch or clone sources.
 
 ## Management skill and Kiro CLI
 
-The reusable [manage-shared-assets skill](captain_share/skills/manage-shared-assets/SKILL.md)
-explains the workflow. Link or copy that complete directory into your chosen agent's
-skill location after checking for an existing installation. The CLI must be on PATH
-or invoked using this checkout's `bin/captain-share`.
+The [captain-share skill](captain_share/skills/captain-share/SKILL.md) teaches your
+agents to use Captain Share, so you can ask them to get, add or share skills. Install
+it with `captain-share skill install` (or the checkbox in first setup, or Settings →
+Agents); it is linked from your installation and follows its updates
+([ADR 017](docs/adr/017-agent-skill.md)). Kiro can also start a guided session:
 
 ```bash
 captain-share --target /path/to/project assist "Help select the right shared skills"

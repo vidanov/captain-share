@@ -397,6 +397,11 @@ def detect_layout(path):
     return None
 
 
+# The built-in library holding the skill that teaches agents to use Captain Share
+# (ADR 017); not one people browse, share into or check for updates.
+BUILTIN = "captain-share"
+
+
 def settings_path():
     """Machine-local Captain Share settings (not layered, not in Git)."""
     return global_dir() / "settings.json"

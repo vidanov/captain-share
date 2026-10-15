@@ -227,14 +227,14 @@ async function refresh(keepDrafts = false) {
   const saved = $("source").value;
   $("source").replaceChildren(el("option", "Choose a library"));
   $("source").firstChild.value = "";
-  Object.keys(state.config.sources).forEach((id) => {
+  teamLibraries().forEach((id) => {
     const op = el("option", id);
     op.value = id;
     $("source").append(op);
   });
-  $("source").value = state.config.sources[saved]
+  $("source").value = teamLibraries().includes(saved)
     ? saved
-    : Object.keys(state.config.sources)[0] || "";
+    : teamLibraries()[0] || "";
   $("installed-count").textContent = state.installed.length;
   $("installed-count").hidden = !state.installed.length;
   bay = await api("matrix");
@@ -284,7 +284,7 @@ function render() {
       "Removed assets waiting to be restored. Nothing is deleted.",
     ],
   };
-  const sources = Object.keys(state.config.sources).length;
+  const sources = teamLibraries().length;
   const where = WHERE_VIEWS.includes(view);
   document
     .querySelectorAll(".faceplate-nav button")
@@ -1789,7 +1789,9 @@ function renderLibraries() {
   renderCloneSummary();
   const list = $("library-list");
   list.replaceChildren();
-  const sources = Object.entries(state.config.sources);
+  const sources = Object.entries(state.config.sources).filter(
+    ([name]) => name !== BUILTIN_LIBRARY,
+  );
   if (!sources.length) list.append(el("p", "No library added yet.", "hint"));
   // Your own library (ADR 008) is never pushed: signing, checks and a starter set
   // belong to team libraries only.
@@ -3121,7 +3123,40 @@ function agentPicks(box, selected, onToggle) {
     }),
   );
 }
+// The bundled agent skill's library (ADR 017) is not one people browse or manage.
+const BUILTIN_LIBRARY = "captain-share";
+function teamLibraries() {
+  return Object.keys(state?.config?.sources || {}).filter(
+    (name) => name !== BUILTIN_LIBRARY,
+  );
+}
+let setupSkillDone = false;
+// Settings → Agents: whether the agents know Captain Share (the bundled skill).
+function renderAgentSkill() {
+  const box = $("agent-skill");
+  const where = state?.agent_skill || [];
+  const button = el(
+    "button",
+    where.length ? "Remove…" : "Install skill…",
+    "link",
+  );
+  button.type = "button";
+  button.onclick = () =>
+    task(() =>
+      preview(
+        { target: home?.user || homePath(), remove: where.length > 0 },
+        "skill-plan",
+      ),
+    );
+  box.replaceChildren(
+    where.length
+      ? "Your agents know Captain Share: the captain-share skill is installed. "
+      : "Teach your agents to use Captain Share: ask them to get or share skills. ",
+    button,
+  );
+}
 function renderAgents() {
+  renderAgentSkill();
   const current = home?.agents || [];
   agentPicks($("user-agents"), current, (tool) =>
     task(async () => {
@@ -3167,6 +3202,17 @@ function renderSetup() {
 async function saveSetupAgents() {
   if (!setupAgents.length) throw new Error("Choose at least one agent.");
   await api("tools", { tools: setupAgents, target: homePath() });
+  // First setup's checkbox: the skill that lets these agents use Captain Share.
+  if ($("setup-skill").checked && !setupSkillDone) {
+    setupSkillDone = true;
+    try {
+      const plan = await api("skill-plan", { target: homePath() });
+      if (plan.can_apply && plan.changes.length)
+        await api("apply", { fingerprint: plan.fingerprint });
+    } catch (error) {
+      // Settings → Agents offers it again.
+    }
+  }
 }
 $("setup-url").oninput = renderSetup;
 $("setup-clone").onsubmit = (event) => {

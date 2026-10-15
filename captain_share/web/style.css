@@ -2329,3 +2329,11 @@ summary {
   min-height: 5.5em;
   resize: vertical;
 }
+.setup-skill {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.agent-skill {
+  margin-top: 10px;
+}

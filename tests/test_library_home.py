@@ -1006,3 +1006,33 @@ class SimpleCloneTests(LibraryFixture):
         self.assertTrue((self.base / "Shelf/acme-team-skills/ip/skills/hello/SKILL.md").is_file())
         with self.assertRaises(c.ShareError):
             c.set_libraries_folder("relative/path")
+
+
+class AgentSkillTests(LibraryFixture):
+    def test_install_hide_and_remove_the_bundled_skill(self):
+        from captain_share import integrations as i
+
+        home = self.base
+        c.set_tools(home, ["kiro", "claude"], scope="global")
+        self.assertEqual(i.skill_installed(self.repo), [])
+        planned = i.skill_plan(home)
+        links = sorted(
+            Path(x["path"]).relative_to(home).as_posix()
+            for x in planned["changes"]
+            if x["op"] == "link"
+        )
+        self.assertEqual(links, [".claude/skills/captain-share", ".kiro/skills/captain-share"])
+        e.apply(planned)
+        skill = home / ".kiro/skills/captain-share/SKILL.md"
+        self.assertIn("name: captain-share", skill.read_text())
+        self.assertEqual(i.skill_installed(self.repo), [str(home)])
+        # Not a library people browse, share into or check for updates.
+        self.start()
+        _, view = self.request("/api/home")
+        self.assertNotIn("captain-share", [lib["source"] for lib in view["libraries"]])
+        _, found = self.request("/api/share-candidates")
+        self.assertNotIn("captain-share", found["libraries"])
+        self.assertNotIn("captain-share", [row["source"] for row in r.outdated(self.repo)["rows"]])
+        e.apply(i.skill_plan(home, remove=True))
+        self.assertFalse(os.path.lexists(home / ".kiro/skills/captain-share"))
+        self.assertEqual(i.skill_installed(self.repo), [])
