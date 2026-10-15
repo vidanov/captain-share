@@ -93,6 +93,14 @@ class ServerTests(SharingFixture):
             self.assertEqual(code, 200)
             self.assertEqual(run.call_args.args[0], ["/usr/bin/open", "-R", str(link)])
             self.assertEqual(self.request("/api/reveal", {"path": str(self.lib)})[0], 200)
+            # A global asset in the home folder's agent folders, not elsewhere at home.
+            home = c.global_dir().parent
+            (home / ".kiro/skills/mine").mkdir(parents=True)
+            (home / "notes").mkdir()
+            self.assertEqual(
+                self.request("/api/reveal", {"path": str(home / ".kiro/skills/mine")})[0], 200
+            )
+            self.assertEqual(self.request("/api/reveal", {"path": str(home / "notes")})[0], 400)
             run.reset_mock()
             for value in (
                 str(self.base),
