@@ -3058,6 +3058,49 @@ $("setup-folder").onclick = () =>
 let importStage = null;
 $("import-zip").onclick = () => $("import-file").click();
 $("import-folder").onclick = () => openFolderPicker("import-path");
+// A Git repository, like `npx skills add URL`: cloned into a private temporary
+// folder, then the same list of skills to pick from.
+$("import-git").onclick = () => {
+  importStage = null;
+  const form = el("form", undefined, "share-panel import-git");
+  const label = el("label", "Git repository");
+  const input = el("input");
+  input.placeholder = "https://github.com/OWNER/REPO or OWNER/REPO";
+  input.required = true;
+  label.append(input);
+  const go = el("button", "Look inside");
+  go.type = "submit";
+  const cancel = el("button", "Cancel", "link");
+  cancel.type = "button";
+  cancel.onclick = () => renderImport();
+  const actions = el("div", undefined, "actions");
+  actions.append(go, cancel);
+  form.append(
+    label,
+    el(
+      "p",
+      "Captain Share downloads it with your Git access and lists its skills. Read a skill before you use it: skills from outside can run commands.",
+      "hint",
+    ),
+    actions,
+  );
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    task(async () => {
+      go.disabled = true;
+      go.textContent = "Downloading…";
+      try {
+        importStage = await api("import-git", { url: input.value.trim() });
+      } finally {
+        go.disabled = false;
+        go.textContent = "Look inside";
+      }
+      renderImport();
+    });
+  };
+  $("import-panel").replaceChildren(form);
+  input.focus();
+};
 $("import-file").onchange = () =>
   task(async () => {
     const file = $("import-file").files[0];
@@ -3099,11 +3142,34 @@ function renderImport() {
   panel.append(el("strong", "From " + shortPath(importStage.label)));
   const items = [];
   const list = el("div", undefined, "import-items");
+  // A repository can hold dozens of skills: then none is picked until you choose,
+  // and a filter narrows the list.
+  const many = importStage.candidates.length > 5;
+  if (many) {
+    const filter = el("input", undefined, "import-filter");
+    filter.placeholder =
+      "Filter " +
+      importStage.candidates.length +
+      " skills by name or description";
+    filter.setAttribute("aria-label", "Filter");
+    filter.oninput = () => {
+      const q = filter.value.toLowerCase();
+      for (const item of items)
+        item.row.hidden = !(
+          item.candidate.name +
+          " " +
+          (item.candidate.description || "")
+        )
+          .toLowerCase()
+          .includes(q);
+    };
+    panel.append(filter);
+  }
   for (const candidate of importStage.candidates) {
     const row = el("div", undefined, "import-item");
     const pick = el("input");
     pick.type = "checkbox";
-    pick.checked = !candidate.error;
+    pick.checked = !candidate.error && !many;
     pick.disabled = !!candidate.error;
     pick.setAttribute("aria-label", "Install " + candidate.name);
     const name = el("input");
@@ -3134,7 +3200,7 @@ function renderImport() {
       );
     row.append(pick, name, ...(kind ? [kind] : []), info);
     list.append(row);
-    items.push({ candidate, pick, name, kind });
+    items.push({ candidate, pick, name, kind, row });
   }
   if (!importStage.candidates.length)
     list.append(
@@ -3215,7 +3281,10 @@ function renderImport() {
         );
       await api("import-apply", {
         fingerprint: plan.fingerprint,
-        note: "Add " + chosen.map((c) => c.name).join(", "),
+        note:
+          "Add " +
+          chosen.map((c) => c.name).join(", ") +
+          (importStage.repository ? " from " + importStage.label : ""),
         push: false,
       });
       importStage = null;

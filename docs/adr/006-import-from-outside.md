@@ -43,3 +43,17 @@ People can adopt a skill from anywhere in one step, and it then appears in Libra
 for everyone like any other asset. Upload size and archive limits bound memory and
 disk use. Staged files never leave the temporary folder except through an applied
 plan.
+
+## Addendum: from a Git repository
+
+`captain-share add REPOSITORY --skill NAME` (like `npx skills add`) and **From Git…**
+in the window stage a repository instead of a zip or folder: a shallow clone into a
+private temporary folder, HTTPS or SSH only (`GIT_ALLOW_PROTOCOL`), never prompting,
+with `OWNER/REPO` meaning GitHub; addresses with credentials, local paths and other
+protocols are refused. A repository is searched for library layouts and for skill
+folders at any depth (`skills/<category>/<name>/`), never inside a skill folder;
+loose Markdown is documentation there and is not offered. Chosen skills go into the
+personal library (ADR 008) like any other import, through the same checks, and the
+commit names the repository and commit (`Add tdd from github.com/OWNER/REPO@abc1234`).
+In the window a long list starts with nothing picked and has a filter. A stopped
+window (Ctrl-C or SIGTERM) removes its downloads.

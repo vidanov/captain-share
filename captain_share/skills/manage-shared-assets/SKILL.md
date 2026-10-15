@@ -36,6 +36,9 @@ when they are explicitly synced, not automatically to every child repository.
 - **Use the library version:** `adopt KIND NAME --source NAME` previews archiving
   the local copies and linking the original; `--replace` only when the user agrees
   to archive a copy that differs; `--apply` to apply.
+- **From a Git repository:** `add OWNER/REPO` (or an https/git@ address) lists
+  its skills; `--skill NAME --apply` copies the chosen ones into my-skills and
+  installs them, like `npx skills add`. Only when the user asked for that skill.
 - **Try before sharing:** `install PATH` previews a zip or folder; `--apply` adds it
   to the private `my-skills` library (local commits, never pushed) and installs it
   for the user (`--here` for the project). `promote KIND NAME --to TEAM --note TEXT

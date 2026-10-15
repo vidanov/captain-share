@@ -352,6 +352,18 @@ def parser():
     )
     keep.add_argument("--apply", action="store_true")
     sub.add_parser("versions", help="List your kept versions and whether the team's changed")
+    add_cmd = sub.add_parser(
+        "add",
+        help="Get skills from a Git repository, like npx skills add (into my-skills)",
+    )
+    add_cmd.add_argument("source", metavar="REPOSITORY", help="https://…, git@… or OWNER/REPO")
+    add_cmd.add_argument("--skill", action="append", default=[], help="A skill to add (repeatable)")
+    add_cmd.add_argument("--all", action="store_true", help="Add every valid skill in it")
+    add_cmd.add_argument("--ref", help="A branch or tag instead of the default branch")
+    add_cmd.add_argument(
+        "--here", action="store_true", help="Install into --target (or this folder) instead"
+    )
+    add_cmd.add_argument("--apply", action="store_true", help="Add and install without asking")
     ins = sub.add_parser(
         "install",
         help="Add skills from a zip file or folder to your library (my-skills) and get them",
@@ -724,13 +736,10 @@ def install(args, project):
     from . import personal as me
 
     path = Path(args.path).expanduser().absolute()
-    home = c.global_dir().parent
-    target = project if args.here else home
     root, temp = staged(path)
     try:
         rows = im.find(root, str(path) if temp else "")
         items = import_items(rows, None, None, path)
-        report: dict = {"library": None, "added": [], "installed": [], "applied": False}
         if not args.apply:
             if not args.json:
                 print(f"Found in {path}:")
@@ -739,22 +748,38 @@ def install(args, project):
                     print(f"  {row['kind']:10} {row['name']}{note}")
                 where = "this project" if args.here else "your user"
                 print(f"Run with --apply to add them to {me.SOURCE} and install them for {where}.")
-            report["candidates"] = rows
-            return report
-        report["library"] = me.ensure()
+            return {
+                "library": None,
+                "added": [],
+                "installed": [],
+                "applied": False,
+                "candidates": rows,
+            }
         names = ", ".join(row["name"] for row in items)
-        planned = im.plan(target, me.SOURCE, root, items, label=str(path))
-        if not planned["can_apply"]:
-            report["plan"] = planned
-            if not args.json:
-                for error in planned["errors"]:
-                    print(f"  Blocked: {error}")
-            return {**report, "can_apply": False}
-        im.apply(planned, f"Add {names}", push=False)
-        report["added"] = [f"{row['kind']}/{row['name']}" for row in items]
+        return add_and_install(args, project, root, items, str(path), f"Add {names}")
     finally:
         if temp is not None:
             shutil.rmtree(temp, ignore_errors=True)
+
+
+def add_and_install(args, project, root, items, label, note, repository=False):
+    """Copy `items` from a staged `root` into the personal library with `note` as the
+    commit message, then get each one for the user (or --here for the project)."""
+    from . import personal as me
+
+    home = c.global_dir().parent
+    target = project if args.here else home
+    report: dict = {"library": me.ensure(), "added": [], "installed": [], "applied": False}
+    names = ", ".join(row["name"] for row in items)
+    planned = im.plan(target, me.SOURCE, root, items, label=label, repository=repository)
+    if not planned["can_apply"]:
+        report["plan"] = planned
+        if not args.json:
+            for error in planned["errors"]:
+                print(f"  Blocked: {error}")
+        return {**report, "can_apply": False}
+    im.apply(planned, note, push=False)
+    report["added"] = [f"{row['kind']}/{row['name']}" for row in items]
     for row in items:
         if row["kind"] == "powers":
             continue
@@ -774,6 +799,71 @@ def install(args, project):
             + ("this project." if args.here else "your user.")
         )
     return report
+
+
+def add(args, project):
+    """Get skills from a Git repository, like `npx skills add URL --skill NAME`: a
+    shallow clone, the chosen skills into the personal library (the commit names the
+    repository and commit), then linked for the user (or --here for the project)."""
+    from . import personal as me
+
+    temp = Path(tempfile.mkdtemp(prefix="captain-share-add-"))
+    try:
+        root, commit, label = im.clone(args.source, temp / "repository", args.ref)
+        rows = im.find_repository(root, label)
+        valid = [row for row in rows if row["error"] is None]
+        if not args.skill and not args.all:
+            if not args.json:
+                print(f"Skills in {label}:")
+                for row in rows:
+                    note = f"  (cannot add: {row['error']})" if row["error"] else ""
+                    desc = f" · {row['description']}" if row.get("description") else ""
+                    print(f"  {row['name']}{desc[:90]}{note}")
+                print("Choose with --skill NAME (repeat it for several), or --all.")
+            return {"source": label, "candidates": rows, "applied": False}
+        if args.all:
+            chosen = valid
+        else:
+            by_name = {row["name"]: row for row in rows}
+            missing = [name for name in args.skill if name not in by_name]
+            if missing:
+                raise c.ShareError(
+                    f"Not in {label}: {', '.join(missing)}. Run without --skill to list them."
+                )
+            chosen = [by_name[name] for name in args.skill]
+            broken = [f"{row['name']}: {row['error']}" for row in chosen if row["error"]]
+            if broken:
+                raise c.ShareError("Cannot add " + "; ".join(broken))
+        items = [{"id": row["id"], "kind": row["kind"], "name": row["name"]} for row in chosen]
+        names = ", ".join(row["name"] for row in items)
+        where = "this project" if args.here else "your user"
+        if not args.apply:
+            if not args.json:
+                print(f"From {label}:")
+                for row in chosen:
+                    print(f"  {row['kind']:10} {row['name']}  ({row['id']})")
+                print(
+                    f"Adds them to {me.SOURCE} (only on this machine) and installs them for "
+                    f"{where}. Read them first: skills from outside can run commands."
+                )
+            apply = (
+                not args.json
+                and sys.stdin.isatty()
+                and input(f"Add {names}? [y/N] ").strip().lower() in ("y", "yes")
+            )
+            if not apply:
+                if not args.json:
+                    print("Nothing was changed.")
+                return {"source": label, "chosen": items, "applied": False}
+        return {
+            "source": label,
+            "commit": commit,
+            **add_and_install(
+                args, project, root, items, label, f"Add {names} from {label}", repository=True
+            ),
+        }
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
 
 
 def promote(args, target):
@@ -928,8 +1018,9 @@ def main(argv=None):
                 raise c.ShareError("Saved plan targets a different folder than --target")
             # A saved plan owns its target; an explicit mismatch is rejected.
             result = e.apply(saved)
-        elif command in ("get", "share", "import", "install", "promote"):
+        elif command in ("get", "share", "import", "install", "promote", "add"):
             handler = {
+                "add": add,
                 "get": get,
                 "share": share,
                 "import": import_assets,

@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1246,6 +1247,8 @@ def make_server(target, port=0, token=None):
                     )
                 elif path == "/api/import-folder":
                     result = stages.open_folder(data.get("path"))
+                elif path == "/api/import-git":
+                    result = stages.clone(data.get("url"), data.get("ref") or None)
                 elif path == "/api/import-plan":
                     stage = stages.get(data.get("stage"))
                     result = im.plan(
@@ -1256,6 +1259,7 @@ def make_server(target, port=0, token=None):
                         stage=data["stage"],
                         label=stage["label"],
                         mode=mode_of(data),
+                        repository=bool(stage.get("repository")),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -1454,6 +1458,13 @@ def serve(target, port=0, open_browser=False):
     print(f"Captain Share\nTarget: {c.root(target)}\n{url}\nPress Ctrl-C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)
+
+    def stop(*_):
+        # pkill sends SIGTERM: stop like Ctrl-C, so staged downloads are removed and
+        # the window is taken off the list of open windows.
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, stop)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
