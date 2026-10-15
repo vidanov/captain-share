@@ -2337,3 +2337,18 @@ summary {
 .agent-skill {
   margin-top: 10px;
 }
+/* Library and type chips on one line, divided */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+.filters .type-chips {
+  margin: 0;
+}
+.filters .type-chips:not(:empty) + .type-chips:not(:empty) {
+  padding-left: 16px;
+  border-left: 1px solid var(--rule);
+}

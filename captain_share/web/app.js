@@ -2246,6 +2246,21 @@ function assetRow(a) {
   }
   if (a.status === "available")
     link("Copy get command", () => copyCommand(a), "copy-get");
+  // Hide what you will not use from browsing; installed assets use Remove.
+  if (!owned(a))
+    link(a.hidden ? "Unhide" : "Hide", () =>
+      task(async () => {
+        await api("hide", { key: a.key, hidden: !a.hidden });
+        home = await api("home");
+        renderHome();
+        message(
+          a.hidden
+            ? a.name + " is back in the list."
+            : a.name +
+                " is hidden. Find it under Hidden at the end of the list.",
+        );
+      }),
+    );
   link(previewOpen === a.key ? "Hide preview" : "Preview", () => {
     previewOpen = previewOpen === a.key ? null : a.key;
     renderHome();
@@ -2356,13 +2371,34 @@ function typeGroup(kind) {
   return kind && kind.startsWith("copilot") ? "copilot" : kind;
 }
 function typeFilter(id, rows, onChange) {
+  return chipFilter(
+    id,
+    rows,
+    (row) => typeGroup(row.kind),
+    TYPE_GROUPS,
+    onChange,
+  );
+}
+// One chip per library when assets come from more than one.
+function libraryFilter(id, rows, onChange) {
+  const names = [...new Set(rows.map((row) => row.source))].sort();
+  return chipFilter(
+    id,
+    rows,
+    (row) => row.source,
+    names.map((name) => [name, name]),
+    onChange,
+  );
+}
+// Chips "All · A n · B n", only for groups present and only when there are two or
+// more; the choice is remembered per chip row.
+function chipFilter(id, rows, groupOf, groups, onChange) {
   const box = $(id);
   const current = prefs("types-" + id) || "all";
   const counts = {};
   for (const row of rows)
-    counts[typeGroup(row.kind)] = (counts[typeGroup(row.kind)] || 0) + 1;
-  const present = TYPE_GROUPS.filter(([key]) => counts[key]);
-  // One type needs no filter.
+    counts[groupOf(row)] = (counts[groupOf(row)] || 0) + 1;
+  const present = groups.filter(([key]) => counts[key]);
   if (present.length < 2) {
     box.replaceChildren();
     return () => true;
@@ -2387,7 +2423,7 @@ function typeFilter(id, rows, onChange) {
     chip("all", "All", rows.length),
     ...present.map(([key, label]) => chip(key, label, counts[key])),
   );
-  return (row) => chosen === "all" || typeGroup(row.kind) === chosen;
+  return (row) => chosen === "all" || groupOf(row) === chosen;
 }
 // A note field that fits its text (at least four lines), so a long description is
 // readable without scrolling.
@@ -2442,8 +2478,13 @@ function renderHome() {
   );
   const query = $("home-search").value.toLowerCase();
   const searched = home.assets.filter(textMatch(query));
-  const ofType = typeFilter("home-types", searched, renderHome);
-  const assets = searched.filter(ofType);
+  const ofLibrary = libraryFilter("home-libs", searched, renderHome);
+  const inLibrary = searched.filter(ofLibrary);
+  const ofType = typeFilter("home-types", inLibrary, renderHome);
+  const shown = inLibrary.filter(ofType);
+  // Assets you hid stay out of the lists until you open "Hidden".
+  const hidden = shown.filter((a) => a.hidden);
+  const assets = shown.filter((a) => !a.hidden);
   const fresh = assets.filter((a) => a.new || a.updated);
   const mine = assets.filter((a) => !fresh.includes(a) && owned(a));
   const rest = assets.filter((a) => !fresh.includes(a) && !owned(a));
@@ -2462,7 +2503,9 @@ function renderHome() {
         !query && (mine.length > 0 || fresh.length > 0),
       ),
     );
-  if (!assets.length)
+  if (hidden.length)
+    lists.push(homeSection("Hidden", hidden, 0, "home-hidden", true));
+  if (!assets.length && !hidden.length)
     lists.push(
       el("p", query ? "Nothing matches." : "This library is empty.", "hint"),
     );

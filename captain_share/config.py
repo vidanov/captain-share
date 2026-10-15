@@ -419,6 +419,37 @@ def libraries_folder():
     return global_dir().parent / "Libraries"
 
 
+def hidden_assets():
+    """Library assets the user hid from browsing ("source/kind/name"), on this machine."""
+    try:
+        data = read_json(settings_path(), {}) or {}
+    except ShareError:
+        return set()
+    value = data.get("hidden") if isinstance(data, dict) else None
+    return {x for x in value if isinstance(x, str)} if isinstance(value, list) else set()
+
+
+def set_hidden(key, hidden=True):
+    """Hide a library asset from browsing, or show it again. Only a preference: nothing
+    is installed, removed or changed in any library."""
+    parts = key.split("/") if isinstance(key, str) else []
+    if len(parts) != 3:
+        raise ShareError("Name the asset as SOURCE/KIND/NAME")
+    name(parts[0])
+    asset_name(parts[1], parts[2])
+    path = settings_path()
+    with locks([path]):
+        data = read_json(path, {}) or {}
+        if not isinstance(data, dict):
+            data = {}
+        found = hidden_assets()
+        found = found | {key} if hidden else found - {key}
+        data["hidden"] = sorted(found)
+        global_dir().mkdir(parents=True, exist_ok=True)
+        atomic_json(path, data)
+    return {"key": key, "hidden": bool(hidden)}
+
+
 def set_libraries_folder(value):
     """Choose where new library checkouts go; existing libraries stay where they are."""
     if not isinstance(value, str) or not value.strip():
