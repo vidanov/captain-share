@@ -1093,7 +1093,24 @@ def main(argv=None):
                     return 0
             else:
                 result = i.skill_plan(place, remove=args.action == "remove")
-                if args.apply and result["can_apply"]:
+                apply = args.apply
+                if not apply and not args.json and result["can_apply"] and result["changes"]:
+                    # Like get: show the preview, then ask, so it never ends silently.
+                    output(result)
+                    if sys.stdin.isatty():
+                        verb = "Install" if args.action == "install" else "Remove"
+                        apply = input(
+                            f"{verb} the captain-share skill? [y/N] "
+                        ).strip().lower() in (
+                            "y",
+                            "yes",
+                        )
+                    if not apply:
+                        print(
+                            f"Nothing was changed. To apply: captain-share skill {args.action} --apply"
+                        )
+                        return 0
+                if apply and result["can_apply"]:
                     result = e.apply(result)
                     if not args.json:
                         print(
