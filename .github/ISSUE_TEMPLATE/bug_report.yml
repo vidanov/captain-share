@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Paste the message Captain Share showed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. captain-share get …
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The first line of `captain-share update`
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options: [Window (serve), Command line, Agent skill]
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: macOS 15, Python 3.12, Kiro and Claude Code
+  - type: markdown
+    attributes:
+      value: Please remove private paths, library names and credentials from what you paste. For security problems, use private vulnerability reporting instead (see SECURITY.md).

@@ -1,5 +1,12 @@
 # Captain Share
 
+[![Checks](https://github.com/vidanov/captain-share/actions/workflows/check.yml/badge.svg)](https://github.com/vidanov/captain-share/actions/workflows/check.yml)
+[![Release](https://img.shields.io/github/v/release/vidanov/captain-share?sort=semver)](https://github.com/vidanov/captain-share/releases)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#install-and-start)
+[![Agents: Kiro, Claude Code, Codex, Copilot](https://img.shields.io/badge/agents-Kiro%20%7C%20Claude%20Code%20%7C%20Codex%20%7C%20Copilot-orange)](#how-it-works)
+
 **Steer once, every agent follows.** Your team keeps agent skills, prompts, steering
 and agents in one Git library. Captain Share links them into Kiro, Claude Code,
 Codex and GitHub Copilot, for every project on your machine or just one, and shares
@@ -179,5 +186,6 @@ make verify-fast
 make verify
 ```
 
-See [contributing](CONTRIBUTING.md) and [readiness evidence](docs/readiness.md).
+See [contributing](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md), the
+[security policy](SECURITY.md) and [readiness evidence](docs/readiness.md).
 Tests use disposable repositories and loopback servers. MIT licensed.
