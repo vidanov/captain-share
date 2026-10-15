@@ -226,6 +226,8 @@
           </section>
           <h2 class="settings-title">Libraries</h2>
           <div id="library-list" class="library-list"></div>
+          <p id="libraries-folder" class="hint libraries-folder"></p>
+          <input id="libraries-folder-path" type="hidden" />
           <h2 class="settings-title">Add a library</h2>
           <div id="settings-found" class="found"></div>
           <details id="add-library" class="panel-block">
@@ -275,37 +277,40 @@
           <details id="clone-library" class="panel-block">
             <summary>Clone a library from Git</summary>
             <form id="clone-source">
-              <label for="clone-name">Library name</label
-              ><input id="clone-name" required placeholder="shared-tools" />
-              <label for="clone-url">Repository URL</label
-              ><input
-                id="clone-url"
-                required
-                placeholder="https://github.com/team/shared-tools.git"
-              />
-              <label for="clone-path">New checkout folder</label
-              ><input
-                id="clone-path"
-                required
-                placeholder="/path/to/shared-tools"
-              /><button
-                type="button"
-                id="browse-clone"
-                class="quiet folder-browse"
-              >
-                Choose parent folder…
-              </button>
-              <label for="clone-layout">Repository layout</label
-              ><select id="clone-layout">
-                <option value="">Detect after cloning</option>
-                <option value="ip">ip/skills, ip/agents, …</option>
-                <option value="flat">skills, agents, …</option>
-              </select>
-              <button type="submit">Clone and add</button>
-              <p class="hint">
-                Uses your existing Git credentials. Choose a folder that does
-                not exist yet.
+              <label for="clone-url">Repository address</label>
+              <div class="clone-line">
+                <input
+                  id="clone-url"
+                  required
+                  placeholder="https://github.com/OWNER/REPO or OWNER/REPO"
+                /><button type="submit">Clone and add</button>
+              </div>
+              <p class="hint" id="clone-summary">
+                Uses your existing Git access. The name and folder come from the
+                address.
               </p>
+              <details class="clone-more">
+                <summary>Change name, folder or layout</summary>
+                <label for="clone-name">Library name</label
+                ><input id="clone-name" placeholder="from the address" />
+                <label for="clone-path">Checkout folder</label
+                ><input
+                  id="clone-path"
+                  placeholder="in your Libraries folder"
+                /><button
+                  type="button"
+                  id="browse-clone"
+                  class="quiet folder-browse"
+                >
+                  Choose parent folder…
+                </button>
+                <label for="clone-layout">Repository layout</label
+                ><select id="clone-layout">
+                  <option value="">Detect after cloning</option>
+                  <option value="ip">ip/skills, ip/agents, …</option>
+                  <option value="flat">skills, agents, …</option>
+                </select>
+              </details>
             </form>
           </details>
           <h2 class="settings-title">Advanced</h2>

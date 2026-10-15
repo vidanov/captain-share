@@ -2254,6 +2254,33 @@ summary {
 .self-notes li + li {
   margin-top: 3px;
 }
+
+/* Clone a library: the address is all that is needed (Settings) */
+.clone-line {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.clone-line input {
+  flex: 1;
+  min-width: 0;
+}
+.clone-line button {
+  flex: none;
+}
+.clone-more {
+  margin-top: 6px;
+}
+.clone-more > summary {
+  width: fit-content;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.libraries-folder {
+  margin: -8px 0 18px;
+}
+
 .import-filter {
   width: 100%;
   margin: 10px 0 4px;

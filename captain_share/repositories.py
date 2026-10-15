@@ -282,12 +282,38 @@ def operate(target, source, action, fingerprint):
         return {"output": output or f"{action.capitalize()} completed", "repository": after}
 
 
+def name_from_url(url, taken=()):
+    """A library name from a repository address: the owner and the repository, as in
+    https://github.com/mattpocock/skills -> mattpocock-skills."""
+    path = urlparse(url).path if "://" in url else url.split(":", 1)[-1]
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return c.suggest_name("library", taken)
+    repo = parts[-1].removesuffix(".git")
+    base = f"{parts[-2]}-{repo}" if len(parts) > 1 else repo
+    return c.suggest_name(base, taken)
+
+
 def clone(target, name, url, destination, layout=None, create_parent=False):
+    """Clone and connect a library. Only the address is needed: the name comes from
+    it (owner-repository) and the checkout goes to the Libraries folder setting."""
     # Without a layout, the cloned checkout decides (see config.detect_layout).
     if layout not in (None, "ip", "flat"):
         raise c.ShareError("Unknown layout")
-    if name in c.effective(target)["sources"]:
+    if not isinstance(url, str) or not url.strip():
+        raise c.ShareError("Paste the repository address")
+    url = url.strip()
+    if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", url) and not url.startswith("."):
+        url = f"https://github.com/{url}"  # OWNER/REPO means GitHub, as elsewhere
+    sources = c.effective(target)["sources"]
+    name = (name or "").strip() or name_from_url(url, sources)
+    c.name(name)
+    if name in sources:
         raise c.ShareError("A library with that name is already connected")
+    if not destination:
+        folder = c.libraries_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        destination = str(folder / name)
     parsed = urlparse(url)
     valid_url = (
         parsed.scheme in ("https", "ssh")
@@ -389,8 +415,10 @@ def library(target, source):
     }
 
 
-def asset_of(prefix, rel):
-    """(kind, name) for a repository-relative path inside a library asset, else None."""
+def asset_of(prefix, rel, repo=None):
+    """(kind, name) for a repository-relative path inside a library asset, else None.
+    With `repo`, a skill inside a category folder (skills/<category>/<name>/) is
+    named by its own folder."""
     if prefix:
         if not rel.startswith(prefix + "/"):
             return None
@@ -400,6 +428,10 @@ def asset_of(prefix, rel):
         return None
     if parts[1].startswith(".") or not c.NAME.fullmatch(parts[1]):
         return None
+    if repo is not None and parts[0] == "skills" and len(parts) >= 3:
+        base = Path(repo) / prefix if prefix else Path(repo)
+        if e.is_category(base / "skills" / parts[1]) and c.NAME.fullmatch(parts[2]):
+            return parts[0], parts[2]
     return parts[0], parts[1]
 
 
@@ -430,7 +462,7 @@ def history(repo, prefix):
             when, _, email = rest.partition("\x1f")
             who = {"by": author, "at": iso(when), "email": email.strip().lower()}
             continue
-        key = asset_of(prefix, line) if line and who else None
+        key = asset_of(prefix, line, repo) if line and who else None
         if key and key not in found:
             found[key] = who
     return found
@@ -443,7 +475,7 @@ def changed_between(repo, prefix, old, new):
     if not SHA.fullmatch(new) or old == new:
         return set()
     out = quiet(repo, "diff", "--no-renames", "--name-only", old, new, "--", prefix or ".")
-    return {key for key in (asset_of(prefix, line) for line in out.split("\n")) if key}
+    return {key for key in (asset_of(prefix, line, repo) for line in out.split("\n")) if key}
 
 
 def edits(repo, prefix, changes):
@@ -451,7 +483,7 @@ def edits(repo, prefix, changes):
     grouped: dict[tuple[str, str], list[str]] = {}
     for row in changes:
         for rel in (row.get("path"), row.get("from")):
-            key = asset_of(prefix, rel) if rel else None
+            key = asset_of(prefix, rel, repo) if rel else None
             if key and rel not in grouped.setdefault(key, []):
                 grouped[key].append(rel)
     return grouped

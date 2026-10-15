@@ -101,7 +101,7 @@ def library_info(target, value):
         for kind in c.KINDS:
             folder = base / kind
             if folder.is_dir():
-                found = sum(1 for item in folder.iterdir() if e.candidate(item, kind))
+                found = len(e.kind_items(folder, kind))
                 if found:
                     counts[kind] = found
     sources = c.effective(target)["sources"]
@@ -124,9 +124,7 @@ def library_assets(path, layout):
         folder = base / kind
         if folder.is_symlink() or not folder.is_dir():
             continue
-        for item in folder.iterdir():
-            if not e.candidate(item, kind):
-                continue
+        for item in e.kind_items(folder, kind):
             try:
                 c.asset_name(kind, item.name)
             except c.ShareError:
@@ -883,6 +881,7 @@ def make_server(target, port=0, token=None):
                 if parsed.path == "/api/state":
                     result = e.status(target)
                     result["startup"] = str(startup)
+                    result["libraries_folder"] = str(c.libraries_folder())
                     result["places"] = places(startup)
                     home = c.global_dir().parent
                     # Assets already installed user-wide, so a project need not add them.
@@ -1088,12 +1087,14 @@ def make_server(target, port=0, token=None):
                 elif path == "/api/clone":
                     result = r.clone(
                         target,
-                        data["name"],
-                        data["url"],
-                        data["path"],
+                        data.get("name"),
+                        data.get("url"),
+                        data.get("path") or None,
                         data.get("layout") or None,
                         create_parent=data.get("create_parent") is True,
                     )
+                elif path == "/api/libraries-folder":
+                    result = c.set_libraries_folder(data.get("path"))
                     plans.clear()
                 elif path == "/api/git":
                     result = r.operate(

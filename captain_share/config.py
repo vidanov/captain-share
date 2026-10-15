@@ -397,6 +397,43 @@ def detect_layout(path):
     return None
 
 
+def settings_path():
+    """Machine-local Captain Share settings (not layered, not in Git)."""
+    return global_dir() / "settings.json"
+
+
+def libraries_folder():
+    """Where new library checkouts go: the setting, or ~/Libraries."""
+    try:
+        data = read_json(settings_path(), {}) or {}
+    except ShareError:
+        data = {}
+    value = data.get("libraries") if isinstance(data, dict) else None
+    if isinstance(value, str) and Path(value).expanduser().is_absolute():
+        return Path(value).expanduser()
+    return global_dir().parent / "Libraries"
+
+
+def set_libraries_folder(value):
+    """Choose where new library checkouts go; existing libraries stay where they are."""
+    if not isinstance(value, str) or not value.strip():
+        raise ShareError("Choose a folder")
+    folder = Path(value.strip()).expanduser()
+    if not folder.is_absolute():
+        raise ShareError("Choose an absolute folder")
+    if folder.exists() and not folder.is_dir():
+        raise ShareError("That is a file, not a folder")
+    path = settings_path()
+    with locks([path]):
+        data = read_json(path, {}) or {}
+        if not isinstance(data, dict):
+            data = {}
+        data["libraries"] = str(folder)
+        global_dir().mkdir(parents=True, exist_ok=True)
+        atomic_json(path, data)
+    return {"libraries": str(folder)}
+
+
 def suggest_name(path, taken=()):
     """A valid source name from a folder name, e.g. "My Library.v2" -> "my-library.v2"."""
     base = re.sub(r"[^a-z0-9_.-]+", "-", Path(path).name.lower()).strip("-.") or "library"

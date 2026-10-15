@@ -230,6 +230,15 @@ ownership. Deselecting outbound content stops sharing it; it does not delete the
 library copy. To make the library the only maintained original, archive the old
 local installation and receive the library version inbound.
 
+## Connect a skill repository
+
+Settings → Clone a library from Git needs only the address
+(`https://github.com/OWNER/REPO` or `OWNER/REPO`): it becomes the library
+`OWNER-REPO` in your Libraries folder (`~/Libraries`, changeable in Settings), and
+skills grouped in category folders (`skills/<category>/<name>/`) are found. Update
+library keeps it current. See
+[ADR 016](docs/adr/016-clone-by-address-and-category-folders.md).
+
 ## Get skills from any Git repository
 
 ```bash
