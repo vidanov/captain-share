@@ -9,7 +9,7 @@ agent tool reads, for one project, for a group of projects, or for your whole us
 | --- | --- | --- | --- |
 | Kiro IDE and Kiro CLI (one setting: `kiro`) | `.kiro/` | `~/.kiro/` | skills, prompts, steering; agents (`.json`) are Kiro CLI agent configs |
 | Kiro powers (IDE and CLI) | – | `~/.kiro/powers/installed/` | powers, installed by `kiro-cli` |
-| Claude Code | `.claude/skills/` | `~/.claude/skills/` | skills |
+| Claude Code | `.claude/skills/`, `.claude/rules/`, `.claude/commands/`, `.claude/agents/` | the same under `~/.claude/` | skills; steering, prompts and agents as generated rules, skills, commands and subagents ([ADR 012](adr/012-claude-rules-and-commands.md), [ADR 013](adr/013-claude-skills-and-subagents.md)) |
 | Codex | `.agents/skills/` (and parent folders up to the repository root) | `~/.agents/skills/` | skills |
 | GitHub Copilot | `.github/` | – | `copilot-instructions.md`, `*.instructions.md`, `*.prompt.md` |
 
