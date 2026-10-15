@@ -30,6 +30,8 @@ the authority for these folders: never hand-copy, link or delete files in
 
 | The user wants to | Run |
 | --- | --- |
+| start, or prefers clicking | `captain-share serve --open` opens the window (first setup, Library, Share, Settings); `--target FOLDER` for a project |
+| let agents (theirs or a teammate's) use Captain Share | `captain-share skill install`, once per machine; `--here` for one project |
 | see what is available | `captain-share list --source LIBRARY` (`config` lists libraries) |
 | get an asset a colleague mentioned | `captain-share get NAME` (user-wide), `--here` for this project only; `SOURCE/NAME` when ambiguous |
 | get skills from a Git repository (like `npx skills add`) | `captain-share add OWNER/REPO` lists them; `--skill NAME` (repeatable) previews; they go into the private `my-skills` library |
@@ -43,6 +45,7 @@ the authority for these folders: never hand-copy, link or delete files in
 | remove an asset | `captain-share remove KIND NAME` (archives; `archive` and `restore ID` bring it back) |
 | connect a library | clone with Git, then `captain-share source add NAME PATH --scope global`; in the window, Settings → Clone a library from Git takes just the address |
 | choose agents | `captain-share tools kiro claude codex copilot` (`--target "$HOME"` for every project) |
+| take a named set a library offers | `captain-share import-profile LIBRARY PROFILE` (`profiles/PROFILE.manifest`), then `captain-share sync` |
 | install a Kiro power | `captain-share powers install LIBRARY POWER` |
 | update Captain Share itself | `captain-share update`, then `--apply` if they agree |
 
@@ -61,5 +64,5 @@ prompts and steering names end in `.md`, agents in `.json`.
 - **Safety checks** refuse hidden characters, credentials and personal paths. A
   library can run its own check before a share commits (`captain-share check
   LIBRARY`); if it fails, nothing is committed: show the output.
-- **The window**: `captain-share serve --open` offers the same with previews, for
-  people who prefer clicking.
+- **The window** (`serve --open`) offers the same with previews; suggest it to people
+  new to Captain Share.

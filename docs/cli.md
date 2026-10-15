@@ -229,6 +229,21 @@ under a new name (the skill's `name:` is updated, the old folder archived, the t
 version linked unless `--no-team`), and `captain-share versions` reports when the
 team version changed since.
 
+## Profiles and the starter set
+
+A library can offer named sets in `profiles/NAME.manifest` (for example
+`skills: plan review`). The starter set is `profiles/starter.manifest`, offered in
+first setup.
+
+```bash
+captain-share --target /path/to/project import-profile team pilot          # preview
+captain-share --target /path/to/project import-profile team pilot --apply  # save the selections
+captain-share --target /path/to/project sync --apply                       # create the links
+```
+
+`choose inbound --source team` picks interactively instead. Toolkit manifests from
+an existing Captain installation import the same way; see [migration](migration.md).
+
 ## Check a library before sharing
 
 ```bash
