@@ -237,6 +237,20 @@ skills grouped in category folders (`skills/<category>/<name>/`) are found. Upda
 library keeps it current. See
 [ADR 016](docs/adr/016-clone-by-address-and-category-folders.md).
 
+## Get skills from any Git repository
+
+```bash
+captain-share add mattpocock/skills                 # lists the skills in it
+captain-share add mattpocock/skills --skill tdd     # preview, then install
+captain-share add https://github.com/OWNER/REPO --skill a --skill b --apply
+```
+
+Like `npx skills add`: the chosen skills are copied into your own library
+(`~/Libraries/my-skills`, only on this machine) and installed for you (`--here`
+for the project). The commit records where they came from. In the window, use
+Library → From Git…. Read a skill from outside before you use it: it can run
+commands.
+
 ## Check a library before sharing
 
 ```bash
