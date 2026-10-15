@@ -1158,35 +1158,86 @@ $("git-confirm").onclick = () =>
     await refresh();
     message(result.output);
   });
-let cloneNameTouched = false;
-$("clone-name").oninput = () => (cloneNameTouched = true);
-$("clone-url").oninput = () => {
-  if (cloneNameTouched) return;
-  const last = $("clone-url")
-    .value.trim()
-    .replace(/\/+$/, "")
-    .split(/[/:]/)
-    .pop()
-    .replace(/\.git$/, "");
-  $("clone-name").value = last ? suggestName(last) : "";
+// Cloning needs only the address: the name (owner-repository) and the folder (the
+// Libraries folder setting) follow from it unless changed under "Change …".
+let cloneNameTouched = false,
+  clonePathTouched = false;
+function cloneGuess() {
+  const raw = $("clone-url").value.trim().replace(/\/+$/, "");
+  const path = raw.includes("://")
+    ? raw.replace(/^[a-z+]+:\/\/[^/]+/, "")
+    : raw.split(":").pop();
+  const parts = path.split("/").filter(Boolean);
+  if (!parts.length) return "";
+  const repo = parts[parts.length - 1].replace(/\.git$/, "");
+  return suggestName(
+    parts.length > 1 ? parts[parts.length - 2] + "-" + repo : repo,
+  );
+}
+function renderCloneSummary() {
+  const name = cloneNameTouched ? $("clone-name").value.trim() : cloneGuess();
+  if (!cloneNameTouched) $("clone-name").value = name;
+  const folder = state?.libraries_folder || "~/Libraries";
+  if (!clonePathTouched)
+    $("clone-path").value = name ? folder + "/" + name : "";
+  $("clone-summary").replaceChildren(
+    ...(name
+      ? [
+          "Becomes ",
+          el("strong", name),
+          " in ",
+          el("code", shortPath($("clone-path").value || folder + "/" + name)),
+          ". Uses your existing Git access.",
+        ]
+      : [
+          "Uses your existing Git access. The name and folder come from the address.",
+        ]),
+  );
+}
+$("clone-name").oninput = () => {
+  cloneNameTouched = true;
+  renderCloneSummary();
 };
+$("clone-path").oninput = () => {
+  clonePathTouched = true;
+  renderCloneSummary();
+};
+$("clone-url").oninput = renderCloneSummary;
 $("clone-source").onsubmit = (event) => {
   event.preventDefault();
   task(async () => {
     message("Cloning repository…");
-    const name = $("clone-name").value;
-    await api("clone", {
-      name,
-      url: $("clone-url").value,
-      path: $("clone-path").value,
+    const result = await api("clone", {
+      url: $("clone-url").value.trim(),
+      name: cloneNameTouched ? $("clone-name").value.trim() : undefined,
+      path: clonePathTouched ? $("clone-path").value.trim() : undefined,
       layout: $("clone-layout").value,
       target: homePath(),
     });
+    cloneNameTouched = clonePathTouched = false;
+    $("clone-url").value = "";
     view = "home";
     await refresh();
-    message("Cloned and added globally. Get what you need from it.");
+    message(result.source + " is cloned and added. Get what you need from it.");
   });
 };
+// Where new library checkouts go (a machine setting); existing ones stay put.
+function renderLibrariesFolder() {
+  const box = $("libraries-folder");
+  if (!box) return;
+  const change = el("button", "Change…", "link");
+  change.type = "button";
+  change.onclick = () => {
+    $("libraries-folder-path").value = state?.libraries_folder || "";
+    openFolderPicker("libraries-folder-path");
+  };
+  box.replaceChildren(
+    "New libraries go to ",
+    el("code", shortPath(state?.libraries_folder || "~/Libraries")),
+    " ",
+    change,
+  );
+}
 
 // ---------------------------------------------------------------- patch bay
 const KIND_LABELS = {
@@ -1734,6 +1785,8 @@ $("routing-clear").onclick = () => {
 
 // ---------------------------------------------------------------- libraries
 function renderLibraries() {
+  renderLibrariesFolder();
+  renderCloneSummary();
   const list = $("library-list");
   list.replaceChildren();
   const sources = Object.entries(state.config.sources);
@@ -4455,6 +4508,12 @@ $("folder-select").onclick = async () => {
   $(pickerField).value = path;
   $("folder-picker").close();
   if (pickerField === "source-path") describeLibrary();
+  if (pickerField === "libraries-folder-path")
+    task(async () => {
+      await api("libraries-folder", { path });
+      await refresh();
+      message("New libraries go to " + shortPath(path) + " from now on.");
+    });
   if (pickerField === "import-path")
     task(async () => {
       importStage = await api("import-folder", { path });

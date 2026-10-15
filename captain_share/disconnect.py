@@ -39,7 +39,7 @@ def library_assets(folder, layout):
     for kind in c.KINDS:
         directory = base / kind
         if directory.is_dir() and not directory.is_symlink():
-            found += [(kind, p.name) for p in sorted(directory.iterdir()) if e.candidate(p, kind)]
+            found += [(kind, p.name) for p in e.kind_items(directory, kind)]
     return found
 
 

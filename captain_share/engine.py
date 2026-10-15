@@ -284,6 +284,51 @@ def tracked(target, path):
     return bool(git(repo, "ls-files", "-z", "--", rel).stdout)
 
 
+def is_category(path):
+    """A folder under skills/ that groups skills (skills/engineering/tdd/SKILL.md)
+    instead of being one: no SKILL.md of its own, skill folders inside."""
+    if path.is_symlink() or not path.is_dir() or path.name.startswith("."):
+        return False
+    if (path / "SKILL.md").exists():
+        return False
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return False
+    return any(
+        child.is_dir() and not child.is_symlink() and (child / "SKILL.md").is_file()
+        for child in children
+    )
+
+
+def is_notes(path):
+    """A folder under skills/ holding only Markdown notes (a README beside the skills),
+    not a skill and not a broken one."""
+    if path.is_symlink() or not path.is_dir() or (path / "SKILL.md").exists():
+        return False
+    try:
+        children = [child for child in path.iterdir() if not child.name.startswith(".")]
+    except OSError:
+        return False
+    return bool(children) and all(
+        child.is_file() and child.suffix.lower() == ".md" for child in children
+    )
+
+
+def kind_items(directory, kind):
+    """Asset paths in one kind folder of a library. Skills may also sit one level down
+    in category folders, as many public repositories arrange them."""
+    items = []
+    for item in sorted(directory.iterdir()):
+        if kind == "skills" and is_category(item):
+            items += [child for child in sorted(item.iterdir()) if candidate(child, kind)]
+        elif kind == "skills" and is_notes(item):
+            continue
+        elif candidate(item, kind):
+            items.append(item)
+    return items
+
+
 def source_path(cfg, sid, kind=None, asset=None):
     spec = cfg["sources"].get(sid)
     if not spec or not spec.get("path"):
@@ -293,7 +338,19 @@ def source_path(cfg, sid, kind=None, asset=None):
         base = c.safe_path(base, "ip")
     if not base.is_dir():
         raise c.ShareError(f"Library root is missing: {base}")
-    return c.safe_path(base, f"{kind}/{asset}") if kind else base
+    if not kind:
+        return base
+    direct = c.safe_path(base, f"{kind}/{asset}")
+    if kind == "skills" and not os.path.lexists(direct):
+        # A skill in a category folder keeps its own name as the asset name.
+        folder = c.safe_path(base, kind)
+        if folder.is_dir() and not folder.is_symlink():
+            for category in sorted(folder.iterdir()):
+                if is_category(category):
+                    nested = c.safe_path(category, asset)
+                    if os.path.lexists(nested):
+                        return nested
+    return direct
 
 
 def locate(cfg, asset, source=None, kind=None):
@@ -304,7 +361,7 @@ def locate(cfg, asset, source=None, kind=None):
         if source is not None and sid != source:
             continue
         try:
-            base = source_path(cfg, sid)
+            source_path(cfg, sid)  # skip libraries not bound on this machine
         except c.ShareError:
             continue
         for k in c.KINDS:
@@ -316,7 +373,7 @@ def locate(cfg, asset, source=None, kind=None):
             for value in names:
                 try:
                     c.asset_name(k, value)
-                    item = c.safe_path(base, f"{k}/{value}")
+                    item = source_path(cfg, sid, k, value)
                 except c.ShareError:
                     continue
                 if candidate(item, k):
@@ -347,10 +404,20 @@ def catalog(target, source):
         directory = c.safe_path(base, kind)
         if not directory.is_dir():
             continue
-        for item in sorted(directory.iterdir()):
-            if not candidate(item, kind):
-                continue
+        seen: dict[str, Path] = {}
+        for item in kind_items(directory, kind):
             row = {"source": source, "kind": kind, "name": item.name, "path": str(item)}
+            if item.name in seen:
+                # Two categories with one skill name: the name must stay unique.
+                row.update(
+                    status="invalid",
+                    description=describe(item, kind),
+                    destinations=[],
+                    error=f"Same name as {seen[item.name].relative_to(base).as_posix()}; rename one",
+                )
+                rows.append(row)
+                continue
+            seen[item.name] = item
             row["description"] = describe(item, kind)
             try:
                 c.asset_name(kind, item.name)
@@ -1824,6 +1891,13 @@ def library_of(asset):
             continue
         if asset.parent.parent == base and asset.parent.name in c.KINDS:
             return sid, asset.parent.name
+        category = asset.parent
+        if (
+            category.parent.parent == base
+            and category.parent.name == "skills"
+            and is_category(category)
+        ):
+            return sid, "skills"
     return None
 
 
@@ -1850,7 +1924,12 @@ def why_asset(path, place, kind, tool, rel):
                 base = source_path(cfg, sid)
             except c.ShareError:
                 continue
-            if original.parent.parent == base and original.parent.name == kind:
+            # The original may sit in a category folder (skills/<category>/<name>).
+            try:
+                at_home = source_path(cfg, sid, kind, original.name) == original
+            except c.ShareError:
+                at_home = False
+            if at_home and base in original.parents:
                 result.update(source=sid, library_name=original.name)
                 key = f"{sid}/{kind}/{original.name}"
                 saved = cfg["origins"]["inbound"].get(key)

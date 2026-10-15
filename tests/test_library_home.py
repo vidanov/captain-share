@@ -946,3 +946,63 @@ class BehindApiTests(LibraryFixture):
         outside = self.base.parent / "elsewhere"
         self.assertEqual(self.request("/api/why?path=" + str(outside))[0], 400)
         self.assertEqual(self.request("/api/why?path=")[0], 400)
+
+
+class NestedLibraryTests(LibraryFixture):
+    """A library that groups skills in category folders, like many public ones."""
+
+    def nest(self):
+        for category, name in (("engineering", "tdd"), ("productivity", "handoff")):
+            self.skill(self.lib / "ip/skills" / category / name)
+            (self.lib / "ip/skills" / category / name / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: {name} skill\n---\nBody"
+            )
+        (self.lib / "ip/skills/old").mkdir()
+        (self.lib / "ip/skills/old/README.md").write_text("Notes only")
+        self.commit(self.lib, "Nested skills")
+
+    def test_catalog_get_why_and_history_see_skills_in_categories(self):
+        self.nest()
+        rows = {row["name"]: row for row in e.catalog(self.repo, "team")}
+        self.assertEqual(sorted(rows), ["handoff", "hello", "tdd"])
+        self.assertTrue(rows["tdd"]["path"].endswith("ip/skills/engineering/tdd"))
+        self.assertEqual(e.locate(c.effective(self.repo), "tdd"), [("team", "skills", "tdd")])
+        c.select(self.repo, "inbound", "team", "skills", "tdd")
+        e.apply(e.plan(self.repo))
+        link = self.repo / ".kiro/skills/tdd"
+        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/engineering/tdd"))
+        found = e.why(link)
+        self.assertEqual((found["source"], found["library_name"]), ("team", "tdd"))
+        repo = e.git_root(self.lib)
+        self.assertIn(("skills", "tdd"), r.history(repo, "ip"))
+        # A library edit in a category folder is an edit of that skill.
+        (self.lib / "ip/skills/engineering/tdd/extra.md").write_text("more")
+        changes = r.status(self.repo, "team")["changes"]
+        self.assertIn(("skills", "tdd"), r.edits(repo, "ip", changes))
+
+    def test_one_name_in_two_categories_is_reported(self):
+        self.nest()
+        self.skill(self.lib / "ip/skills/misc/tdd")
+        rows = [row for row in e.catalog(self.repo, "team") if row["name"] == "tdd"]
+        self.assertEqual(len(rows), 2)
+        self.assertIn("Same name as", rows[1]["error"])
+
+
+class SimpleCloneTests(LibraryFixture):
+    def test_the_address_is_enough(self):
+        self.assertEqual(
+            r.name_from_url("https://github.com/mattpocock/skills"), "mattpocock-skills"
+        )
+        self.assertEqual(
+            r.name_from_url("git@gitlab.com:team/tools.git", {"team-tools"}), "team-tools-2"
+        )
+        remote = self.base / "hosts/acme/team-skills.git"
+        remote.parent.mkdir(parents=True)
+        e.git(self.base, "clone", "-q", "--bare", str(self.lib), str(remote))
+        c.set_libraries_folder(str(self.base / "Shelf"))
+        result = r.clone(self.base, None, str(remote), None)
+        self.assertEqual(result["source"], "acme-team-skills")
+        self.assertEqual(result["path"], str(self.base / "Shelf/acme-team-skills"))
+        self.assertTrue((self.base / "Shelf/acme-team-skills/ip/skills/hello/SKILL.md").is_file())
+        with self.assertRaises(c.ShareError):
+            c.set_libraries_folder("relative/path")
