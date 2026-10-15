@@ -161,6 +161,25 @@ def status(fetch=False):
     return found
 
 
+def running_version():
+    """What identifies the code on disk now: the checkout's commit, or the installed
+    package's version and source commit. A window compares it with what it started
+    with to offer Restart window (ADR 015)."""
+    found = installation()
+    if found["kind"] in ("checkout", "pip-folder"):
+        commit = quiet(Path(found["path"]), "rev-parse", "--short", "HEAD")
+        if found["kind"] == "checkout" or found.get("editable"):
+            return commit or __version__
+    try:
+        from importlib import metadata
+
+        version = metadata.version("captain-share")
+    except Exception:
+        version = __version__
+    commit = (direct_url().get("vcs_info") or {}).get("commit_id") or ""
+    return f"{version} {commit[:7]}".strip()
+
+
 def manual(found):
     """The command that updates this installation by hand."""
     if found["kind"] == "checkout":

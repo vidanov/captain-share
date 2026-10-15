@@ -177,15 +177,21 @@ def config_dir(target=None, scope="repo"):
     return safe_path(root(target or "."), ".captain")
 
 
-@contextlib.contextmanager
-def locks(paths):
-    """Ordered per-user advisory locks shared by CLI and web processes."""
+def lock_dir():
+    """A private per-user folder for locks and the list of open windows."""
     lockdir = Path(tempfile.gettempdir()) / f"captain-share-locks-{os.getuid()}"
     if lockdir.is_symlink():
         raise ShareError("Lock directory is a symlink")
     lockdir.mkdir(mode=0o700, exist_ok=True)
     if lockdir.stat().st_uid != os.getuid() or lockdir.stat().st_mode & 0o077:
         raise ShareError("Lock directory must be private and owned by the current user")
+    return lockdir
+
+
+@contextlib.contextmanager
+def locks(paths):
+    """Ordered per-user advisory locks shared by CLI and web processes."""
+    lockdir = lock_dir()
     waiting_said = False
     with contextlib.ExitStack() as stack:
         for key in sorted(set(str(Path(p).absolute()) for p in paths)):

@@ -10,6 +10,7 @@ from captain_share import config as c
 from captain_share import engine as e
 from captain_share import selfupdate as su
 from captain_share import server
+from tests.test_sharing import cleanup
 
 AUTHOR = ["-c", "user.name=Ada Example", "-c", "user.email=ada@example.invalid"]
 
@@ -34,7 +35,7 @@ class SelfUpdateTests(unittest.TestCase):
         self.addCleanup(package.stop)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        cleanup(self.tmp)
 
     def commit(self, repo, message):
         e.git(repo, "add", "-A")
@@ -148,3 +149,66 @@ class SelfUpdateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name).resolve()
+        lockdir = self.base / "locks"
+        lockdir.mkdir(mode=0o700)
+        patcher = patch.object(c, "lock_dir", return_value=lockdir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(cleanup, self.tmp)
+
+    def test_a_running_window_is_found_and_a_dead_one_is_not(self):
+        import threading
+
+        folder = self.base / "project"
+        folder.mkdir()
+        srv, token = server.make_server(folder)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        self.assertIsNone(server.open_window(folder))
+        server.remember_window(folder, srv.server_port, token)
+        self.assertEqual(
+            server.open_window(folder), f"http://127.0.0.1:{srv.server_port}/#token={token}"
+        )
+        self.assertEqual(os.stat(server.windows_file()).st_mode & 0o077, 0)
+        # A wrong token or a process that is gone does not count.
+        data = json.loads(server.windows_file().read_text())
+        data[str(folder)]["token"] = "wrong"
+        server.windows_file().write_text(json.dumps(data))
+        self.assertIsNone(server.open_window(folder))
+        data[str(folder)].update(token=token, pid=999999)
+        server.windows_file().write_text(json.dumps(data))
+        self.assertIsNone(server.open_window(folder))
+
+    def test_restart_is_offered_when_the_code_on_disk_changes(self):
+        import threading
+        import urllib.request
+
+        folder = self.base / "project"
+        folder.mkdir()
+        with patch.object(su, "running_version", return_value="abc"):
+            srv, token = server.make_server(folder)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+
+        def needed():
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{srv.server_port}/api/self",
+                headers={"X-Captain-Token": token},
+            )
+            with urllib.request.urlopen(request, timeout=5) as reply:
+                return json.loads(reply.read())["restart_needed"]
+
+        with patch.object(su, "running_version", return_value="abc"):
+            self.assertFalse(needed())
+        with patch.object(su, "running_version", return_value="def"):
+            self.assertTrue(needed())

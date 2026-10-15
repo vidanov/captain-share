@@ -486,6 +486,11 @@ def parser():
     serve = sub.add_parser("serve", help="Start the local web interface for this target")
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--open", action="store_true")
+    serve.add_argument(
+        "--new",
+        action="store_true",
+        help="Start another window even if one is open for this folder",
+    )
     return p
 
 
@@ -1248,7 +1253,7 @@ def main(argv=None):
         else:
             from .server import serve
 
-            serve(target, args.port, args.open)
+            serve(target, args.port, args.open, args.new)
             return 0
         output(result, args.json)
         return (

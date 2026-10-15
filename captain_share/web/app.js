@@ -4592,6 +4592,21 @@ async function renderSelfUpdate(found = null) {
   );
   const parts = [line];
   const actions = el("div", undefined, "actions");
+  // The code on disk changed since this window started (an update from here, the
+  // CLI or git pull): offer the restart that picks it up.
+  if (found.restart_needed) {
+    parts.push(
+      el(
+        "p",
+        "This window still runs the version it started with. Restart it to use the one on disk.",
+        "self-news",
+      ),
+    );
+    const restart = el("button", "Restart window");
+    restart.type = "button";
+    restart.onclick = () => task(restartWindow);
+    actions.append(restart);
+  }
   if (found.behind) {
     parts.push(
       el(
