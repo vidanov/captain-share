@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -185,12 +186,20 @@ def locks(paths):
     lockdir.mkdir(mode=0o700, exist_ok=True)
     if lockdir.stat().st_uid != os.getuid() or lockdir.stat().st_mode & 0o077:
         raise ShareError("Lock directory must be private and owned by the current user")
+    waiting_said = False
     with contextlib.ExitStack() as stack:
         for key in sorted(set(str(Path(p).absolute()) for p in paths)):
             token = hashlib.sha256(key.encode()).hexdigest()
             fd = os.open(lockdir / token, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
             f = stack.enter_context(os.fdopen(fd, "a"))
-            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                # Another Captain Share action (a window, another terminal) holds it.
+                if not waiting_said:
+                    waiting_said = True
+                    print("Waiting for another Captain Share action to finish…", file=sys.stderr)
+                fcntl.flock(f, fcntl.LOCK_EX)
         yield
 
 
