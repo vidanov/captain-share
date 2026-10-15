@@ -228,6 +228,20 @@ ownership. Deselecting outbound content stops sharing it; it does not delete the
 library copy. To make the library the only maintained original, archive the old
 local installation and receive the library version inbound.
 
+## Get skills from any Git repository
+
+```bash
+captain-share add mattpocock/skills                 # lists the skills in it
+captain-share add mattpocock/skills --skill tdd     # preview, then install
+captain-share add https://github.com/OWNER/REPO --skill a --skill b --apply
+```
+
+Like `npx skills add`: the chosen skills are copied into your own library
+(`~/Libraries/my-skills`, only on this machine) and installed for you (`--here`
+for the project). The commit records where they came from. In the window, use
+Library → From Git…. Read a skill from outside before you use it: it can run
+commands.
+
 ## Check a library before sharing
 
 ```bash

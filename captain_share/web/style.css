@@ -2254,3 +2254,15 @@ summary {
 .self-notes li + li {
   margin-top: 3px;
 }
+.import-filter {
+  width: 100%;
+  margin: 10px 0 4px;
+}
+.import-git label {
+  display: block;
+  font-weight: 560;
+}
+.import-git input {
+  width: 100%;
+  margin-top: 4px;
+}

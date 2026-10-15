@@ -196,7 +196,7 @@ class ImportApiTests(LibraryFixture):
         self.assertIn("Unsafe", body["error"])
         code, stage = self.upload(data, name="mine.zip")
         self.assertEqual(code, 200, stage)
-        self.assertEqual(set(stage), {"stage", "label", "candidates"})
+        self.assertEqual(set(stage), {"stage", "label", "candidates", "repository"})
         self.assertEqual(stage["label"], "mine.zip")
         (row,) = stage["candidates"]
         self.assertEqual(set(row), {"id", "kind", "name", "description", "error", "kinds"})
