@@ -23,7 +23,7 @@ class RepositoryChecks(unittest.TestCase):
             shutil.copytree(
                 ROOT / name, target / name, ignore=shutil.ignore_patterns("__pycache__")
             )
-        for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"):
+        for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md", "CHANGELOG.md"):
             shutil.copy2(ROOT / name, target / name)
         return target
 

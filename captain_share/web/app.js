@@ -4532,7 +4532,15 @@ async function renderSelfUpdate(found = null) {
         "self-news",
       ),
     );
-    if ((found.incoming || []).length) {
+    // The changelog says what is new in plain words; commit titles are the fallback.
+    if ((found.news || []).length) {
+      for (const section of found.news) {
+        parts.push(el("p", "What's new in " + section.version, "self-version"));
+        const list = el("ul", undefined, "self-notes");
+        for (const item of section.items) list.append(el("li", item));
+        parts.push(list);
+      }
+    } else if ((found.incoming || []).length) {
       const list = el("ul", undefined, "self-incoming");
       for (const item of found.incoming.slice(0, 8))
         list.append(el("li", item));

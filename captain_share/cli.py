@@ -126,8 +126,12 @@ def update_text(found, applied):
     ]
     behind = found.get("behind")
     if behind:
-        lines.append(f"{behind} update{'s' if behind != 1 else ''} available:")
-        lines.extend(f"  {line}" for line in found.get("incoming", []))
+        lines.append(f"{behind} update{'s' if behind != 1 else ''} available.")
+        for section in found.get("news") or []:
+            lines.append(f"What's new in {section['version']}:")
+            lines.extend(f"  - {item}" for item in section["items"])
+        if not found.get("news"):
+            lines.extend(f"  {line}" for line in found.get("incoming", []))
         lines.append("Run captain-share update --apply to update.")
     elif behind == 0:
         lines.append("Up to date.")

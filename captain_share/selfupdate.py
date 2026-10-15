@@ -89,6 +89,36 @@ def installation():
     return {**found, "kind": "unknown"}
 
 
+def version_key(text):
+    parts = []
+    for piece in text.split("."):
+        if not piece.isdigit():
+            return None
+        parts.append(int(piece))
+    return tuple(parts)
+
+
+def changelog_news(text, installed):
+    """Sections of CHANGELOG.md newer than `installed`: [{version, date, items}]."""
+    current = version_key(installed) or ()
+    news: list[dict[str, Any]] = []
+    section = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            head = line[3:].strip()
+            version, _, date = head.partition(" — ")
+            key = version_key(version.strip())
+            section = None
+            if key is not None and key > current:
+                section = {"version": version.strip(), "date": date.strip() or None, "items": []}
+                news.append(section)
+        elif section is not None and line.startswith("- "):
+            section["items"].append(line[2:].strip())
+        elif section is not None and line.startswith("  ") and section["items"]:
+            section["items"][-1] += " " + line.strip()
+    return news
+
+
 def describe(repo):
     """Version facts of a checkout: commit, its date, branch and upstream."""
     return {
@@ -116,12 +146,17 @@ def status(fetch=False):
             found["behind"] = int(behind or 0)
             log = quiet(repo, "log", "--format=%h %s", "-n", "20", "HEAD..@{upstream}")
             found["incoming"] = [line for line in log.splitlines() if line]
+            if found["behind"]:
+                notes = quiet(repo, "show", "@{upstream}:CHANGELOG.md")
+                found["news"] = changelog_news(notes, __version__)
     elif found["kind"] == "pip-git" and fetch:
         ref = found.get("ref") or "HEAD"
         url = found["url"]
         head = run(Path.cwd(), "ls-remote", url, ref).split("\t")[0]
-        found["latest"] = head[:12] or None
+        found["latest"] = head[:7] or None
         found["behind"] = None if not head else int(head != found.get("commit"))
+    if found.get("kind") == "pip-git" and found.get("commit"):
+        found["commit"] = found["commit"][:7]
     found["command"] = manual(found)
     return found
 

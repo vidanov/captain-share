@@ -59,6 +59,25 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertTrue(found["incoming"][0].endswith("Fix the review sheet"))
         self.assertIn("pull --ff-only", found["command"])
 
+    def test_whats_new_comes_from_the_upstream_changelog(self):
+        other = self.base / "other"
+        e.git(self.base, "clone", "-q", str(self.remote), str(other))
+        (other / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## 9.1.0 — 2030-01-02\n\n- Share from the moon.\n"
+            "- Faster previews,\n  with a second line.\n\n## 9.0.0\n\n- Older.\n\n"
+            "## 0.0.1\n\n- Ancient, not shown.\n"
+        )
+        self.commit(other, "Release notes")
+        e.git(other, "push", "-q")
+        with patch.object(su, "__version__", "0.2.0"):
+            found = su.status(fetch=True)
+        self.assertEqual([x["version"] for x in found["news"]], ["9.1.0", "9.0.0"])
+        self.assertEqual(found["news"][0]["date"], "2030-01-02")
+        self.assertEqual(
+            found["news"][0]["items"],
+            ["Share from the moon.", "Faster previews, with a second line."],
+        )
+
     def test_update_fast_forwards_and_reports_the_versions(self):
         self.colleague()
         before = e.git(self.app, "rev-parse", "--short", "HEAD").stdout.decode().strip()
