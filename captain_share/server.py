@@ -309,6 +309,10 @@ def reveal_path(target, value):
         for row in c.effective(target)["sources"].values()
         if row.get("path")
     )
+    # Global assets live in the home folder's agent folders (~/.kiro/skills, …);
+    # those folders, not the whole home folder.
+    home = c.global_dir().parent.resolve()
+    roots.extend(home / folder for folder in c.folders())
     # Resolve ancestors but preserve the leaf, so Finder selects a managed symlink itself.
     candidate = path.parent.resolve() / path.name
     if not any(candidate == base or base in candidate.parents for base in roots):
