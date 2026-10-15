@@ -10,6 +10,7 @@ from captain_share import config as c
 from captain_share import engine as e
 from captain_share import selfupdate as su
 from captain_share import server
+from tests.test_sharing import cleanup
 
 AUTHOR = ["-c", "user.name=Ada Example", "-c", "user.email=ada@example.invalid"]
 
@@ -34,7 +35,7 @@ class SelfUpdateTests(unittest.TestCase):
         self.addCleanup(package.stop)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        cleanup(self.tmp)
 
     def commit(self, repo, message):
         e.git(repo, "add", "-A")
@@ -140,7 +141,7 @@ class OneWindowTests(unittest.TestCase):
         patcher = patch.object(c, "lock_dir", return_value=lockdir)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(cleanup, self.tmp)
 
     def test_a_running_window_is_found_and_a_dead_one_is_not(self):
         import threading

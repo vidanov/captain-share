@@ -11,6 +11,22 @@ from captain_share import engine as e
 from captain_share import integrations as i
 
 
+def cleanup(tmp):
+    """Remove a test folder. Git may still be writing into a .git folder from a
+    detached `gc --auto` after many commits; try again briefly, then give up quietly
+    (the system removes temporary folders)."""
+    import shutil
+    import time
+
+    for _ in range(10):
+        try:
+            tmp.cleanup()
+            return
+        except OSError:
+            time.sleep(0.3)
+    shutil.rmtree(tmp.name, ignore_errors=True)
+
+
 class SharingFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -27,7 +43,7 @@ class SharingFixture(unittest.TestCase):
 
     def tearDown(self):
         self.env.stop()
-        self.tmp.cleanup()
+        cleanup(self.tmp)
 
     def skill(self, p, text="Reusable instructions"):
         p.mkdir(parents=True, exist_ok=True)
