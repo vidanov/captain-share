@@ -58,8 +58,8 @@ link each generated file; applying a plan updates it, and the plan that removes 
 last link archives the generated file in the global archive. `captain-share
 rendered` lists generated files and the places that still link them (checked
 against each place's installation state); `--clean` archives files nothing links,
-such as ones left from before the index. Not verified here:
-whether Claude Code follows a symlinked file in `.claude/commands/` and whether it
-still reads `~/.claude/commands/`; the docs confirm symlinks for rules and skills
-only. Manual and auto steering could later become Claude skills; that is a separate
+such as ones left from before the index. Checked by hand
+on 2026-10-15: Claude Code reads `~/.claude/commands/` and follows a symlinked
+command file there (a generated `brand-review` command ran as `/brand-review`); the
+docs confirm symlinks for rules and skills. Manual and auto steering could later become Claude skills; that is a separate
 decision because skills share `.claude/skills` with skill assets.

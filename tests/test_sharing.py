@@ -308,6 +308,33 @@ class SharingTests(SharingFixture):
         self.assertTrue(e.plan(self.repo)["can_apply"])
         self.assertEqual(e.hidden_characters("x\ufeffy".encode()), [(1, 2, "\ufeff")])
 
+    def test_a_busy_lock_says_it_is_waiting(self):
+        import contextlib
+        import io
+        import threading
+
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with c.locks([self.repo / ".captain"]):
+                held.set()
+                release.wait(5)
+
+        thread = threading.Thread(target=hold)
+        thread.start()
+        held.wait(5)
+        threading.Timer(0.3, release.set).start()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), c.locks([self.repo / ".captain"]):
+            pass
+        thread.join()
+        self.assertIn("Waiting for another Captain Share action", err.getvalue())
+        # A free lock says nothing.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), c.locks([self.repo / ".captain"]):
+            pass
+        self.assertEqual(err.getvalue(), "")
+
     def test_git_exclusion_and_hook_preservation(self):
         self.git("init", "-q")
         hook = self.repo / ".git/hooks/pre-commit"
