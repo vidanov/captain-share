@@ -32,6 +32,14 @@ by the user only) in the temporary folder; the new process reads and deletes it,
 only a file in that folder is trusted. Neither its environment nor programs it
 starts hold the token.
 
+Each window records its folder, port, process and token in `windows.json` in the
+private per-user lock folder. `serve` for a folder whose window still lives and
+answers with its token opens that window instead of starting another (`--new`
+starts one anyway); entries of stopped processes are ignored. A window remembers
+the code it started with (the checkout's commit, or the installed version and
+source commit), and About offers Restart window whenever the code on disk differs,
+however it was updated.
+
 ## Consequences
 
 Updating needs network access to the Captain Share remote and the user's Git or pip

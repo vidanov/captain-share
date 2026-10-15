@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.request
 import webbrowser
 from collections import deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -829,6 +830,8 @@ class Server(HTTPServer):
 def make_server(target, port=0, token=None):
     startup = c.root(target)
     token = token or secrets.token_urlsafe(32)
+    # The code this window runs; About offers Restart window once disk differs.
+    started = su.running_version()
     plans: dict[str, dict[str, Any]] = {}
     # Zips and folders staged for "add from outside" (ADR 006).
     stages = im.Stages()
@@ -933,7 +936,10 @@ def make_server(target, port=0, token=None):
                         )
                     )
                 elif parsed.path == "/api/self":
-                    self.respond(su.status())
+                    found = su.status()
+                    found["running"] = started
+                    found["restart_needed"] = su.running_version() != started
+                    self.respond(found)
                 elif parsed.path == "/api/outdated":
                     # Read-only: compares with the commits last fetched (ADR 011).
                     self.respond(r.outdated(target))
@@ -1443,15 +1449,72 @@ def restarted():
     return None, None
 
 
-def serve(target, port=0, open_browser=False):
+def windows_file():
+    """Open windows by folder (port, process, token), in the private lock folder."""
+    return c.lock_dir() / "windows.json"
+
+
+def open_window(folder):
+    """The link of a window already serving `folder`, or None. A window counts only
+    while its process lives and answers with its token."""
+    try:
+        row = (c.read_json(windows_file(), {}) or {}).get(str(folder))
+    except c.ShareError:
+        return None
+    if not isinstance(row, dict) or not isinstance(row.get("port"), int):
+        return None
+    try:
+        os.kill(int(row.get("pid", 0)), 0)
+    except (OSError, ValueError):
+        return None
+    port, token = row["port"], str(row.get("token", ""))
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/self",
+        headers={"X-Captain-Token": token, "Host": f"127.0.0.1:{port}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as reply:
+            if reply.status != 200:
+                return None
+    except (OSError, ValueError):
+        return None
+    return f"http://127.0.0.1:{port}/#token={token}"
+
+
+def remember_window(folder, port, token, forget=False):
+    path = windows_file()
+    with c.locks([path]):
+        try:
+            data = c.read_json(path, {}) or {}
+        except c.ShareError:
+            data = {}
+        if forget:
+            if data.get(str(folder), {}).get("pid") == os.getpid():
+                data.pop(str(folder))
+        else:
+            data[str(folder)] = {"port": port, "pid": os.getpid(), "token": token}
+        c.atomic_json(path, data)
+        path.chmod(0o600)
+
+
+def serve(target, port=0, open_browser=False, new=False):
+    folder = c.root(target)
     # After "Restart window" the same address and token come back, so the open
     # page reconnects.
     again, token = restarted()
     if again is not None:
         port, open_browser = again, False
+    elif not new:
+        # One window per folder: open the one that runs already.
+        url = open_window(folder)
+        if url:
+            print(f"Captain Share is already open for {folder}\n{url}", flush=True)
+            webbrowser.open(url)
+            return
     server, token = make_server(target, port, token)
     url = f"http://127.0.0.1:{server.server_port}/#token={token}"
-    print(f"Captain Share\nTarget: {c.root(target)}\n{url}\nPress Ctrl-C to stop.", flush=True)
+    print(f"Captain Share\nTarget: {folder}\n{url}\nPress Ctrl-C to stop.", flush=True)
+    remember_window(folder, server.server_port, token)
     if open_browser:
         webbrowser.open(url)
     try:
@@ -1459,4 +1522,5 @@ def serve(target, port=0, open_browser=False):
     except KeyboardInterrupt:
         pass
     finally:
+        remember_window(folder, server.server_port, token, forget=True)
         server.server_close()
