@@ -293,7 +293,7 @@ def kiro_handoff(target, request, run=False, agent=None):
         "installed": installed["installed"],
         "layers": installed["config"]["layers"],
     }
-    skill = (Path(__file__).parent / "skills/manage-shared-assets/SKILL.md").read_text()
+    skill = (Path(__file__).parent / "skills/captain-share/SKILL.md").read_text()
     prompt = (
         skill
         + "\n\nUser request:\n"
@@ -315,3 +315,39 @@ def kiro_handoff(target, request, run=False, agent=None):
     # Interactive handoff retains the user's Kiro approval settings. Never trust all tools.
     proc = subprocess.run(argv, cwd=target, env=os.environ.copy())
     return {"executed": True, "exit_code": proc.returncode}
+
+
+# The skill that teaches agents to use Captain Share ships inside the package and is
+# installed like any library skill, from a built-in library (ADR 017).
+BUILTIN = c.BUILTIN
+SKILL = "captain-share"
+
+
+def skill_folder():
+    """The package folder; its skills/ holds the bundled skill (a flat library)."""
+    return Path(__file__).resolve().parent
+
+
+def skill_installed(target):
+    """Places where the bundled skill is installed for agents: the target and Global."""
+    places = []
+    for place in dict.fromkeys([c.root(target), c.global_dir().parent]):
+        try:
+            rows = engine.state(place)["inbound"].values()
+        except c.ShareError:
+            continue
+        if any(row.get("key") == f"{BUILTIN}/skills/{SKILL}" for row in rows):
+            places.append(str(place))
+    return places
+
+
+def skill_plan(target, remove=False):
+    """Preview installing (or removing) the bundled skill at `target`. Registers the
+    built-in library first (configuration only), pointing at this installation, so
+    updating Captain Share updates the skill."""
+    home = c.global_dir().parent
+    c.add_source(home, BUILTIN, skill_folder(), layout="flat", scope="global")
+    if remove:
+        return engine.plan(target, action="remove", kind="skills", asset=SKILL)
+    c.select(target, "inbound", BUILTIN, "skills", SKILL)
+    return engine.plan(target, "inbound")

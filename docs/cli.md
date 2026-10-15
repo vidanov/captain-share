@@ -344,12 +344,19 @@ A checkout is fast-forwarded only when it has no local changes; a pip install is
 reinstalled from its source. Restart open windows afterwards (the window's About
 offers Restart window). See [ADR 015](adr/015-update-captain-share.md).
 
-## Management skill and Kiro CLI
+## The agent skill and Kiro CLI
 
-The reusable [manage-shared-assets skill](../captain_share/skills/manage-shared-assets/SKILL.md)
-explains the workflow. Link or copy that complete directory into your chosen agent's
-skill location after checking for an existing installation. The CLI must be on PATH
-or invoked using this checkout's `bin/captain-share`.
+```bash
+captain-share skill                  # is it installed?
+captain-share skill install          # preview; --apply links it for your agents
+captain-share skill install --here   # for this project only
+captain-share skill remove --apply
+```
+
+The [captain-share skill](../captain_share/skills/captain-share/SKILL.md) teaches
+agents to use these commands safely. It is linked from your installation through a
+built-in library (hidden from library lists), so updates reach it
+([ADR 017](adr/017-agent-skill.md)).
 
 ```bash
 captain-share --target /path/to/project assist "Help select the right shared skills"

@@ -554,6 +554,8 @@ def library_home(startup, baseline):
                 }
             )
     for source in sorted(project_cfg["sources"]):
+        if source == i.BUILTIN:
+            continue  # the bundled agent skill is not a library people browse
         spec = project_cfg["sources"][source]
         info: dict[str, Any] = {
             "source": source,
@@ -696,6 +698,8 @@ def share_candidates(target):
     cfg = c.effective(target)
     names, local, edited = [], [], []
     for source in sorted(cfg["sources"]):
+        if source == i.BUILTIN:
+            continue
         try:
             lib = r.library(target, source)
         except c.ShareError:
@@ -881,6 +885,7 @@ def make_server(target, port=0, token=None):
                 if parsed.path == "/api/state":
                     result = e.status(target)
                     result["startup"] = str(startup)
+                    result["agent_skill"] = i.skill_installed(target)
                     result["libraries_folder"] = str(c.libraries_folder())
                     result["places"] = places(startup)
                     home = c.global_dir().parent
@@ -1073,6 +1078,10 @@ def make_server(target, port=0, token=None):
                 target = place(startup, data.get("target", ""))
                 if path == "/api/reveal":
                     result = reveal_path(target, data["path"])
+                elif path == "/api/skill-plan":
+                    result = i.skill_plan(target, remove=data.get("remove") is True)
+                    plans.clear()
+                    plans[result["fingerprint"]] = result
                 elif path == "/api/self-check":
                     result = su.status(fetch=True)
                 elif path == "/api/self-update":

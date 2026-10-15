@@ -84,7 +84,7 @@ from captain_share.cli import main
 package = Path(captain_share.__file__).resolve().parent
 assert package.parent == Path("installed").resolve(), "Imported checkout instead of installed wheel"
 assert (package / "web/index.html").is_file(), "Web assets missing from wheel"
-assert (package / "skills/manage-shared-assets/SKILL.md").is_file(), "Management skill missing from wheel"
+assert (package / "skills/captain-share/SKILL.md").is_file(), "Management skill missing from wheel"
 raise SystemExit(main(["--json", "status"]))
 """
         print("\n[Exercise installed package]", flush=True)

@@ -111,6 +111,18 @@ Put `--target FOLDER` and `--json` before the command. Every command that change
 files previews first and changes nothing without `--apply` (or your yes). The full
 reference is in [docs/cli.md](docs/cli.md).
 
+## Let your agents use it
+
+```bash
+captain-share skill install
+```
+
+Installs the **captain-share skill** for your agents (also offered in first setup and
+under Settings → Agents), so you can ask them: "get the review skill", "add tdd from
+mattpocock/skills", "share this skill with the team". They use the same commands,
+show you the preview and ask before applying. No MCP server needed. See
+[ADR 017](docs/adr/017-agent-skill.md).
+
 ## How it works
 
 **Libraries** are ordinary Git repositories with assets in `ip/skills/`,
@@ -153,8 +165,8 @@ approval. These are safeguards, not a confidentiality or licensing review.
 - [Agents and projects](docs/agents-and-projects.md): who reads what, global vs project
 - [Configuration format](docs/configuration.md), [migration from Captain](docs/migration.md)
 - [Design and boundaries](docs/design.md) and the decision records in [docs/adr](docs/adr/)
-- The bundled [management skill](captain_share/skills/manage-shared-assets/SKILL.md)
-  lets an agent run Captain Share for you
+- The [captain-share skill](captain_share/skills/captain-share/SKILL.md) your agents
+  use to run Captain Share for you
 
 ## Development
 
