@@ -2293,3 +2293,39 @@ summary {
   width: 100%;
   margin-top: 4px;
 }
+
+/* Type filters (Library and Share) */
+.type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+.type-chips:empty {
+  display: none;
+}
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.type-chip.on {
+  border-color: var(--amber-line);
+  color: var(--ink);
+  background: var(--hover);
+}
+.type-count {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.share-panel textarea {
+  min-height: 5.5em;
+  resize: vertical;
+}

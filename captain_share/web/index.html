@@ -125,6 +125,7 @@
             placeholder="Search skills, agents, prompts"
           /><button type="button" class="density quiet">Compact view</button>
         </div>
+        <div id="home-types" class="type-chips" aria-label="Show types"></div>
         <div id="home-lists"></div>
       </section>
 
@@ -139,9 +140,16 @@
           Skills you made or changed that are not in the team library yet.
           Sharing copies them into the library, commits, and pushes.
         </p>
-        <div class="list-tools list-tools-end">
-          <button type="button" class="density quiet">Compact view</button>
+        <div class="list-tools">
+          <label class="visually-hidden" for="share-search"
+            >Search what you can share</label
+          ><input
+            id="share-search"
+            type="search"
+            placeholder="Search skills, agents, prompts"
+          /><button type="button" class="density quiet">Compact view</button>
         </div>
+        <div id="share-types" class="type-chips" aria-label="Show types"></div>
         <div id="share-lists"></div>
       </section>
 

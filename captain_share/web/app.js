@@ -2340,6 +2340,73 @@ function listSection(title, items, id, closed = false, force = false) {
   section.append(list);
   return section;
 }
+// Type filters on Library and Share: All · Skills · Agents · Prompts · Steering ·
+// Powers · Copilot, only for types present, each with its count.
+const TYPE_GROUPS = [
+  ["skills", "Skills"],
+  ["agents", "Agents"],
+  ["prompts", "Prompts"],
+  ["steering", "Steering"],
+  ["powers", "Powers"],
+  ["copilot", "Copilot"],
+];
+function typeGroup(kind) {
+  return kind && kind.startsWith("copilot") ? "copilot" : kind;
+}
+function typeFilter(id, rows, onChange) {
+  const box = $(id);
+  const current = prefs("types-" + id) || "all";
+  const counts = {};
+  for (const row of rows)
+    counts[typeGroup(row.kind)] = (counts[typeGroup(row.kind)] || 0) + 1;
+  const present = TYPE_GROUPS.filter(([key]) => counts[key]);
+  // One type needs no filter.
+  if (present.length < 2) {
+    box.replaceChildren();
+    return () => true;
+  }
+  const chosen = present.some(([key]) => key === current) ? current : "all";
+  const chip = (key, label, count) => {
+    const button = el(
+      "button",
+      undefined,
+      "type-chip" + (key === chosen ? " on" : ""),
+    );
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(key === chosen));
+    button.append(label, el("span", String(count), "type-count"));
+    button.onclick = () => {
+      prefs("types-" + id, key);
+      onChange();
+    };
+    return button;
+  };
+  box.replaceChildren(
+    chip("all", "All", rows.length),
+    ...present.map(([key, label]) => chip(key, label, counts[key])),
+  );
+  return (row) => chosen === "all" || typeGroup(row.kind) === chosen;
+}
+// A note field that fits its text (at least four lines), so a long description is
+// readable without scrolling.
+function growing(area) {
+  area.rows = 4;
+  const fit = () => {
+    area.style.height = "auto";
+    area.style.height = area.scrollHeight + 2 + "px";
+  };
+  area.addEventListener("input", fit);
+  requestAnimationFrame(fit);
+  return area;
+}
+function textMatch(query) {
+  const q = query.trim().toLowerCase();
+  return (row) =>
+    !q ||
+    (row.name + " " + (row.description || "") + " " + row.kind)
+      .toLowerCase()
+      .includes(q);
+}
 function prefs(key, value) {
   try {
     if (value === undefined)
@@ -2372,9 +2439,9 @@ function renderHome() {
     ...[starterBanner()].filter(Boolean),
   );
   const query = $("home-search").value.toLowerCase();
-  const assets = home.assets.filter((a) =>
-    (a.name + " " + a.description + " " + a.kind).toLowerCase().includes(query),
-  );
+  const searched = home.assets.filter(textMatch(query));
+  const ofType = typeFilter("home-types", searched, renderHome);
+  const assets = searched.filter(ofType);
   const fresh = assets.filter((a) => a.new || a.updated);
   const mine = assets.filter((a) => !fresh.includes(a) && owned(a));
   const rest = assets.filter((a) => !fresh.includes(a) && !owned(a));
@@ -2502,6 +2569,7 @@ function behindSection() {
   return listSection("Behind the team · " + rows.length, rows, "home-behind");
 }
 $("home-search").oninput = () => renderHome();
+$("share-search").oninput = () => renderShare();
 async function getAsset(a, where) {
   await cancelReview();
   const target = where === "user" ? home.user : home.project;
@@ -2571,10 +2639,32 @@ async function renderShare() {
       return;
     }
   }
+  // Search and type filter apply to every list on this page.
+  const query = $("share-search").value;
+  const all = [
+    ...shareData.local,
+    ...(shareData.global || []),
+    ...(shareData.personal || []),
+    ...shareData.edited,
+  ];
+  const ofType = typeFilter(
+    "share-types",
+    all.filter(textMatch(query)),
+    renderShare,
+  );
+  const keep = (row) => textMatch(query)(row) && ofType(row);
+  const data = {
+    ...shareData,
+    local: shareData.local.filter(keep),
+    global: (shareData.global || []).filter(keep),
+    personal: (shareData.personal || []).filter(keep),
+    edited: shareData.edited.filter(keep),
+    versions: (shareData.versions || []).filter(keep),
+  };
   const lists = [];
   const project = projectName();
-  const fresh = shareData.local.filter((row) => !row.exists_in);
-  const copies = shareData.local.filter((row) => row.exists_in);
+  const fresh = data.local.filter((row) => !row.exists_in);
+  const copies = data.local.filter((row) => row.exists_in);
   if (fresh.length)
     lists.push(
       listSection(
@@ -2583,19 +2673,19 @@ async function renderShare() {
         "share-fresh",
       ),
     );
-  if ((shareData.global || []).length)
+  if ((data.global || []).length)
     lists.push(
       listSection(
         "Global · not in a library",
-        shareData.global.map((row) => shareRow(row, "local")),
+        data.global.map((row) => shareRow(row, "local")),
         "share-global",
       ),
     );
-  if ((shareData.personal || []).length)
+  if ((data.personal || []).length)
     lists.push(
       listSection(
         "In your own library",
-        shareData.personal.map(personalRow),
+        data.personal.map(personalRow),
         "share-personal",
       ),
     );
@@ -2624,19 +2714,19 @@ async function renderShare() {
         "share-copies",
       ),
     );
-  if ((shareData.versions || []).length)
+  if ((data.versions || []).length)
     lists.push(
       listSection(
         "Your versions",
-        shareData.versions.map(versionRow),
+        data.versions.map(versionRow),
         "share-versions",
       ),
     );
-  if (shareData.edited.length)
+  if (data.edited.length)
     lists.push(
       listSection(
         "Library assets you edited",
-        shareData.edited.map((row) => shareRow(row, "edited")),
+        data.edited.map((row) => shareRow(row, "edited")),
         "share-edited",
       ),
     );
@@ -2775,7 +2865,7 @@ function sharePanel(row, type) {
     );
     return panel;
   }
-  const note = el("textarea");
+  const note = growing(el("textarea"));
   note.rows = 2;
   note.value = type === "local" ? row.description || "" : "Update " + row.name;
   const noteLabel = el("label", "What is it good for? Teammates see this.");
@@ -3579,7 +3669,7 @@ function diffPanel(endpoint, params) {
 }
 function proposePanel(row, spec) {
   const panel = el("div", undefined, "share-panel");
-  const note = el("textarea");
+  const note = growing(el("textarea"));
   note.rows = 2;
   note.value = "Improve " + row.name;
   const noteLabel = el(
@@ -3828,7 +3918,8 @@ function versionRow(version) {
 // ---------------------------------------------------------------- compact lists
 // Compact: one line per item; the expander shows its description and other actions.
 function applyDensity() {
-  const compact = prefs("density") === "compact";
+  // Compact by default; "Detailed view" is remembered once chosen.
+  const compact = prefs("density") !== "detailed";
   document.body.classList.toggle("compact", compact);
   document.querySelectorAll(".density").forEach((button) => {
     button.textContent = compact ? "Detailed view" : "Compact view";
@@ -3928,7 +4019,7 @@ function promotePanel(row) {
     );
     return panel;
   }
-  const note = el("textarea");
+  const note = growing(el("textarea"));
   note.rows = 2;
   note.value = row.description || "Add " + row.name;
   const noteLabel = el("label", "What is it good for? Teammates see this.");
