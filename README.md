@@ -15,7 +15,14 @@ and how to install globally, a group of projects, or one project.
 ## Start
 
 Python 3.9+, Git, and macOS or Linux. No third-party runtime packages or frontend
-build step. Run directly from this checkout:
+build step. Install it with one line ([pipx](https://pipx.pypa.io/)):
+
+```bash
+pipx install git+https://github.com/vidanov/captain-share
+captain-share serve --open
+```
+
+Or run it directly from a checkout:
 
 ```bash
 ./bin/captain-share --help
@@ -30,7 +37,8 @@ python3 -m venv .venv
 .venv/bin/captain-share --target /path/to/project serve --open
 ```
 
-To update later, run `captain-share update` (shows what is new) and
+To update later, run `captain-share update` (shows what is new, from
+[CHANGELOG.md](CHANGELOG.md)) and
 `captain-share update --apply`, or use About → Update Captain Share in the window,
 then Restart window. A checkout is fast-forwarded only when it has no local changes
 ([ADR 015](docs/adr/015-update-captain-share.md)).
