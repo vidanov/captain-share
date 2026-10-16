@@ -45,7 +45,7 @@ the authority for these folders: never hand-copy, link or delete files in
 | remove an asset | `captain-share remove KIND NAME` (archives; `archive` and `restore ID` bring it back) |
 | connect a library | clone with Git, then `captain-share source add NAME PATH --scope global`; in the window, Settings → Clone a library from Git takes just the address |
 | choose agents | `captain-share tools kiro claude codex copilot` (`--target "$HOME"` for every project) |
-| take a named set a library offers | `captain-share import-profile LIBRARY PROFILE` (`profiles/PROFILE.manifest`), then `captain-share sync` |
+| take a named set a library offers | `captain-share profiles LIBRARY` lists them; `captain-share import-profile LIBRARY PROFILE` (`profiles/PROFILE.manifest`), then `captain-share sync`; in the window, Settings → the library's Options → Profiles |
 | install a Kiro power | `captain-share powers install LIBRARY POWER` |
 | update Captain Share itself | `captain-share update`, then `--apply` if they agree |
 

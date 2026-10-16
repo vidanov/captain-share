@@ -214,12 +214,9 @@ signed commits in Settings.
 A library's starter set (`profiles/starter.manifest`, offered to new teammates) is
 edited with `captain-share starter SOURCE` (lists it) and `--set kind/name,…`,
 `--add kind/name`, `--remove kind/name` or `--clear`, previewed as a diff and, with
-`--note TEXT --apply [--push]`, committed alone.
-
-A library's starter set (`profiles/starter.manifest`, offered to new teammates) is
-edited with `captain-share starter SOURCE` (lists it) and `--set kind/name,…`,
-`--add kind/name`, `--remove kind/name` or `--clear`, previewed as a diff and, with
-`--note TEXT --apply [--push]`, committed alone.
+`--note TEXT --apply [--push]`, committed alone. Add `--profile NAME` to do the same
+for another named profile (`profiles/NAME.manifest`); `captain-share profiles SOURCE`
+lists every profile a library offers.
 
 ## Copies that extend the team version
 
@@ -239,7 +236,8 @@ team version changed since.
 
 A library can offer named sets in `profiles/NAME.manifest` (for example
 `skills: plan review`). The starter set is `profiles/starter.manifest`, offered in
-first setup.
+first setup. In the window, Settings → a library's Options → Profiles lists them,
+gets one globally or in this project, and edits or adds one.
 
 ```bash
 captain-share --target /path/to/project import-profile team pilot          # preview

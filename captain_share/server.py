@@ -685,24 +685,53 @@ def library_home(startup, baseline):
     return view, seen
 
 
-def starter_view(target, source):
-    """A library's current starter set (profiles/starter.manifest)."""
+def starter_view(target, source, profile="starter"):
+    """A library's current starter set (profiles/starter.manifest) or another named
+    profile (profiles/NAME.manifest)."""
     lib = r.library(target, source)
-    file = c.safe_path(lib["path"], r.STARTER)
+    path = r.profile_file(profile)
+    file = c.safe_path(lib["path"], path)
     view = {
         "source": source,
-        "path": r.STARTER,
+        "path": path,
         "exists": file.is_file(),
         "assets": [],
         "error": None,
     }
+    if profile != "starter":
+        view["profile"] = profile
     if view["exists"]:
         try:
-            rows = i.import_profile(target, source, "starter")["selections"]
+            rows = i.import_profile(target, source, profile)["selections"]
             view["assets"] = [f"{row['kind']}/{row['name']}" for row in rows]
         except (c.ShareError, OSError) as exc:
             view["error"] = str(exc)
     return view
+
+
+def profiles_view(target, source):
+    """Every named profile a library offers, the starter set first."""
+    lib = r.library(target, source)
+    folder = c.safe_path(lib["path"], "profiles")
+    names = []
+    if folder.is_dir():
+        for file in folder.glob("*.manifest"):
+            name = file.name[: -len(".manifest")]
+            if file.is_file() and c.NAME.fullmatch(name):
+                names.append(name)
+    names.sort(key=lambda name: (name != "starter", name))
+    rows = []
+    for name in names:
+        view = starter_view(target, source, name)
+        rows.append(
+            {
+                "name": name,
+                "path": view["path"],
+                "assets": view["assets"],
+                "error": view["error"],
+            }
+        )
+    return {"source": source, "profiles": rows}
 
 
 def share_candidates(target):
@@ -977,8 +1006,17 @@ def make_server(target, port=0, token=None):
                         )
                     )
                 elif parsed.path == "/api/starter":
+                    query = parse_qs(parsed.query)
+                    self.respond(
+                        starter_view(
+                            target,
+                            query.get("source", [""])[0],
+                            query.get("profile", ["starter"])[0],
+                        )
+                    )
+                elif parsed.path == "/api/profiles":
                     source = parse_qs(parsed.query).get("source", [""])[0]
-                    self.respond(starter_view(target, source))
+                    self.respond(profiles_view(target, source))
                 elif parsed.path == "/api/version-diff":
                     key = parse_qs(parsed.query).get("key", [""])[0]
                     self.respond(r.version_diff(target, key))
@@ -1196,6 +1234,7 @@ def make_server(target, port=0, token=None):
                         data.get("assets", []),
                         data.get("clear", False),
                         mode_of(data),
+                        data.get("profile", "starter"),
                     )
                     plans.clear()
                     plans[result["fingerprint"]] = result
@@ -1206,7 +1245,7 @@ def make_server(target, port=0, token=None):
                     r.note_text(data.get("note"))
                     saved = plans.get(fingerprint)
                     if saved is None or "starter" not in saved:
-                        raise c.ShareError("Preview the starter set again before applying")
+                        raise c.ShareError("Preview the profile again before applying")
                     plans.pop(fingerprint)
                     result = r.starter_apply(saved, data["note"], data.get("push") is True)
                 elif path == "/api/propose-plan":

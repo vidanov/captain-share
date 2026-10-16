@@ -105,7 +105,10 @@ hooks lists them and needs **I trust these, allow them** first
 - **Agents you use**: Kiro, Claude Code, Codex, Copilot.
 - **Libraries**: each connected library with Show in Finder and Disconnect…
   ([ADR 010](adr/010-disconnect-library.md)). A team library's **Options** hold
-  signing, the check before sharing, and the starter set offered to new teammates.
+  signing, the check before sharing, and **Profiles**: the named sets the library
+  offers (`profiles/NAME.manifest`), the starter set for new teammates first. Get
+  one globally or in this project (reviewed like any Get), or edit or add one;
+  saving commits only that manifest, directly or for review.
   "New libraries go to …" sets the Libraries folder (`~/Libraries` by default).
 - **Add a library folder** finds an existing checkout and its layout.
 - **Clone a library from Git** needs only the address (`OWNER/REPO` means GitHub):
