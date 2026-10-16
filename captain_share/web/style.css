@@ -1015,6 +1015,59 @@ button.link:hover {
 .starter-picks input {
   width: auto;
 }
+.profile-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.profile-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.profile-row p {
+  margin: 0;
+  min-width: 0;
+}
+.profile-row small {
+  display: block;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.profile-row small.warn {
+  color: var(--red-ink);
+}
+.profile-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.profile-act button {
+  margin: 0;
+}
+.profile-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  margin: 12px 0 4px;
+}
+.profile-new label {
+  flex: 1 1 12rem;
+  margin: 0;
+}
+.profile-new button {
+  margin: 0;
+}
+.profile-editor {
+  margin: 8px 0 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
 
 /* Libraries found on this machine */
 .found:empty {

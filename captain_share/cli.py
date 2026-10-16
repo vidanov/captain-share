@@ -385,13 +385,18 @@ def parser():
         action="store_true",
         help="Commit on a new review branch (merge request) instead of the library branch",
     )
-    st = sub.add_parser("starter", help="Show or change a library's starter set")
+    st = sub.add_parser("starter", help="Show or change a library's starter set or a profile")
     st.add_argument("source")
+    st.add_argument(
+        "--profile",
+        default="starter",
+        help="A named profile (profiles/NAME.manifest) instead of the starter set",
+    )
     change = st.add_mutually_exclusive_group()
     change.add_argument("--set", metavar="KIND/NAME,...", help="Replace the set")
     change.add_argument("--add", metavar="KIND/NAME")
     change.add_argument("--remove", metavar="KIND/NAME")
-    change.add_argument("--clear", action="store_true", help="Remove the starter set")
+    change.add_argument("--clear", action="store_true", help="Remove the set")
     st.add_argument("--note", help="Commit message (needed to apply)")
     st.add_argument("--push", action="store_true")
     st.add_argument("--apply", action="store_true")
@@ -400,6 +405,8 @@ def parser():
         action="store_true",
         help="Commit on a new review branch (merge request) instead of the library branch",
     )
+    profiles = sub.add_parser("profiles", help="List the named profiles a library offers")
+    profiles.add_argument("source")
     adopt = sub.add_parser(
         "adopt", help="Replace local copies of a library asset with links to the original"
     )
@@ -1194,25 +1201,37 @@ def main(argv=None):
                 if not result:
                     print("No kept versions here.")
                 return 0
+        elif command == "profiles":
+            from .server import profiles_view
+
+            result = profiles_view(target, args.source)
+            if not args.json:
+                for row in result["profiles"]:
+                    state = f"invalid: {row['error']}" if row["error"] else " ".join(row["assets"])
+                    print(f"{row['name']:20} {state}")
+                if not result["profiles"]:
+                    print(f"{args.source} offers no profiles.")
+                return 1 if any(row["error"] for row in result["profiles"]) else 0
         elif command == "starter":
             from .server import starter_view
 
-            view = starter_view(target, args.source)
+            view = starter_view(target, args.source, args.profile)
+            label = r.profile_label(args.profile)
             if not (args.set or args.add or args.remove or args.clear):
                 result = view
                 if not args.json:
                     if view["error"]:
-                        print(f"The starter set is invalid: {view['error']}")
+                        print(f"{label[0].upper() + label[1:]} is invalid: {view['error']}")
                     for ref in view["assets"]:
                         print(ref)
                     if not view["exists"]:
-                        print(f"{args.source} has no starter set.")
+                        print(f"{args.source} has no {label.removeprefix('the ')}.")
                     return 1 if view["error"] else 0
             else:
                 assets = list(view["assets"])
                 if view["error"] and (args.add or args.remove):
                     raise c.ShareError(
-                        f"The current starter set is invalid ({view['error']}); use --set or --clear"
+                        f"The current {label} is invalid ({view['error']}); use --set or --clear"
                     )
                 if args.set:
                     assets = [x.strip() for x in args.set.split(",") if x.strip()]
@@ -1220,7 +1239,7 @@ def main(argv=None):
                     assets.append(args.add)
                 elif args.remove:
                     if args.remove not in assets:
-                        raise c.ShareError(f"{args.remove} is not in the starter set")
+                        raise c.ShareError(f"{args.remove} is not in {label}")
                     assets.remove(args.remove)
                 clear = bool(args.clear)
                 planned = r.starter_plan(
@@ -1229,6 +1248,7 @@ def main(argv=None):
                     [] if clear else assets,
                     clear,
                     "review" if args.review else "direct",
+                    args.profile,
                 )
                 if not args.apply or not planned["can_apply"]:
                     result = planned

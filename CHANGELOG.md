@@ -3,6 +3,13 @@
 What changed for people using Captain Share. Newest first. `captain-share update`
 and About in the window show the entries newer than your version.
 
+## Unreleased
+
+- Profiles in the window: Settings → a library's Options → Profiles lists the named
+  sets it offers, gets one globally or in this project, and edits or adds one
+  (`profiles/NAME.manifest`). On the command line, `captain-share profiles LIBRARY`
+  lists them and `starter LIBRARY --profile NAME` edits one.
+
 ## 0.3.0 — 2026-10-15
 
 - Ask your agents: `captain-share skill install` (or first setup) installs the

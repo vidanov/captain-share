@@ -1825,7 +1825,7 @@ function renderLibraries() {
     list.append(item);
   }
 }
-// Signing, the check before sharing and the starter set of one team library.
+// Signing, the check before sharing and the profiles of one team library.
 function libraryOptions(name, spec) {
   const box = el("details", undefined, "library-options");
   const summary = el("summary");
@@ -1862,142 +1862,262 @@ function libraryOptions(name, spec) {
     summary,
     sign,
     checkEditor(name, spec, showState),
-    starterEditor(name),
+    profilesEditor(name),
   );
   return box;
 }
-// Maintainers choose the starter set offered to new teammates (profiles/starter.manifest).
-function starterEditor(source) {
+// The named sets a library offers (profiles/NAME.manifest). The starter set is the
+// profile named starter; first setup offers it to new teammates.
+function profileTitle(profile) {
+  return profile === "starter" ? "Starter set" : profile;
+}
+function profilesEditor(source) {
   const box = el("details", undefined, "starter-editor");
-  const summary = el("summary", "Starter set");
-  box.append(summary);
+  box.append(el("summary", "Profiles"));
+  const body = el("div", undefined, "starter-body");
+  box.append(body);
+  // Saving a profile reloads the list from inside its own task, so this is no task.
+  const load = async () => {
+    const view = await api("profiles?" + query({ source }));
+    const list = el("div", undefined, "profile-list");
+    for (const profile of view.profiles)
+      list.append(profileRow(source, profile, load));
+    if (!view.profiles.length)
+      list.append(el("p", "This library offers no profiles yet.", "hint"));
+    const create = el("div", undefined, "profile-new");
+    const nameLabel = el("label", "New profile");
+    const name = el("input");
+    name.placeholder = view.profiles.some((p) => p.name === "starter")
+      ? "e.g. pilot"
+      : "starter, or e.g. pilot";
+    nameLabel.append(name);
+    const add = el("button", "Choose assets…", "quiet");
+    add.type = "button";
+    const editor = el("div");
+    add.onclick = () => {
+      const value = name.value.trim();
+      if (!/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/.test(value))
+        return message(
+          "Use letters, digits, dots, dashes or underscores for the name.",
+          true,
+        );
+      if (view.profiles.some((p) => p.name === value))
+        return message(profileTitle(value) + " already exists; edit it.", true);
+      editor.replaceChildren(
+        profileEditor(source, value, { assets: [], error: null }, load),
+      );
+    };
+    create.append(nameLabel, add);
+    body.replaceChildren(
+      el(
+        "p",
+        "Named sets of assets this library suggests together, kept in profiles/NAME.manifest. The starter set is offered to new teammates in first setup and on Library.",
+        "hint",
+      ),
+      list,
+      create,
+      editor,
+    );
+  };
   box.ontoggle = () => {
     if (!box.open || box.dataset.loaded) return;
     box.dataset.loaded = "1";
-    task(async () => {
-      const current = await api("starter?" + query({ source }));
-      const chosen = new Set(current.assets);
-      const assets = bay.rows.filter(
-        (r) => r.source === source && r.status === "available",
-      );
-      const body = el("div", undefined, "starter-body");
-      body.append(
-        el(
-          "p",
-          current.error
-            ? "The current file has a problem: " + current.error
-            : "New teammates are offered these in first setup and on Library. Saving commits profiles/starter.manifest in the library.",
-          current.error ? "hint warn" : "hint",
-        ),
-      );
-      const picks = el("div", undefined, "starter-picks");
-      for (const asset of assets) {
-        const key = asset.kind + "/" + asset.name;
-        const label = el("label", undefined, "check");
-        const input = el("input");
-        input.type = "checkbox";
-        input.checked = chosen.has(source + "/" + key) || chosen.has(key);
-        input.dataset.key = key;
-        label.append(
-          input,
-          " " + asset.name,
-          el("span", KIND_LABELS[asset.kind] || asset.kind, "kind-tag"),
-        );
-        picks.append(label);
-      }
-      body.append(picks);
-      const note = el("input");
-      note.value = "Update the starter set";
-      const noteLabel = el("label", "Note for the commit");
-      noteLabel.append(note);
-      body.append(noteLabel);
-      const changes = el("div", undefined, "share-changes");
-      body.append(changes);
-      const reach = reviewChoice(source, () => {
-        plan = null;
-        save.disabled = true;
-        changes.replaceChildren();
-      });
-      body.append(reach.element);
-      const actions = el("div", undefined, "actions");
-      const review = el("button", "Review", "quiet");
-      review.type = "button";
-      const save = el("button", "Save and push");
-      save.type = "button";
-      save.disabled = true;
-      actions.append(review, save);
-      body.append(actions);
-      let plan = null;
-      picks.onchange = () => {
-        plan = null;
-        save.disabled = true;
-        changes.replaceChildren();
-      };
-      review.onclick = () =>
-        task(async () => {
-          const keys = [...picks.querySelectorAll("input:checked")].map(
-            (input) => input.dataset.key,
-          );
-          plan = await api("starter-plan", {
-            source,
-            assets: keys,
-            clear: !keys.length,
-            mode: reach.mode(),
-          });
-          const lines = [];
-          if (plan.diff) {
-            const pre = el("pre", undefined, "diff-text");
-            for (const line of plan.diff.split("\n"))
-              pre.append(
-                el(
-                  "span",
-                  line + "\n",
-                  line.startsWith("+") && !line.startsWith("+++")
-                    ? "diff-add"
-                    : line.startsWith("-") && !line.startsWith("---")
-                      ? "diff-del"
-                      : "diff-meta",
-                ),
-              );
-            lines.push(pre);
-          }
-          for (const conflict of plan.conflicts)
-            lines.push(el("p", conflict.message, "hint warn"));
-          if (!plan.changes.length)
-            lines.push(
-              el("p", "The starter set is already like this.", "hint"),
-            );
-          changes.replaceChildren(...lines);
-          save.disabled = !plan.can_apply || !plan.changes.length;
-        });
-      save.onclick = () =>
-        task(async () => {
-          if (!note.value.trim()) throw new Error("Add a short note.");
-          const result = await api("starter-apply", {
-            fingerprint: plan.fingerprint,
-            note: note.value.trim(),
-            push: true,
-          });
-          plan = null;
-          save.disabled = true;
-          changes.replaceChildren(
-            el(
-              "p",
-              result.waiting_for_review
-                ? "Proposed for review."
-                : result.pushed
-                  ? "Saved and pushed. Teammates see it after Update library."
-                  : "Saved in the library, not pushed yet.",
-              "hint",
-            ),
-            ...pushOutcome(result),
-          );
-          home = await api("home").catch(() => home);
-        });
-      box.append(body);
-    });
+    task(load);
   };
   return box;
+}
+function profileRow(source, profile, reload) {
+  const item = el("div", undefined, "profile-item");
+  const row = el("div", undefined, "profile-row");
+  const text = el("p");
+  text.append(
+    el("strong", profileTitle(profile.name)),
+    el(
+      "small",
+      profile.error
+        ? "Has a problem: " + profile.error
+        : profile.assets.map((ref) => ref.split("/").pop()).join(", ") ||
+            "empty",
+      profile.error ? "warn" : undefined,
+    ),
+  );
+  const act = el("div", undefined, "profile-act");
+  const editor = el("div");
+  if (!profile.error && profile.assets.length) {
+    const global = el("button", "Get globally", "quiet");
+    global.type = "button";
+    global.onclick = () => task(() => getProfile(source, profile, "user"));
+    act.append(global);
+    if (home?.project && home.project !== home.user) {
+      const here = el("button", "Get in " + projectName(), "quiet");
+      here.type = "button";
+      here.onclick = () => task(() => getProfile(source, profile, "project"));
+      act.append(here);
+    }
+  }
+  const edit = el("button", "Edit", "link");
+  edit.type = "button";
+  edit.onclick = () =>
+    editor.replaceChildren(
+      editor.childElementCount
+        ? ""
+        : profileEditor(source, profile.name, profile, reload),
+    );
+  act.append(edit);
+  row.append(text, act);
+  item.append(row, editor);
+  return item;
+}
+// Select a profile's assets in one place, then review the links like any Get.
+async function getProfile(source, profile, where) {
+  await cancelReview();
+  const target = where === "user" ? home.user : home.project;
+  const result = await api("selections", {
+    target,
+    source,
+    direction: "inbound",
+    selections: profile.assets.map((ref) => {
+      const [kind, ...rest] = ref.split("/");
+      return { kind, name: rest.join("/") };
+    }),
+  });
+  undo = {
+    steps: [{ target, direction: "inbound", previous: result.previous }],
+    patches: new Map(),
+    touched: [],
+  };
+  applyNote =
+    profileTitle(profile.name) +
+    (where === "user"
+      ? " is ready globally, in all your projects."
+      : " is ready in " + projectName() + ".") +
+    " Start a new agent session to load it.";
+  await previewMany([
+    { path: target, label: where === "user" ? "Global" : projectName() },
+  ]);
+}
+// Maintainers choose which assets a profile holds; saving commits its manifest.
+function profileEditor(source, profile, current, saved) {
+  const file = "profiles/" + profile + ".manifest";
+  const title = profileTitle(profile);
+  const chosen = new Set(current.assets);
+  const assets = bay.rows.filter(
+    (r) => r.source === source && r.status === "available",
+  );
+  const body = el("div", undefined, "starter-body profile-editor");
+  body.append(
+    el(
+      "p",
+      current.error
+        ? "The current file has a problem: " + current.error
+        : "Saving commits " + file + " in the library.",
+      current.error ? "hint warn" : "hint",
+    ),
+  );
+  const picks = el("div", undefined, "starter-picks");
+  for (const asset of assets) {
+    const key = asset.kind + "/" + asset.name;
+    const label = el("label", undefined, "check");
+    const input = el("input");
+    input.type = "checkbox";
+    input.checked = chosen.has(source + "/" + key) || chosen.has(key);
+    input.dataset.key = key;
+    label.append(
+      input,
+      " " + asset.name,
+      el("span", KIND_LABELS[asset.kind] || asset.kind, "kind-tag"),
+    );
+    picks.append(label);
+  }
+  body.append(picks);
+  const note = el("input");
+  const verb = current.assets.length || current.error ? "Update " : "Add ";
+  note.value =
+    verb + (profile === "starter" ? "the starter set" : "profile " + profile);
+  const noteLabel = el("label", "Note for the commit");
+  noteLabel.append(note);
+  body.append(noteLabel);
+  const changes = el("div", undefined, "share-changes");
+  body.append(changes);
+  let plan = null;
+  const reset = () => {
+    plan = null;
+    save.disabled = true;
+    changes.replaceChildren();
+  };
+  const reach = reviewChoice(source, reset);
+  body.append(reach.element);
+  const actions = el("div", undefined, "actions");
+  const review = el("button", "Review", "quiet");
+  review.type = "button";
+  const save = el("button", "Save and push");
+  save.type = "button";
+  save.disabled = true;
+  actions.append(review, save);
+  body.append(actions);
+  picks.onchange = reset;
+  review.onclick = () =>
+    task(async () => {
+      const keys = [...picks.querySelectorAll("input:checked")].map(
+        (input) => input.dataset.key,
+      );
+      plan = await api("starter-plan", {
+        source,
+        profile,
+        assets: keys,
+        clear: !keys.length,
+        mode: reach.mode(),
+      });
+      const lines = [];
+      if (plan.diff) {
+        const pre = el("pre", undefined, "diff-text");
+        for (const line of plan.diff.split("\n"))
+          pre.append(
+            el(
+              "span",
+              line + "\n",
+              line.startsWith("+") && !line.startsWith("+++")
+                ? "diff-add"
+                : line.startsWith("-") && !line.startsWith("---")
+                  ? "diff-del"
+                  : "diff-meta",
+            ),
+          );
+        lines.push(pre);
+      }
+      for (const conflict of plan.conflicts)
+        lines.push(el("p", conflict.message, "hint warn"));
+      if (!plan.changes.length)
+        lines.push(el("p", title + " is already like this.", "hint"));
+      changes.replaceChildren(...lines);
+      save.disabled = !plan.can_apply || !plan.changes.length;
+    });
+  save.onclick = () =>
+    task(async () => {
+      if (!note.value.trim()) throw new Error("Add a short note.");
+      const result = await api("starter-apply", {
+        fingerprint: plan.fingerprint,
+        note: note.value.trim(),
+        push: true,
+      });
+      plan = null;
+      save.disabled = true;
+      home = await api("home").catch(() => home);
+      message(
+        result.waiting_for_review
+          ? title + " proposed for review."
+          : result.pushed
+            ? title +
+              " saved and pushed. Teammates see it after Update library."
+            : title + " saved in the library, not pushed yet.",
+      );
+      // A proposal waits on its branch and a failed push needs its hint; otherwise
+      // the list shows the saved profile.
+      if (result.waiting_for_review || result.push_error)
+        changes.replaceChildren(...pushOutcome(result));
+      else await saved();
+    });
+  return body;
 }
 // ---------------------------------------------------------------- library home (ADR 005)
 const WHERE_VIEWS = ["patch", "projects", "installed", "archive", "outbound"];

@@ -1362,21 +1362,37 @@ STARTER = "profiles/starter.manifest"
 STARTER_HEADER = "# Starter set: offered to new teammates by Captain Share\n"
 
 
-def starter_text(assets):
+def profile_file(profile):
+    """A library's manifest for a named profile; `starter` is the starter set."""
+    return f"profiles/{c.name(profile)}.manifest"
+
+
+def profile_label(profile):
+    return "the starter set" if profile == "starter" else f"profile {profile}"
+
+
+def starter_text(assets, profile="starter"):
     """Manifest text: one `kind: names` line per kind in KINDS order, names sorted."""
     by_kind: dict[str, set[str]] = {}
     for ref in assets:
         kind, _, name = ref.partition("/") if isinstance(ref, str) else ("", "", "")
         by_kind.setdefault(kind, set()).add(name)
     lines = [f"{k}: {' '.join(sorted(by_kind[k]))}\n" for k in c.KINDS if k in by_kind]
-    return STARTER_HEADER + "".join(lines)
+    header = (
+        STARTER_HEADER
+        if profile == "starter"
+        else f"# Profile {profile}: a set of assets offered by Captain Share\n"
+    )
+    return header + "".join(lines)
 
 
-def starter_plan(target, source, assets, clear=False, mode="direct"):
-    """Preview writing (or with `clear`, removing) a library's starter set, directly
-    or on a review branch."""
+def starter_plan(target, source, assets, clear=False, mode="direct", profile="starter"):
+    """Preview writing (or with `clear`, removing) a library's starter set or another
+    named profile, directly or on a review branch."""
     target = c.root(target)
     c.name(source)
+    path = profile_file(profile)
+    label = profile_label(profile)
     if mode not in ("direct", "review"):
         raise c.ShareError("mode must be direct or review")
     if not isinstance(assets, list) or len(assets) > 500:
@@ -1384,31 +1400,33 @@ def starter_plan(target, source, assets, clear=False, mode="direct"):
     if not isinstance(clear, bool):
         raise c.ShareError("clear must be true or false")
     if clear and assets:
-        raise c.ShareError("Clear the starter set or choose assets, not both")
+        raise c.ShareError(f"Clear {label} or choose assets, not both")
     if not clear and not assets:
-        raise c.ShareError("Choose at least one asset, or clear the starter set")
+        raise c.ShareError(f"Choose at least one asset, or clear {label}")
     lib = library(target, source)
     for ref in assets:
         kind, sep, name = ref.partition("/") if isinstance(ref, str) else ("", "", "")
         if not sep or kind not in c.KINDS:
-            raise c.ShareError(f"Use kind/name for starter assets: {ref!r}")
+            raise c.ShareError(f"Use kind/name for profile assets: {ref!r}")
         c.asset_name(kind, name)
         if not c.DESTINATIONS[kind]:
-            raise c.ShareError(f"{kind} are installed by their tool and cannot be in a starter set")
+            raise c.ShareError(f"{kind} are installed by their tool and cannot be in a profile")
         original = e.source_path(lib["cfg"], source, kind, name)
         if not os.path.lexists(original):
             raise c.ShareError(f"The library {source} has no {ref}")
         e.validate_asset(original, kind)
-    file = c.safe_path(lib["path"], STARTER)
+    file = c.safe_path(lib["path"], path)
     exists = file.is_file()
     current = file.read_text(errors="replace") if exists else ""
-    wanted = None if clear else starter_text(assets)
+    wanted = None if clear else starter_text(assets, profile)
     problems, commit_paths, pending, head = [], [], "", None
     branch = base = None
     if clear and not exists:
-        problems.append(("This library has no starter set to clear", "same"))
+        problems.append((f"This library has no {label.removeprefix('the ')} to clear", "same"))
     elif wanted == current:
-        problems.append(("The starter set already has exactly these assets", "same"))
+        problems.append(
+            (f"{label[0].upper() + label[1:]} already has exactly these assets", "same")
+        )
     if lib["repo"] is None:
         problems.append((f"Library {source} is not a Git repository", "repository"))
     else:
@@ -1416,14 +1434,16 @@ def starter_plan(target, source, assets, clear=False, mode="direct"):
         head = quiet(lib["repo"], "rev-parse", "HEAD").strip() or None
         pending = quiet(lib["repo"], "status", "--porcelain=v1", "--", *commit_paths)
         if mode == "review":
-            branch, base, _, found = review_prepare(target, source, lib, "starter-set")
+            branch, base, _, found = review_prepare(
+                target, source, lib, "starter-set" if profile == "starter" else f"profile-{profile}"
+            )
             problems += [(m, "branch" if m.startswith("Branch ") else "repository") for m in found]
         else:
             problems += [(m, "repository") for m in commit_blockers(lib["repo"])]
         if pending.strip() and mode == "direct":
             problems.append(
                 (
-                    "The starter set has uncommitted changes in the library; commit them first",
+                    f"{label[0].upper() + label[1:]} has uncommitted changes in the library; commit them first",
                     "edited",
                 )
             )
@@ -1431,8 +1451,8 @@ def starter_plan(target, source, assets, clear=False, mode="direct"):
         difflib.unified_diff(
             current.splitlines(True),
             (wanted or "").splitlines(True),
-            fromfile=f"a/{STARTER}" if exists else "/dev/null",
-            tofile=f"b/{STARTER}" if wanted is not None else "/dev/null",
+            fromfile=f"a/{path}" if exists else "/dev/null",
+            tofile=f"b/{path}" if wanted is not None else "/dev/null",
         )
     )
     result: dict[str, Any] = {
@@ -1444,16 +1464,17 @@ def starter_plan(target, source, assets, clear=False, mode="direct"):
             "assets": assets,
             "clear": clear,
             "mode": mode,
+            "profile": profile,
         },
         "mode": mode,
         "branch": branch,
         "base": base,
-        "changes": [{"op": "remove" if clear else "write", "path": STARTER}],
+        "changes": [{"op": "remove" if clear else "write", "path": path}],
         "diff": diff,
         "content": wanted,
         "errors": [m for m, _ in problems],
         "conflicts": [
-            {"message": m, "path": STARTER, "key": None, "reason": why} for m, why in problems
+            {"message": m, "path": path, "key": None, "reason": why} for m, why in problems
         ],
         "can_apply": not problems,
         "commit_paths": commit_paths,
@@ -1464,18 +1485,21 @@ def starter_plan(target, source, assets, clear=False, mode="direct"):
 
 
 def starter_apply(saved, note, push=False):
-    """Write the previewed starter set, commit only that file, and push when asked."""
+    """Write the previewed profile, commit only that file, and push when asked."""
     note = note_text(note)
     spec = saved.get("starter") if isinstance(saved, dict) else None
     if not isinstance(spec, dict):
-        raise c.ShareError("Preview the starter set before applying it")
+        raise c.ShareError("Preview the profile before applying it")
     args = {k: spec[k] for k in ("target", "source", "assets", "clear")}
     args["mode"] = spec.get("mode", "direct")
+    args["profile"] = spec.get("profile", "starter")
     lib = library(args["target"], args["source"])
     with c.locks([lib["path"], lib["path"] / ".captain"]):
         current = starter_plan(**args)
         if current["fingerprint"] != saved.get("fingerprint"):
-            raise c.ShareError("Preview is stale: the starter set changed. Preview again.")
+            raise c.ShareError(
+                f"Preview is stale: {profile_label(args['profile'])} changed. Preview again."
+            )
         if not current["can_apply"]:
             raise c.ShareError("; ".join(current["errors"]))
         if args["mode"] == "review":
@@ -1492,7 +1516,7 @@ def starter_apply(saved, note, push=False):
                 push,
             )
         sign_check(lib)
-        file = c.safe_path(lib["path"], STARTER)
+        file = c.safe_path(lib["path"], profile_file(args["profile"]))
         tx = e.Transaction()
         try:
             if args["clear"]:
@@ -1505,8 +1529,9 @@ def starter_apply(saved, note, push=False):
             issues = tx.rollback()
             # The file had no uncommitted changes, so its index entry returns to HEAD.
             e.git(lib["repo"], "reset", "-q", "--", *current["commit_paths"], check=False)
-            message = f"Saving the starter set failed and was rolled back: {exc}" + (
-                f"; recovery needed: {issues}" if issues else ""
+            message = (
+                f"Saving {profile_label(args['profile'])} failed and was rolled back: {exc}"
+                + (f"; recovery needed: {issues}" if issues else "")
             )
             if isinstance(exc, c.ShareError):
                 raise exc.wrap(message) from exc

@@ -150,3 +150,51 @@ class StarterTests(LibraryFixture):
         code, text, _ = self.run_cli(*base, "--clear", "--note", "Clear", "--apply")
         self.assertEqual(code, 0, text)
         self.assertFalse((self.lib / "profiles/starter.manifest").exists())
+
+    def test_named_profiles_list_plan_apply_and_import(self):
+        self.start()
+        self.assertEqual(self.request("/api/profiles?source=team")[1]["profiles"], [])
+        for bad in ("../x", "a/b", ""):
+            body = {"source": "team", "profile": bad, "assets": ["skills/hello"]}
+            self.assertEqual(self.request("/api/starter-plan", body)[0], 400, bad)
+        body = {"source": "team", "profile": "pilot", "assets": ["skills/review"]}
+        code, plan = self.request("/api/starter-plan", body)
+        self.assertEqual(code, 200, plan)
+        self.assertEqual(plan["changes"], [{"op": "write", "path": "profiles/pilot.manifest"}])
+        code, result = self.request(
+            "/api/starter-apply", {"fingerprint": plan["fingerprint"], "note": "Pilot"}
+        )
+        self.assertEqual(code, 200, result)
+        self.assertEqual(
+            (self.lib / "profiles/pilot.manifest").read_text(),
+            "# Profile pilot: a set of assets offered by Captain Share\nskills: review\n",
+        )
+        self.assertFalse((self.lib / "profiles/starter.manifest").exists())
+        (self.lib / "profiles/starter.manifest").write_text("skills: hello\n")
+        (self.lib / "profiles/broken.manifest").write_text("skills: missing\n")
+        (self.lib / "profiles/notes.txt").write_text("not a profile\n")
+        _, listed = self.request("/api/profiles?source=team")
+        self.assertEqual([p["name"] for p in listed["profiles"]], ["starter", "broken", "pilot"])
+        self.assertEqual(listed["profiles"][2]["assets"], ["skills/review"])
+        self.assertTrue(listed["profiles"][1]["error"])
+        _, view = self.request("/api/starter?source=team&profile=pilot")
+        self.assertEqual((view["profile"], view["path"]), ("pilot", "profiles/pilot.manifest"))
+        _, same = self.request("/api/starter-plan", body)
+        self.assertIn("Profile pilot already has", same["errors"][0])
+        code, review = self.request("/api/starter-plan", {**body, "mode": "review"})
+        self.assertEqual(code, 200, review)
+        self.assertTrue(review["branch"].startswith("share/profile-pilot-"), review["branch"])
+
+    def test_cli_profiles_and_named_profile(self):
+        code, text, _ = self.run_cli("--target", str(self.repo), "profiles", "team")
+        self.assertEqual((code, "team offers no profiles" in text), (0, True))
+        base = ["--target", str(self.repo), "starter", "team", "--profile", "pilot"]
+        code, text, _ = self.run_cli(*base, "--set", "skills/hello", "--note", "Pilot", "--apply")
+        self.assertEqual(code, 0, text)
+        self.assertTrue((self.lib / "profiles/pilot.manifest").is_file())
+        code, text, _ = self.run_cli("--target", str(self.repo), "profiles", "team")
+        self.assertEqual(code, 0, text)
+        self.assertIn("pilot", text)
+        self.assertIn("skills/hello", text)
+        code, text, _ = self.run_cli(*base)
+        self.assertEqual((code, text.strip()), (0, "skills/hello"))
