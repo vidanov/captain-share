@@ -58,6 +58,9 @@ pipx install git+https://github.com/vidanov/captain-share
 captain-share serve --open
 ```
 
+If pipx fails while creating the environment (recent pipx uses `uv` when it is
+installed, which fails on some new macOS builds), add `--backend pip`.
+
 `serve` opens the window for the current folder (`--target FOLDER` for another). If
 a window for that folder is already open, it opens that one. To update later, use
 About → **Update Captain Share** in the window, or `captain-share update --apply`;

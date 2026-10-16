@@ -13,7 +13,9 @@ The window offers the same actions; see [the window guide](web-interface.md).
 A library can use `ip/skills/`, `ip/agents/`, etc. (`--layout ip`), or
 `skills/`, `agents/`, etc. at its root (`--layout flat`); without `--layout` the
 layout is detected from the folder. Clone it normally with
-your own Git credentials, then register the local checkout:
+your own Git credentials (for AWS CodeCommit with `git-remote-codecommit`, the part
+before `@` in `codecommit::REGION://PROFILE@REPO` is your own AWS profile name from
+`~/.aws/config`), then register the local checkout:
 
 ```bash
 captain-share --target /path/to/project source add team /path/to/library
@@ -25,6 +27,10 @@ captain-share --target /path/to/project plan --save /tmp/sharing-plan.json
 captain-share apply /tmp/sharing-plan.json
 captain-share --target /path/to/project status
 ```
+
+`apply` takes a saved plan file. To preview and apply the current selections in one
+step, run `captain-share --target /path/to/project sync --apply` (Preview and
+Apply in the window do the same).
 
 To get one asset quickly, name it. `get` resolves `NAME`, `SOURCE/NAME` or
 `SOURCE/KIND/NAME` across connected libraries, installs globally (for your user) by default
