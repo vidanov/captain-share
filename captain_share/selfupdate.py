@@ -265,9 +265,10 @@ def pip(args):
 def restart_argv():
     """The command line that starts this process again, without opening a new tab."""
     argv = [arg for arg in sys.argv if arg != "--open"]
-    # A pip launcher on Windows is an .exe that Python cannot run as a script.
+    # pip's launcher on Windows is an .exe that Python cannot run, and it reports
+    # itself without the suffix, so argv[0] names no file there.
     if argv and (
-        argv[0].endswith("__main__.py") or (sys.platform == "win32" and not argv[0].endswith(".py"))
+        argv[0].endswith("__main__.py") or (sys.platform == "win32" and not os.path.isfile(argv[0]))
     ):
         return [sys.executable, "-m", "captain_share", *argv[1:]]
     return [sys.executable, *argv]

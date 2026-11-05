@@ -148,7 +148,7 @@ class PersonalApiTests(PersonalFixture):
             c.select(place, "inbound", "my-skills", "skills", "tryout")
             e.apply(e.plan(place))
         mine_link = str(self.mine / "skills/tryout")
-        self.assertEqual(os.readlink(self.home / ".kiro/skills/tryout"), mine_link)
+        self.assertEqual(c.read_link(self.home / ".kiro/skills/tryout"), mine_link)
         body = {"kind": "skills", "name": "tryout", "team": "team"}
         code, plan = self.request("/api/promote-plan", body)
         self.assertEqual(code, 200, plan)
@@ -178,7 +178,7 @@ class PersonalApiTests(PersonalFixture):
         self.assertEqual(out(remote, "rev-parse", "main"), result["commit"])
         team_copy = str(self.lib / "ip/skills/tryout")
         for place in (self.home, self.repo):
-            self.assertEqual(os.readlink(place / ".kiro/skills/tryout"), team_copy)
+            self.assertEqual(c.read_link(place / ".kiro/skills/tryout"), team_copy)
             inbound = c.effective(place)["inbound"]
             self.assertIn("team/skills/tryout", inbound)
             self.assertNotIn("my-skills/skills/tryout", inbound)
@@ -249,7 +249,7 @@ class PersonalCliTests(PersonalFixture):
         self.assertEqual(code, 0, text)
         self.assertIn("installed for your user", text)
         link = self.home / ".kiro/skills/tryout"
-        self.assertEqual(os.readlink(link), str(self.mine / "skills/tryout"))
+        self.assertEqual(c.read_link(link), str(self.mine / "skills/tryout"))
         code, text, _ = self.run_cli(
             *base, "--json", "install", str(self.outside("other")), "--here", "--apply"
         )
@@ -273,4 +273,4 @@ class PersonalCliTests(PersonalFixture):
         )
         self.assertEqual(code, 0, text)
         self.assertIn("Pushed.", text)
-        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/tryout"))
+        self.assertEqual(c.read_link(link), str(self.lib / "ip/skills/tryout"))

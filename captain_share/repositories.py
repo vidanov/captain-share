@@ -288,7 +288,8 @@ def name_from_url(url, taken=()):
     """A library name from a repository address: the owner and the repository, as in
     https://github.com/mattpocock/skills -> mattpocock-skills."""
     path = urlparse(url).path if "://" in url else url.split(":", 1)[-1]
-    parts = [part for part in path.split("/") if part]
+    # A local Windows path (C:\hosts\team.git) separates with backslashes.
+    parts = [part for part in path.replace("\\", "/").split("/") if part]
     if not parts:
         return c.suggest_name("library", taken)
     repo = parts[-1].removesuffix(".git")

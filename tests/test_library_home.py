@@ -90,7 +90,7 @@ class EngineOneOffTests(LibraryFixture):
         row = {"source": "team", "kind": "skills", "name": "mine", "path": "skills/mine"}
         planned = e.plan(self.repo, "outbound", selections={"team/skills/mine": row})
         self.assertEqual([x["op"] for x in planned["changes"]], ["copy"])
-        self.assertTrue(planned["changes"][0]["path"].endswith("ip/skills/mine"))
+        self.assertTrue(Path(planned["changes"][0]["path"]).as_posix().endswith("ip/skills/mine"))
         e.apply(planned)
         self.assertTrue((self.lib / "ip/skills/mine/SKILL.md").exists())
         self.assertFalse((self.lib / "ip/skills/other").exists())
@@ -673,7 +673,7 @@ class AdoptTests(LibraryFixture):
             [("link", ".claude/skills/hello")],
         )
         e.apply(planned)
-        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/hello"))
+        self.assertEqual(c.read_link(link), str(self.lib / "ip/skills/hello"))
         self.assertTrue(e.status(self.repo)["ok"])
         self.assertIn(".kiro/skills/hello", e.state(self.repo)["inbound"])
 
@@ -684,7 +684,9 @@ class AdoptTests(LibraryFixture):
             self.skill(self.repo / folder / "hello")
         planned = self.adopt()
         self.assertTrue(planned["can_apply"], planned["errors"])
-        ops = [(x["op"], x["path"].replace(str(self.repo) + "/", "")) for x in planned["changes"]]
+        ops = [
+            (x["op"], Path(x["path"]).relative_to(self.repo).as_posix()) for x in planned["changes"]
+        ]
         self.assertEqual(
             ops,
             [
@@ -965,12 +967,12 @@ class NestedLibraryTests(LibraryFixture):
         self.nest()
         rows = {row["name"]: row for row in e.catalog(self.repo, "team")}
         self.assertEqual(sorted(rows), ["handoff", "hello", "tdd"])
-        self.assertTrue(rows["tdd"]["path"].endswith("ip/skills/engineering/tdd"))
+        self.assertTrue(Path(rows["tdd"]["path"]).as_posix().endswith("ip/skills/engineering/tdd"))
         self.assertEqual(e.locate(c.effective(self.repo), "tdd"), [("team", "skills", "tdd")])
         c.select(self.repo, "inbound", "team", "skills", "tdd")
         e.apply(e.plan(self.repo))
         link = self.repo / ".kiro/skills/tdd"
-        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/engineering/tdd"))
+        self.assertEqual(c.read_link(link), str(self.lib / "ip/skills/engineering/tdd"))
         found = e.why(link)
         self.assertEqual((found["source"], found["library_name"]), ("team", "tdd"))
         repo = e.git_root(self.lib)

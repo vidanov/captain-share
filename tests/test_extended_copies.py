@@ -1,5 +1,6 @@
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
 
@@ -234,7 +235,9 @@ class KeepTests(ExtendedCopyFixture):
         code, plan = self.request("/api/keep-plan", {**body, "new_name": "hello-mine"})
         self.assertEqual(code, 200, plan)
         self.assertTrue(plan["can_apply"], plan["errors"])
-        ops = [(x["op"], x["path"].replace(str(self.repo) + "/", "")) for x in plan["changes"]]
+        ops = [
+            (x["op"], Path(x["path"]).relative_to(self.repo).as_posix()) for x in plan["changes"]
+        ]
         self.assertEqual(
             ops,
             [

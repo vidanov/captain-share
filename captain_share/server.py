@@ -252,9 +252,13 @@ def asset_preview(target, source, kind, name, local=None):
             return True
 
         files = sorted(
-            p
-            for p in path.rglob("*")
-            if p.is_file() and not p.is_symlink() and contained(p) and not e.ignored(p, path)
+            (
+                p
+                for p in path.rglob("*")
+                if p.is_file() and not p.is_symlink() and contained(p) and not e.ignored(p, path)
+            ),
+            # Windows compares paths without case; keep one order everywhere.
+            key=lambda p: p.relative_to(path).as_posix(),
         )
         main = next((path / m for m in MAIN_FILES if (path / m).is_file()), None)
     else:

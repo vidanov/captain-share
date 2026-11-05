@@ -66,7 +66,8 @@ class SelfUpdateTests(unittest.TestCase):
         (other / "CHANGELOG.md").write_text(
             "# Changelog\n\n## 9.1.0 — 2030-01-02\n\n- Share from the moon.\n"
             "- Faster previews,\n  with a second line.\n\n## 9.0.0\n\n- Older.\n\n"
-            "## 0.0.1\n\n- Ancient, not shown.\n"
+            "## 0.0.1\n\n- Ancient, not shown.\n",
+            encoding="utf-8",
         )
         self.commit(other, "Release notes")
         e.git(other, "push", "-q")
@@ -127,10 +128,18 @@ class SelfUpdateTests(unittest.TestCase):
         )
 
     def test_restart_command_line_and_token_handover(self):
-        with patch.object(sys, "argv", ["/x/captain-share", "--target", "/p", "serve", "--open"]):
+        script = self.base / "captain-share"
+        script.write_text("# a launcher script\n")
+        with patch.object(sys, "argv", [str(script), "--target", "/p", "serve", "--open"]):
             self.assertEqual(
-                su.restart_argv(), [sys.executable, "/x/captain-share", "--target", "/p", "serve"]
+                su.restart_argv(), [sys.executable, str(script), "--target", "/p", "serve"]
             )
+        # pip's Windows launcher reports its .exe without the suffix: no such file.
+        with patch.object(sys, "argv", ["C:/venv/Scripts/captain-share", "serve"]):
+            with patch.object(su.sys, "platform", "win32"):
+                self.assertEqual(
+                    su.restart_argv(), [sys.executable, "-m", "captain_share", "serve"]
+                )
         with patch.object(sys, "argv", ["/x/captain_share/__main__.py", "serve"]):
             self.assertEqual(su.restart_argv(), [sys.executable, "-m", "captain_share", "serve"])
         handle, path = tempfile.mkstemp(prefix="captain-share-restart-", suffix=".json")
