@@ -80,7 +80,11 @@ class AddFromGitTests(LibraryFixture):
             "[user]\n\tname = Ada Example\n\temail = ada@example.invalid\n"
             "[commit]\n\tgpgsign = false\n"
         )
-        env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
+        env = {
+            "HOME": str(home),
+            "USERPROFILE": str(home),  # Path.home() on Windows
+            "XDG_CONFIG_HOME": str(home / ".config"),
+        }
         cloning = patch.object(im, "clone", side_effect=fake_clone)
         with cloning, patch.dict(os.environ, env):
             code, out = self.run_cli("add", "team/skills")

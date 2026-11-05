@@ -282,11 +282,16 @@ def asset_preview(target, source, kind, name, local=None):
 def restart(server, port, token):
     """Start this window again with the code now on disk, keeping address and token."""
     handle, path = tempfile.mkstemp(prefix="captain-share-restart-", suffix=".json")
-    with os.fdopen(handle, "w") as file:  # mkstemp: readable by this user only
+    with os.fdopen(handle, "w", encoding="utf-8") as file:  # mkstemp: readable by this user only
         json.dump({"port": port, "token": token}, file)
     server.server_close()
     argv = su.restart_argv()
-    os.execve(argv[0], argv, {**os.environ, RESTART: path})
+    env = {**os.environ, RESTART: path}
+    if sys.platform == "win32":
+        # Windows has no exec that keeps the process: start the new one, then leave.
+        subprocess.Popen(argv, env=env)
+        os._exit(0)
+    os.execve(argv[0], argv, env)
 
 
 def why_inside(target, value):
@@ -326,13 +331,18 @@ def reveal_path(target, value):
             candidate if candidate.is_dir() and not candidate.is_symlink() else candidate.parent
         )
         command = ["xdg-open", str(directory)]
+    elif sys.platform == "win32":
+        command = ["explorer", f"/select,{candidate}"]
     else:
-        raise c.ShareError("Opening a file manager is supported on macOS and Linux")
+        raise c.ShareError("Opening a file manager is supported on macOS, Linux and Windows")
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            command, capture_output=True, text=True, errors="replace", timeout=10
+        )
     except subprocess.TimeoutExpired as exc:
         raise c.ShareError("The file manager did not respond. Try again.") from exc
-    if result.returncode:
+    # Explorer exits with 1 even when it opened the folder.
+    if result.returncode and sys.platform != "win32":
         raise c.ShareError(result.stderr.strip() or "Could not open the file manager")
     return {"revealed": str(candidate)}
 
@@ -940,8 +950,8 @@ def make_server(target, port=0, token=None):
                     result["candidates"] = e.scan(target)
                     result["kinds"] = list(c.KINDS)
                     result["destinations"] = c.DESTINATIONS
-                    result["file_manager"] = (
-                        "Finder" if sys.platform == "darwin" else "file manager"
+                    result["file_manager"] = {"darwin": "Finder", "win32": "Explorer"}.get(
+                        sys.platform, "file manager"
                     )
                     self.respond(result)
                 elif parsed.path == "/api/folders":
@@ -1506,7 +1516,7 @@ def restarted():
     try:
         if file.parent != Path(tempfile.gettempdir()) or file.is_symlink():
             return None, None
-        data = json.loads(file.read_text())
+        data = json.loads(file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None, None
     finally:
@@ -1515,6 +1525,32 @@ def restarted():
     if isinstance(port, int) and isinstance(token, str) and token:
         return port, token
     return None, None
+
+
+def alive(pid):
+    """Whether process `pid` still runs."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        # os.kill(pid, 0) would send CTRL_C_EVENT on Windows; ask for its exit code.
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and (
+                code.value == 259  # STILL_ACTIVE
+            )
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def windows_file():
@@ -1532,8 +1568,9 @@ def open_window(folder):
     if not isinstance(row, dict) or not isinstance(row.get("port"), int):
         return None
     try:
-        os.kill(int(row.get("pid", 0)), 0)
-    except (OSError, ValueError):
+        if not alive(int(row.get("pid", 0))):
+            return None
+    except ValueError:
         return None
     port, token = row["port"], str(row.get("token", ""))
     request = urllib.request.Request(

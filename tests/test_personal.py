@@ -19,7 +19,12 @@ class PersonalFixture(LibraryFixture):
     def setUp(self):
         super().setUp()
         self.git_home = patch.dict(
-            os.environ, {"HOME": str(self.base), "XDG_CONFIG_HOME": str(self.base / ".config")}
+            os.environ,
+            {
+                "HOME": str(self.base),
+                "USERPROFILE": str(self.base),  # Path.home() on Windows
+                "XDG_CONFIG_HOME": str(self.base / ".config"),
+            },
         )
         self.git_home.start()
         self.identity()

@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -513,6 +514,9 @@ class SharingTests(SharingFixture):
     def test_kiro_run_uses_explicit_working_folder_and_keeps_approval_flags(self):
         import stat
 
+        if sys.platform == "win32":
+            self.skipTest("The fake kiro-cli is a POSIX script")
+
         bindir = self.base / "fake-bin"
         bindir.mkdir()
         executable = bindir / "kiro-cli"
@@ -918,6 +922,9 @@ class SharingTests(SharingFixture):
         """Mimics kiro-cli 2.29.1: copies by manifest name into ~/.kiro/powers/installed."""
         import stat
 
+        if sys.platform == "win32":
+            self.skipTest("The fake kiro-cli is a POSIX script")
+
         bindir = self.base / "fake-kiro"
         bindir.mkdir(exist_ok=True)
         script = bindir / "kiro-cli"
@@ -942,6 +949,7 @@ class SharingTests(SharingFixture):
             {
                 "PATH": str(bindir) + os.pathsep + os.environ["PATH"],
                 "HOME": str(self.base / "home"),
+                "USERPROFILE": str(self.base / "home"),
             },
         )
         env.start()

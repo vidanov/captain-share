@@ -46,7 +46,7 @@ def inspect(root: Path) -> list[str]:
     for module, allowed in ALLOWED_INTERNAL.items():
         path = root / "captain_share" / f"{module}.py"
         try:
-            tree = ast.parse(path.read_text(), filename=str(path))
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except (OSError, SyntaxError) as exc:
             failures.append(f"INVALID_MEASUREMENT: cannot parse {path}: {exc}")
             continue
@@ -59,7 +59,7 @@ def inspect(root: Path) -> list[str]:
         if not path.is_file():
             failures.append(f"MISSING_DOCUMENT: {path.relative_to(root)}")
             continue
-        for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", path.read_text()):
+        for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", path.read_text(encoding="utf-8")):
             if link.startswith(("http:", "https:", "mailto:", "#")):
                 continue
             clean = link.split("#", 1)[0]

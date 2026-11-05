@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
+import getpass
 import hashlib
 import json
 import os
 import re
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 class ShareError(Exception):
@@ -121,7 +127,9 @@ def root(value):
 def safe_path(base, rel, *, leaf_link=False):
     """Lexical containment plus refusal to follow any intermediate symlink."""
     rel = Path(rel)
-    if rel.is_absolute() or not rel.parts or any(x in ("..", "") for x in rel.parts):
+    # A drive or root without the other ("C:x", "\x" on Windows) is not absolute yet
+    # still escapes base when joined.
+    if rel.is_absolute() or rel.anchor or not rel.parts or any(x in ("..", "") for x in rel.parts):
         raise ShareError(f"Expected a relative path inside {base}: {rel}")
     p = Path(base)
     for i, part in enumerate(rel.parts):
@@ -137,7 +145,7 @@ def read_json(p, default=None):
     if not p.exists():
         return default
     try:
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
     except (ValueError, OSError) as exc:
         raise ShareError(f"Cannot read JSON at {p}: {exc}") from exc
 
@@ -148,7 +156,7 @@ def atomic_json(p, data):
         raise ShareError(f"Refusing to replace symlink: {p}")
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".sharing-")
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, indent=2, sort_keys=True)
             f.write("\n")
             f.flush()
@@ -179,6 +187,14 @@ def config_dir(target=None, scope="repo"):
 
 def lock_dir():
     """A private per-user folder for locks and the list of open windows."""
+    if sys.platform == "win32":
+        # The temporary folder is already the user's own (%LOCALAPPDATA%\Temp), and
+        # Windows keeps access in ACLs that mode bits do not show (ADR 018).
+        lockdir = Path(tempfile.gettempdir()) / f"captain-share-locks-{getpass.getuser()}"
+        if lockdir.is_symlink():
+            raise ShareError("Lock directory is a symlink")
+        lockdir.mkdir(exist_ok=True)
+        return lockdir
     lockdir = Path(tempfile.gettempdir()) / f"captain-share-locks-{os.getuid()}"
     if lockdir.is_symlink():
         raise ShareError("Lock directory is a symlink")
@@ -186,6 +202,71 @@ def lock_dir():
     if lockdir.stat().st_uid != os.getuid() or lockdir.stat().st_mode & 0o077:
         raise ShareError("Lock directory must be private and owned by the current user")
     return lockdir
+
+
+def lock_file(f, wait):
+    """Take an exclusive lock on open file `f`; BlockingIOError when `wait` is False
+    and another process holds it."""
+    if sys.platform == "win32":
+        # msvcrt locks byte ranges from the current position; waiting is a poll because
+        # LK_LOCK gives up after ten seconds.
+        while True:
+            try:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError as exc:
+                if not wait:
+                    raise BlockingIOError(str(exc)) from exc
+                time.sleep(0.1)
+    else:
+        fcntl.flock(f, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def unlock_file(f):
+    if sys.platform == "win32":
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def links_supported():
+    """Whether this user can create symbolic links here. Windows allows them only in
+    Developer Mode or an elevated process; managed destinations are then tracked
+    copies instead (ADR 018). CAPTAIN_SHARE_LINKS=0 or 1 overrides the check."""
+    forced = os.environ.get("CAPTAIN_SHARE_LINKS")
+    if forced in ("0", "1"):
+        return forced == "1"
+    if sys.platform != "win32":
+        return True
+    return _windows_links()
+
+
+_LINKS: dict[str, bool] = {}
+
+
+def _windows_links():
+    if "probe" not in _LINKS:
+        with tempfile.TemporaryDirectory(prefix="captain-share-links-") as folder:
+            try:
+                os.symlink(folder, os.path.join(folder, "probe"), target_is_directory=True)
+                _LINKS["probe"] = True
+            except OSError:
+                _LINKS["probe"] = False
+    return _LINKS["probe"]
+
+
+def read_link(path):
+    """A symlink's target as written. Windows reports absolute targets with the
+    \\\\?\\ prefix, which other paths never carry."""
+    target = os.readlink(path)
+    if sys.platform == "win32":
+        if target.startswith("\\\\?\\UNC\\"):
+            return "\\\\" + target[8:]
+        if target.startswith("\\\\?\\"):
+            return target[4:]
+    return target
 
 
 @contextlib.contextmanager
@@ -196,16 +277,18 @@ def locks(paths):
     with contextlib.ExitStack() as stack:
         for key in sorted(set(str(Path(p).absolute()) for p in paths)):
             token = hashlib.sha256(key.encode()).hexdigest()
-            fd = os.open(lockdir / token, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-            f = stack.enter_context(os.fdopen(fd, "a"))
+            flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(lockdir / token, flags, 0o600)
+            f = stack.enter_context(os.fdopen(fd, "r+"))
             try:
-                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock_file(f, wait=False)
             except BlockingIOError:
                 # Another Captain Share action (a window, another terminal) holds it.
                 if not waiting_said:
                     waiting_said = True
                     print("Waiting for another Captain Share action to finish…", file=sys.stderr)
-                fcntl.flock(f, fcntl.LOCK_EX)
+                lock_file(f, wait=True)
+            stack.callback(unlock_file, f)
         yield
 
 
@@ -372,11 +455,12 @@ def init(target=None, scope="repo", library=False):
         else:
             validate(read_json(path), path)
         ig = safe_path(d, ".gitignore")
-        existing = ig.read_text() if ig.exists() else ""
+        existing = ig.read_text(encoding="utf-8") if ig.exists() else ""
         missing = [line for line in LOCAL_IGNORE.splitlines() if line not in existing.splitlines()]
         if missing:
             ig.write_text(
-                existing.rstrip("\n") + ("\n" if existing else "") + "\n".join(missing) + "\n"
+                existing.rstrip("\n") + ("\n" if existing else "") + "\n".join(missing) + "\n",
+                encoding="utf-8",
             )
         if library:
             for kind in KINDS:

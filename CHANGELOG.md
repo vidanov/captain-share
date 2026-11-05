@@ -5,6 +5,9 @@ and About in the window show the entries newer than your version.
 
 ## Unreleased
 
+- Windows: Captain Share runs on Windows. With Developer Mode on, installs are links
+  as elsewhere; without it, they are managed copies that each sync refreshes and
+  that are never overwritten once you edit them. Show in Explorer works.
 - Profiles in the window: Settings → a library's Options → Profiles lists the named
   sets it offers, gets one globally or in this project, and edits or adds one
   (`profiles/NAME.manifest`). On the command line, `captain-share profiles LIBRARY`

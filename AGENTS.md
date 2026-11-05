@@ -31,7 +31,8 @@ Read [ADR 001](docs/adr/001-sharing-engine.md) before changing module boundaries
 [ADR 002](docs/adr/002-agent-tool-destinations.md) before changing tool destinations, and
 [ADR 003](docs/adr/003-kiro-powers.md) before changing Kiro power handling, and
 [ADR 004](docs/adr/004-web-places.md) before changing which folders a web window may change,
-and [ADR 012](docs/adr/012-claude-rules-and-commands.md) before changing format conversion.
+and [ADR 012](docs/adr/012-claude-rules-and-commands.md) before changing format conversion,
+and [ADR 018](docs/adr/018-windows.md) before changing links, locks or other platform code.
 Preserve preview freshness, ownership checks, path containment, rollback on handled
 failure, and recoverable archives. Existing hooks and other installers' ledgers
 remain owned by their original tools.

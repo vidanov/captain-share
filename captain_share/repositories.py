@@ -40,6 +40,8 @@ def run_with(path, args, env_extra=None, data=None, text=True, combined=False):
             input=data,
             capture_output=True,
             text=text,
+            encoding="utf-8" if text else None,
+            errors="replace" if text else None,
             timeout=120,
         )
     except subprocess.TimeoutExpired as exc:
@@ -617,7 +619,9 @@ def run_check(repo, check):
     shown = " ".join(check)
     try:
         # Fixed argv chosen by the user; no shell.
-        proc = subprocess.run(check, cwd=repo, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(
+            check, cwd=repo, capture_output=True, text=True, errors="replace", timeout=300
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise c.ShareError(
             f"The library check could not run ({shown}): {exc}. Nothing was committed.",
@@ -1417,7 +1421,7 @@ def starter_plan(target, source, assets, clear=False, mode="direct", profile="st
         e.validate_asset(original, kind)
     file = c.safe_path(lib["path"], path)
     exists = file.is_file()
-    current = file.read_text(errors="replace") if exists else ""
+    current = file.read_text(encoding="utf-8", errors="replace") if exists else ""
     wanted = None if clear else starter_text(assets, profile)
     problems, commit_paths, pending, head = [], [], "", None
     branch = base = None

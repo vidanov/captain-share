@@ -951,6 +951,11 @@ def disconnect_library(args, target):
 
 
 def main(argv=None):
+    if sys.platform == "win32":
+        # A redirected Windows console uses a legacy code page without "…" or "→".
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(errors="replace")
     args = parser().parse_args(argv)
     try:
         target = c.root(args.target or ".")

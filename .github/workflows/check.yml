@@ -4,10 +4,17 @@ jobs:
   verify:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ['3.9', '3.13']
     runs-on: ${{ matrix.os }}
+    # Windows support is new (ADR 018); its failures are reported without blocking.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Keep test fixtures byte-for-byte; CRLF checkouts are a listed gap in ADR 018.
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

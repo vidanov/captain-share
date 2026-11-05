@@ -64,7 +64,7 @@ def digest(value):
 
 def snapshot(path, modes=True):
     if path.is_symlink():
-        return {"type": "link", "target": os.readlink(path)}
+        return {"type": "link", "target": c.read_link(path)}
     if not path.exists():
         return None
     files = [path] if path.is_file() else sorted(path.rglob("*"))
@@ -74,7 +74,7 @@ def snapshot(path, modes=True):
             continue
         rel = "." if p == path else p.relative_to(path).as_posix()
         if p.is_symlink():
-            rows.append([rel, "link", os.readlink(p)])
+            rows.append([rel, "link", c.read_link(p)])
         elif p.is_file():
             size += p.stat().st_size
             if size > MAX_ASSET_BYTES:
@@ -179,11 +179,12 @@ def describe(path, kind):
         if kind in ("skills", "powers") and path.is_dir():
             manifest = path / "plugin.json"
             if kind == "powers" and manifest.is_file():
-                return str(json.loads(manifest.read_text()).get("description", ""))[:300]
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                return str(data.get("description", ""))[:300]
             path = path / ("SKILL.md" if kind == "skills" else "POWER.md")
         if path.suffix == ".json":
-            return str(json.loads(path.read_text()).get("description", ""))[:300]
-        text = path.read_text(errors="replace")
+            return str(json.loads(path.read_text(encoding="utf-8")).get("description", ""))[:300]
+        text = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, ValueError, AttributeError):
         return ""
     lines = text.splitlines()
@@ -216,7 +217,7 @@ def validate_power(path, outbound=False):
     manifest, legacy = path / "plugin.json", path / "POWER.md"
     if manifest.is_file():
         try:
-            data = json.loads(manifest.read_text())
+            data = json.loads(manifest.read_text(encoding="utf-8"))
         except ValueError as exc:
             raise c.ShareError(f"Invalid plugin.json in {path.name}: {exc}") from exc
         missing = [f for f in POWER_FIELDS if not data.get(f)] if isinstance(data, dict) else []
@@ -230,7 +231,7 @@ def validate_power(path, outbound=False):
             raise c.ShareError(f"plugin.json keywords must be a list in {path.name}")
         named = data["name"]
     elif legacy.is_file():
-        fields = frontmatter(legacy.read_text())
+        fields = frontmatter(legacy.read_text(encoding="utf-8"))
         if fields is None:
             raise c.ShareError(f"POWER.md in {path.name} needs YAML frontmatter")
         named = fields.get("name", path.name)
@@ -242,7 +243,7 @@ def validate_power(path, outbound=False):
     servers = path / "mcp.json"
     if servers.is_file():
         try:
-            mcp = json.loads(servers.read_text())
+            mcp = json.loads(servers.read_text(encoding="utf-8"))
         except ValueError as exc:
             raise c.ShareError(f"Invalid mcp.json in {path.name}: {exc}") from exc
         if not isinstance(mcp, dict) or not isinstance(mcp.get("mcpServers"), dict):
@@ -381,6 +382,14 @@ def locate(cfg, asset, source=None, kind=None):
     return found
 
 
+def installed_as(row):
+    """What a managed destination shows while nobody changed it: a link to its
+    original, or the copy written where links are unavailable (ADR 018)."""
+    if row.get("copy") is not None:
+        return row["copy"]
+    return {"type": "link", "target": row["source_path"]}
+
+
 def destination_state(target, rel, src, managed):
     """Read-only answer to: what would receiving src at rel find there now?"""
     p = c.safe_path(target, rel, leaf_link=True)
@@ -388,7 +397,10 @@ def destination_state(target, rel, src, managed):
         return "absent"
     if managed is None:
         return "blocked"
-    if p.is_symlink() and os.readlink(p) == str(src) == managed.get("source_path"):
+    if managed.get("copy") is not None:
+        same = snapshot(p) == managed["copy"] and managed.get("source_path") == str(src)
+        return "installed" if same else "changed"
+    if p.is_symlink() and c.read_link(p) == str(src) == managed.get("source_path"):
         return "installed"
     return "changed"
 
@@ -444,6 +456,10 @@ def catalog(target, source):
 def scan(target):
     target = c.root(target)
     rows, seen = [], set()
+    try:
+        managed = state(target)["inbound"]
+    except c.ShareError:
+        managed = {}
     for kind in c.KINDS:
         tool_folders = {folder: tool for tool, folder in c.DESTINATIONS[kind].items()}
         directories = [*tool_folders, f"ip/{kind}"]
@@ -464,8 +480,12 @@ def scan(target):
                 row = {"kind": kind, "name": p.name, "path": p.relative_to(target).as_posix()}
                 if directory in tool_folders:
                     row["tool"] = tool_folders[directory]
+                copied = managed.get(row["path"], {})
                 if p.is_symlink():
-                    row.update(status="linked", target=os.readlink(p))
+                    row.update(status="linked", target=c.read_link(p))
+                elif copied.get("copy") is not None:
+                    # A managed copy stands in for a link (ADR 018).
+                    row.update(status="linked", target=copied["source_path"], copy=True)
                 else:
                     try:
                         validate_asset(p, kind, outbound=True)
@@ -516,7 +536,7 @@ def exclude_change(target, destinations):
         f"/{prefix}.captain/archive/",
     ]
     rules += [f"/{prefix}{rel}" for rel in destinations]
-    old = p.read_text() if p.exists() else ""
+    old = p.read_text(encoding="utf-8") if p.exists() else ""
     missing = [r for r in rules if r not in old.splitlines()]
     if not missing:
         return {"path": str(p), "before": snapshot(p), "text": old, "changed": False}
@@ -633,6 +653,32 @@ def plan(
 
     renders: dict[str, str] = {}
     notes: list[str] = []
+    links = c.links_supported()
+
+    def up_to_date(dest, existing, src, linked):
+        """Whether dest already shows `linked` the way this machine installs it."""
+        if links:
+            return existing == {"type": "link", "target": str(linked)}
+        return (
+            existing is not None and existing.get("type") != "link" and same_as(dest, src, linked)
+        )
+
+    def install(dest, linked, rel):
+        """Link dest to `linked`; where links are unavailable, copy it and record the
+        copy's snapshot on apply (ADR 018)."""
+        if links:
+            changes.append({"op": "link", "path": str(dest), "source": str(linked)})
+        else:
+            changes.append(
+                {"op": "copy", "path": str(dest), "source": str(linked), "installs": rel}
+            )
+
+    def copied(existing, fresh):
+        """The installation state field of a managed copy: what it shows now, or
+        nothing yet when this plan writes it."""
+        if links:
+            return {}
+        return {"copy": existing if fresh else None}
 
     def link_source(src, kind, tool, sid, name, key, rel):
         """(what one tool's destination links to, the destination). The original at
@@ -779,11 +825,9 @@ def plan(
                         "tracked",
                     )
                     continue
+                archived = False
                 if previous:
-                    if existing is not None and existing != {
-                        "type": "link",
-                        "target": previous["source_path"],
-                    }:
+                    if existing is not None and existing != installed_as(previous):
                         raise c.ShareError(f"Managed link changed: {rel}; restore it first")
                     if previous["source_path"] != str(linked):
                         conflict(
@@ -793,7 +837,7 @@ def plan(
                             "managed",
                         )
                         continue
-                elif existing == {"type": "link", "target": str(linked)} and tool is not None:
+                elif links and existing == {"type": "link", "target": str(linked)} and tool:
                     pass  # Already links to the original (another tool made it): keep it.
                 elif existing is not None:
                     if not same_as(dest, src, linked) and not replace:
@@ -806,15 +850,20 @@ def plan(
                         )
                         continue
                     archive(dest, None)
+                    archived = True
                 if tool is None:
                     continue  # The original the share came from is archived, not linked.
-                if existing != {"type": "link", "target": str(linked)}:
-                    changes.append({"op": "link", "path": str(dest), "source": str(linked)})
+                fresh = not archived and up_to_date(dest, existing, src, linked)
+                if not fresh:
+                    if previous and existing is not None:
+                        archive(dest, previous)  # A copy behind its original (ADR 018).
+                    install(dest, linked, rel)
                 next_state["inbound"][rel] = {
                     **row,
                     "source_path": str(linked),
                     "key": key,
                     "tool": tool,
+                    **copied(existing, fresh),
                 }
             except (c.ShareError, OSError) as exc:
                 conflict(str(exc), rel, key)
@@ -875,19 +924,22 @@ def plan(
                                     "unmanaged",
                                 )
                             continue
-                        if (
-                            previous
-                            and existing is not None
-                            and existing != {"type": "link", "target": previous["source_path"]}
-                        ):
+                        if previous and existing is not None and existing != installed_as(previous):
                             raise c.ShareError(
                                 f"Managed link changed or disappeared: {rel}; restore it before syncing"
                             )
-                        if existing != {"type": "link", "target": str(linked)}:
+                        fresh = up_to_date(dest, existing, src, linked)
+                        if not fresh:
                             if existing:
                                 archive(dest, previous)
-                            changes.append({"op": "link", "path": str(dest), "source": str(linked)})
-                        desired[rel] = {**row, "source_path": str(linked), "key": key, "tool": tool}
+                            install(dest, linked, rel)
+                        desired[rel] = {
+                            **row,
+                            "source_path": str(linked),
+                            "key": key,
+                            "tool": tool,
+                            **copied(existing, fresh),
+                        }
                     except (c.ShareError, OSError) as exc:
                         conflict(str(exc), rel, key)
             for rel, previous in old["inbound"].items():
@@ -900,7 +952,7 @@ def plan(
                     observed = observe(dest)
                     if observed is None:
                         continue
-                    if observed != {"type": "link", "target": previous["source_path"]}:
+                    if observed != installed_as(previous):
                         raise c.ShareError(f"Managed link changed: {rel}")
                     archive(dest, previous)
                 except (c.ShareError, OSError) as exc:
@@ -994,7 +1046,7 @@ def plan(
                         "tracked",
                     )
                     continue
-                if existing != {"type": "link", "target": previous["source_path"]}:
+                if existing != installed_as(previous):
                     conflict(
                         f"{rel} changed since Captain Share linked it; restore or archive it first",
                         rel,
@@ -1040,7 +1092,7 @@ def plan(
                 dest = c.safe_path(target, rel, leaf_link=True)
                 existing = observe(dest)
                 if existing is not None:
-                    if existing != {"type": "link", "target": previous["source_path"]}:
+                    if existing != installed_as(previous):
                         raise c.ShareError(f"Managed link changed: {rel}; restore it first")
                     archive(dest, previous)
                 linked, moved = link_source(
@@ -1050,9 +1102,11 @@ def plan(
                     # The new library's version lands elsewhere; the next sync links it.
                     next_state["inbound"].pop(rel, None)
                     continue
-                changes.append({"op": "link", "path": str(dest), "source": str(linked)})
+                install(dest, linked, rel)
                 kept_fields = {
-                    k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
+                    k: v
+                    for k, v in previous.items()
+                    if k not in ("source_path", "key", "tool", "copy")
                 }
                 next_state["inbound"][rel] = {
                     **kept_fields,
@@ -1060,6 +1114,7 @@ def plan(
                     "source_path": str(linked),
                     "key": key,
                     "tool": previous.get("tool"),
+                    **copied(None, False),
                 }
             except (c.ShareError, OSError) as exc:
                 conflict(str(exc), rel, old_key)
@@ -1120,7 +1175,9 @@ def plan(
                 )
             edit = None
             if kind == "skills" and (local / "SKILL.md").is_file():
-                renamed = rename_frontmatter((local / "SKILL.md").read_text(), chosen)
+                renamed = rename_frontmatter(
+                    (local / "SKILL.md").read_text(encoding="utf-8"), chosen
+                )
                 if renamed is not None:
                     edit = f"name: {renamed[1]} -> {chosen}"
             changes.append(
@@ -1227,7 +1284,7 @@ def plan(
             next_state["inbound"][metadata["relative_path"]] = previous
             config_update = local_cfg
             config_update["inbound"][previous["key"]] = {
-                k: v for k, v in previous.items() if k not in ("source_path", "key", "tool")
+                k: v for k, v in previous.items() if k not in ("source_path", "key", "tool", "copy")
             }
     # Generated files no place links any more are archived with the last link (ADR 012).
     index_path = rendered_index_path()
@@ -1420,7 +1477,7 @@ def archive_into(tx, dest, owner, selection=None):
     tx.write(folder / "record.json", metadata)
     # Archive contents and machine records stay local to their owning repo.
     ig = c.safe_path(owner, ".captain/.gitignore")
-    text = ig.read_text() if ig.exists() else ""
+    text = ig.read_text(encoding="utf-8") if ig.exists() else ""
     missing = [x for x in c.LOCAL_IGNORE.splitlines() if x not in text.splitlines()]
     if missing:
         tx.write(ig, text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n")
@@ -1504,7 +1561,7 @@ def asset_files(path, name):
             continue
         rel = p.relative_to(path).as_posix()
         if p.is_symlink():
-            files[rel] = ("symlink -> " + os.readlink(p)).encode()
+            files[rel] = ("symlink -> " + c.read_link(p)).encode()
         elif p.is_file():
             files[rel] = bounded(p.read_bytes())
     return files
@@ -1610,7 +1667,7 @@ def adopt_preview(target, kind, name, path=None):
         if os.path.lexists(dest) and not managed:
             ops.append({"op": "archive", "path": rel})
         if tool is not None and not managed:
-            ops.append({"op": "link", "path": rel})
+            ops.append({"op": "link" if c.links_supported() else "copy", "path": rel})
     return ops
 
 
@@ -1638,7 +1695,8 @@ class Transaction:
         if isinstance(data, dict):
             c.atomic_json(p, data)
         else:
-            p.write_text(data)
+            # Bytes, not text mode: Windows would write CRLF and change the hash.
+            p.write_bytes(data.encode("utf-8"))
 
     def move(self, src, dst):
         self.parents(dst)
@@ -1649,7 +1707,8 @@ class Transaction:
 
     def link(self, src, dst):
         self.parents(dst)
-        dst.symlink_to(src)
+        # Windows needs to know whether a link points at a folder.
+        dst.symlink_to(src, target_is_directory=Path(src).is_dir())
         self.undo.append(lambda: dst.unlink())
 
     def copy(self, src, dst):
@@ -1743,11 +1802,14 @@ def perform(tx, current, target, archives):
             tx.write(dest, change["content"])
         elif change["op"] == "copy":
             tx.copy(Path(change["source"]), dest)
+            row = current["next_state"]["inbound"].get(change.get("installs"))
+            if row is not None:
+                row["copy"] = snapshot(dest)  # A managed copy instead of a link (ADR 018).
         elif change["op"] == "rename":
             tx.copy(Path(change["source"]), dest)
             if change.get("edit"):
                 skill = dest / "SKILL.md"
-                renamed = rename_frontmatter(skill.read_text(), change["name"])
+                renamed = rename_frontmatter(skill.read_text(encoding="utf-8"), change["name"])
                 if renamed is None:
                     raise c.ShareError(f"Could not rename {skill}")
                 tx.write(skill, renamed[0])
@@ -1768,7 +1830,7 @@ def perform(tx, current, target, archives):
     if ex and ex["changed"]:
         tx.write(Path(ex["path"]), ex["text"])
     ig = c.safe_path(target, ".captain/.gitignore")
-    original = ig.read_text() if ig.exists() else ""
+    original = ig.read_text(encoding="utf-8") if ig.exists() else ""
     extra = [x for x in c.LOCAL_IGNORE.splitlines() if x not in original.splitlines()]
     if extra:
         tx.write(ig, original.rstrip("\n") + "\n" + "\n".join(extra) + "\n")
@@ -1793,7 +1855,10 @@ def status(target):
     rows = []
     for rel, row in current["inbound"].items():
         p = c.safe_path(target, rel, leaf_link=True)
-        ok = p.is_symlink() and os.readlink(p) == row["source_path"] and p.exists()
+        if row.get("copy") is not None:
+            ok = os.path.lexists(p) and not p.is_symlink() and snapshot(p) == row["copy"]
+        else:
+            ok = p.is_symlink() and c.read_link(p) == row["source_path"] and p.exists()
         rows.append(
             {
                 "path": rel,
@@ -1916,7 +1981,7 @@ def why_asset(path, place, kind, tool, rel):
     except c.ShareError:
         cfg = {"sources": {}, "origins": {"inbound": {}}}
     if asset.is_symlink():
-        original = Path(os.path.abspath(asset.parent / os.readlink(asset)))
+        original = Path(os.path.abspath(asset.parent / c.read_link(asset)))
         result["original"] = str(original)
         result["status"] = "linked"
         for sid in sorted(cfg["sources"]):

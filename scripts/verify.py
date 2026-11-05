@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -121,7 +122,13 @@ def main(argv=None):
         ("Web syntax", ["node", "--check", "captain_share/web/app.js"]),
         (
             "Web formatting",
-            [str(root / "node_modules/.bin/prettier"), "--check", "captain_share/web"],
+            # npm writes prettier.cmd on Windows; which() finds either.
+            [
+                shutil.which("prettier", path=str(root / "node_modules/.bin"))
+                or str(root / "node_modules/.bin/prettier"),
+                "--check",
+                "captain_share/web",
+            ],
         ),
     ]
     if not args.fast:

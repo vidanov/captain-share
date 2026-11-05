@@ -177,7 +177,8 @@ class OneWindowTests(unittest.TestCase):
         self.assertEqual(
             server.open_window(folder), f"http://127.0.0.1:{srv.server_port}/#token={token}"
         )
-        self.assertEqual(os.stat(server.windows_file()).st_mode & 0o077, 0)
+        if sys.platform != "win32":  # Windows keeps access in ACLs, not mode bits.
+            self.assertEqual(os.stat(server.windows_file()).st_mode & 0o077, 0)
         # A wrong token or a process that is gone does not count.
         data = json.loads(server.windows_file().read_text())
         data[str(folder)]["token"] = "wrong"

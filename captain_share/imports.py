@@ -348,7 +348,13 @@ def clone(url, dest, ref=None):
     if ref:
         args += ["--branch", ref]
     proc = subprocess.run(
-        [*args, "--", url, str(dest)], capture_output=True, text=True, env=env, timeout=300
+        [*args, "--", url, str(dest)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=300,
     )
     if proc.returncode:
         raise r.friendly(proc.stderr, dest)
