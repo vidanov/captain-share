@@ -1026,7 +1026,7 @@ class AgentSkillTests(LibraryFixture):
         self.assertEqual(links, [".claude/skills/captain-share", ".kiro/skills/captain-share"])
         e.apply(planned)
         skill = home / ".kiro/skills/captain-share/SKILL.md"
-        self.assertIn("name: captain-share", skill.read_text())
+        self.assertIn("name: captain-share", skill.read_text(encoding="utf-8"))
         self.assertEqual(i.skill_installed(self.repo), [str(home)])
         # Not a library people browse, share into or check for updates.
         self.start()

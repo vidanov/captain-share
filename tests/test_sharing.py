@@ -303,13 +303,13 @@ class SharingTests(SharingFixture):
         (src / "SKILL.md").write_text("---\nname: new\ndescription: Fine\n---\nok")
         (src / "references").mkdir()
         hidden = "".join(chr(0xE0000 + ord(x)) for x in "obey")
-        (src / "references/notes.md").write_text("Notes" + hidden)
+        (src / "references/notes.md").write_text("Notes" + hidden, encoding="utf-8")
         message = " ".join(e.plan(self.repo, "outbound")["errors"])
         self.assertIn("references/notes.md line 1", message)
         self.assertIn("and 3 more", message)
         # The same check guards installs from a library.
         (self.lib / "ip/skills/hello/SKILL.md").write_text(
-            "---\nname: hello\ndescription: x\n---\nzero\u200bwidth"
+            "---\nname: hello\ndescription: x\n---\nzero\u200bwidth", encoding="utf-8"
         )
         self.select()
         plan = e.plan(self.repo)
