@@ -139,7 +139,12 @@ def mask(message, root, label):
     text, root = str(message), Path(root)
     name = label or root.name
     for prefix in sorted({str(root), str(root.resolve())}, key=len, reverse=True):
-        text = text.replace(prefix, name)
+        # The path after the label reads with "/" on every system.
+        text = re.sub(
+            re.escape(prefix) + r"([\\/][^\s:]*)?",
+            lambda m: name + (m.group(1) or "").replace("\\", "/"),
+            text,
+        )
     return text
 
 
@@ -348,7 +353,13 @@ def clone(url, dest, ref=None):
     if ref:
         args += ["--branch", ref]
     proc = subprocess.run(
-        [*args, "--", url, str(dest)], capture_output=True, text=True, env=env, timeout=300
+        [*args, "--", url, str(dest)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=300,
     )
     if proc.returncode:
         raise r.friendly(proc.stderr, dest)

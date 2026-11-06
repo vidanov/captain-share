@@ -3,11 +3,21 @@ on: [push, pull_request]
 jobs:
   verify:
     strategy:
+      # One failing platform should not cancel the others' results.
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # ubuntu-latest (26.04) has no Python 3.9 build for setup-python.
+        os: [ubuntu-24.04, macos-latest, windows-latest]
         python: ['3.9', '3.13']
     runs-on: ${{ matrix.os }}
+    # Windows support is new (ADR 018); its failures are reported without blocking.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Keep test fixtures byte-for-byte; CRLF checkouts are a listed gap in ADR 018.
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

@@ -106,7 +106,9 @@ class ClassifierTests(LibraryFixture):
 
     def test_production_code_never_disables_signing(self):
         for path in (ROOT / "captain_share").glob("*.py"):
-            self.assertNotIn("gpgsign=false", path.read_text().replace(" ", ""), path.name)
+            self.assertNotIn(
+                "gpgsign=false", path.read_text(encoding="utf-8").replace(" ", ""), path.name
+            )
 
 
 class StatusMemoryTests(LibraryFixture):

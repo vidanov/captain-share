@@ -1,11 +1,17 @@
+ifeq ($(OS),Windows_NT)
+PYTHON ?= python
+VENV_BIN := .venv/Scripts
+else
 PYTHON ?= python3
-DEV_PYTHON ?= .venv/bin/python
+VENV_BIN := .venv/bin
+endif
+DEV_PYTHON ?= $(VENV_BIN)/python
 
 .PHONY: bootstrap verify verify-fast test format lint-fix
 bootstrap:
 	$(PYTHON) -m venv .venv
-	.venv/bin/python -m pip install -r requirements-dev.txt
-	.venv/bin/python -m pip install --no-build-isolation --no-deps -e .
+	$(VENV_BIN)/python -m pip install -r requirements-dev.txt
+	$(VENV_BIN)/python -m pip install --no-build-isolation --no-deps -e .
 	npm ci --ignore-scripts --no-audit --no-fund
 
 verify:

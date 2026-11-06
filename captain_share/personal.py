@@ -70,7 +70,7 @@ def ensure():
             r.run(folder, "init", "-q", "-b", "main")
             for name in FOLDERS:
                 (folder / name).mkdir(exist_ok=True)
-                (folder / name / ".gitkeep").write_text("")
+                (folder / name / ".gitkeep").write_bytes(b"")
             # Archive and machine records stay out of Git from the first commit.
             c.init(folder)
             r.run(folder, "add", "--all", "--", *FOLDERS, ".captain")

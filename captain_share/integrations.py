@@ -94,7 +94,7 @@ def import_profile(target, source, profile, apply=False):
     if not file.is_file():
         raise c.ShareError(f"Profile is missing: {profile}")
     rows = []
-    for line in file.read_text().splitlines():
+    for line in file.read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
@@ -155,7 +155,7 @@ def power_runs(original):
 
     def read(rel):
         try:
-            return json.loads((original / rel).read_text())
+            return json.loads((original / rel).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
@@ -276,7 +276,9 @@ def power_apply(saved):
         outputs = []
         for change in current["changes"]:
             # Fixed argv to Kiro's own installer; no shell and no user-supplied flags.
-            proc = subprocess.run(change["command"], capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(
+                change["command"], capture_output=True, text=True, errors="replace", timeout=120
+            )
             output = (proc.stdout + proc.stderr).strip()
             if proc.returncode:
                 raise c.ShareError(f"kiro-cli failed ({proc.returncode}): {output}")
@@ -293,7 +295,7 @@ def kiro_handoff(target, request, run=False, agent=None):
         "installed": installed["installed"],
         "layers": installed["config"]["layers"],
     }
-    skill = (Path(__file__).parent / "skills/captain-share/SKILL.md").read_text()
+    skill = (Path(__file__).parent / "skills/captain-share/SKILL.md").read_text(encoding="utf-8")
     prompt = (
         skill
         + "\n\nUser request:\n"

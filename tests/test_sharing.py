@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,7 +48,9 @@ class SharingFixture(unittest.TestCase):
 
     def skill(self, p, text="Reusable instructions"):
         p.mkdir(parents=True, exist_ok=True)
-        (p / "SKILL.md").write_text("---\nname: hello\ndescription: Test helper\n---\n" + text)
+        (p / "SKILL.md").write_text(
+            "---\nname: hello\ndescription: Test helper\n---\n" + text, encoding="utf-8"
+        )
         return p
 
     def select(self, alias=None):
@@ -300,13 +303,13 @@ class SharingTests(SharingFixture):
         (src / "SKILL.md").write_text("---\nname: new\ndescription: Fine\n---\nok")
         (src / "references").mkdir()
         hidden = "".join(chr(0xE0000 + ord(x)) for x in "obey")
-        (src / "references/notes.md").write_text("Notes" + hidden)
+        (src / "references/notes.md").write_text("Notes" + hidden, encoding="utf-8")
         message = " ".join(e.plan(self.repo, "outbound")["errors"])
         self.assertIn("references/notes.md line 1", message)
         self.assertIn("and 3 more", message)
         # The same check guards installs from a library.
         (self.lib / "ip/skills/hello/SKILL.md").write_text(
-            "---\nname: hello\ndescription: x\n---\nzero\u200bwidth"
+            "---\nname: hello\ndescription: x\n---\nzero\u200bwidth", encoding="utf-8"
         )
         self.select()
         plan = e.plan(self.repo)
@@ -513,6 +516,9 @@ class SharingTests(SharingFixture):
     def test_kiro_run_uses_explicit_working_folder_and_keeps_approval_flags(self):
         import stat
 
+        if sys.platform == "win32":
+            self.skipTest("The fake kiro-cli is a POSIX script")
+
         bindir = self.base / "fake-bin"
         bindir.mkdir()
         executable = bindir / "kiro-cli"
@@ -541,7 +547,7 @@ class SharingTests(SharingFixture):
         original = self.lib / "ip/skills/hello"
         for folder in (".kiro/skills", ".claude/skills"):
             link = self.repo / folder / "greet"
-            self.assertEqual(os.readlink(link), str(original))
+            self.assertEqual(c.read_link(link), str(original))
         self.assertEqual({r["tool"] for r in e.status(self.repo)["installed"]}, {"kiro", "claude"})
         (original / "SKILL.md").write_text("one edit")
         self.assertEqual((self.repo / ".claude/skills/greet/SKILL.md").read_text(), "one edit")
@@ -552,7 +558,7 @@ class SharingTests(SharingFixture):
         self.select()
         e.apply(e.plan(self.repo))
         link = self.repo / ".agents/skills/hello"
-        self.assertEqual(os.readlink(link), str(self.lib / "ip/skills/hello"))
+        self.assertEqual(c.read_link(link), str(self.lib / "ip/skills/hello"))
         self.assertEqual(c.effective(self.repo)["tools"], ["kiro", "codex"])
         self.skill(self.repo / ".agents/skills/local-only")
         row = [r for r in e.scan(self.repo) if r["name"] == "local-only"][0]
@@ -620,7 +626,7 @@ class SharingTests(SharingFixture):
         self.assertFalse(os.path.lexists(stale))
         self.assertEqual(len(result["archives"]), 1)
         e.apply(e.plan(self.repo))
-        self.assertEqual(os.readlink(stale), str(self.lib / "ip/skills/hello"))
+        self.assertEqual(c.read_link(stale), str(self.lib / "ip/skills/hello"))
 
     def test_claude_skill_can_be_contributed_then_received_for_both_tools(self):
         self.skill(self.repo / ".claude/skills/drafts", "claude original")
@@ -698,7 +704,7 @@ class SharingTests(SharingFixture):
             command.read_text(), "Fix issue $ARGUMENTS[0] on $ARGUMENTS[1]; all: $ARGUMENTS\n"
         )
         # Claude's files are links to generated copies owned by Captain Share.
-        generated = Path(os.readlink(rules / "api.md"))
+        generated = Path(c.read_link(rules / "api.md"))
         self.assertTrue(str(generated).startswith(str(c.global_dir() / "rendered/claude/team")))
         self.assertTrue(e.status(self.repo)["ok"])
         self.assertEqual(e.plan(self.repo)["changes"], [])
@@ -747,7 +753,7 @@ class SharingTests(SharingFixture):
         self.assertTrue((self.repo / ".claude/skills/always/SKILL.md").is_file())
         self.assertTrue((self.repo / ".kiro/steering/always.md").is_symlink())
         self.assertTrue(e.status(self.repo)["ok"])
-        skill_folder = Path(os.readlink(self.repo / ".claude/skills/always"))
+        skill_folder = Path(c.read_link(self.repo / ".claude/skills/always"))
         self.assertNotIn(str(skill_folder / "SKILL.md"), e.rendered_files()["unused"])
         # Removing it by its library name removes the skill folder, generated one too.
         e.apply(e.plan(self.repo, action="remove", kind="steering", asset="always.md"))
@@ -807,7 +813,7 @@ class SharingTests(SharingFixture):
             c.set_tools(place, ["kiro", "claude"])
             c.select(place, "inbound", "team", "steering", "style.md")
             e.apply(e.plan(place))
-        generated = Path(os.readlink(self.repo / ".claude/rules/style.md"))
+        generated = Path(c.read_link(self.repo / ".claude/rules/style.md"))
         listed = e.rendered_files()
         self.assertEqual(listed["files"][0]["places"], sorted([str(self.repo), str(other)]))
         # Removing it in one place keeps the file the other place still links.
@@ -918,6 +924,9 @@ class SharingTests(SharingFixture):
         """Mimics kiro-cli 2.29.1: copies by manifest name into ~/.kiro/powers/installed."""
         import stat
 
+        if sys.platform == "win32":
+            self.skipTest("The fake kiro-cli is a POSIX script")
+
         bindir = self.base / "fake-kiro"
         bindir.mkdir(exist_ok=True)
         script = bindir / "kiro-cli"
@@ -942,6 +951,7 @@ class SharingTests(SharingFixture):
             {
                 "PATH": str(bindir) + os.pathsep + os.environ["PATH"],
                 "HOME": str(self.base / "home"),
+                "USERPROFILE": str(self.base / "home"),
             },
         )
         env.start()
@@ -1016,7 +1026,8 @@ class SharingTests(SharingFixture):
 
         def run(*args):
             p = subprocess.run(
-                [str(exe), "--target", str(self.repo), "--json", *args],
+                # Windows runs a script only through its interpreter.
+                [sys.executable, str(exe), "--target", str(self.repo), "--json", *args],
                 capture_output=True,
                 text=True,
             )
@@ -1093,7 +1104,8 @@ class SharingTests(SharingFixture):
 
         def run(*args):
             p = subprocess.run(
-                [str(exe), "--target", str(self.repo), "--json", *args],
+                # Windows runs a script only through its interpreter.
+                [sys.executable, str(exe), "--target", str(self.repo), "--json", *args],
                 capture_output=True,
                 text=True,
             )

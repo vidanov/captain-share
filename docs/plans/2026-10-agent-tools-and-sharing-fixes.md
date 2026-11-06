@@ -85,4 +85,4 @@ Kiro JSON → Claude Markdown agents, under their own ADR. Claude handoff for `a
 ## Gaps that remain after this plan
 
 Installed links do not prove a tool loads a skill. Symlink handling by each tool's
-discovery is assumed, not measured here. Windows remains unsupported.
+discovery is assumed, not measured here. Windows support came later (ADR 018).

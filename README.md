@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/vidanov/captain-share?sort=semver)](https://github.com/vidanov/captain-share/releases)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#install-and-start)
+[![macOS, Linux and Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#install-and-start)
 [![Agents: Kiro, Claude Code, Codex, Copilot](https://img.shields.io/badge/agents-Kiro%20%7C%20Claude%20Code%20%7C%20Codex%20%7C%20Copilot-orange)](#how-it-works)
 
 **Steer once, every agent follows.** Your team keeps agent skills, prompts, steering
@@ -51,7 +51,9 @@ public skills, `npx skills` is quick. The full comparison, with sources, is in
 
 ## Install and start
 
-Python 3.9+, Git, and macOS or Linux. No other runtime packages.
+Python 3.9+, Git, and macOS, Linux or Windows. No other runtime packages. On
+Windows, turn on Developer Mode for live links; without it, installs are managed
+copies that each sync refreshes ([ADR 018](docs/adr/018-windows.md)).
 
 ```bash
 pipx install git+https://github.com/vidanov/captain-share
@@ -142,7 +144,8 @@ clone them with your own Git access; Captain Share never stores credentials. You
 own library `~/Libraries/my-skills` is local and never pushed.
 
 **Links, not copies.** An installed asset is a symlink to the library original, so
-Update library reaches every project at once. Where another agent needs another
+Update library reaches every project at once (on Windows without Developer Mode,
+managed copies that sync keeps current). Where another agent needs another
 format, Captain Share generates it from the original and links that instead:
 
 | Kind | Kiro | Claude Code | Codex | Copilot |

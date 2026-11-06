@@ -24,7 +24,13 @@ def run(path, *args, timeout=120):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["GIT_TERMINAL_PROMPT"] = "0"
     proc = subprocess.run(
-        ["git", "-C", str(path), *args], capture_output=True, text=True, env=env, timeout=timeout
+        ["git", "-C", str(path), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=timeout,
     )
     if proc.returncode:
         raise r.friendly(proc.stderr, path)
@@ -245,7 +251,11 @@ def update():
 
 def pip(args):
     proc = subprocess.run(
-        [sys.executable, "-m", "pip", *args], capture_output=True, text=True, timeout=600
+        [sys.executable, "-m", "pip", *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=600,
     )
     if proc.returncode:
         tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-20:])
@@ -255,6 +265,10 @@ def pip(args):
 def restart_argv():
     """The command line that starts this process again, without opening a new tab."""
     argv = [arg for arg in sys.argv if arg != "--open"]
-    if argv and argv[0].endswith("__main__.py"):
+    # pip's launcher on Windows is an .exe that Python cannot run, and it reports
+    # itself without the suffix, so argv[0] names no file there.
+    if argv and (
+        argv[0].endswith("__main__.py") or (sys.platform == "win32" and not os.path.isfile(argv[0]))
+    ):
         return [sys.executable, "-m", "captain_share", *argv[1:]]
     return [sys.executable, *argv]
